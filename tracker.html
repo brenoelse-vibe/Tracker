@@ -83,6 +83,7 @@
       startDate: localDateKey(new Date()),
       logs: {}, comprehensionLog: [],
       pimsleurTotal: 14, innerFrenchTotal: 2,
+      customHabits: [],
     };
 
     const milestones = [
@@ -134,6 +135,7 @@
       const [user, setUser]           = useState(null);
       const [authLoading, setAuthLoading] = useState(true);
       const [syncing, setSyncing]     = useState(false);
+      const [newHabitName, setNewHabitName] = useState("");
 
       const today = localDateKey(new Date());
 
@@ -199,6 +201,22 @@
 
       const updateCount = (field, val) => save({ ...data, [field]: val });
 
+      const addHabit = () => {
+        const name = newHabitName.trim();
+        if (!name) return;
+        const key = "custom_" + name.toLowerCase().replace(/[^a-z0-9]/g,"_");
+        if ((data.customHabits||[]).find(h=>h.key===key)) return;
+        save({ ...data, customHabits: [...(data.customHabits||[]), { key, label: name, emoji: "📌" }] });
+        setNewHabitName("");
+      };
+      const deleteHabit = (key) => {
+        if (!window.confirm("Delete this habit? It will be removed from all logged days.")) return;
+        const newHabits = (data.customHabits||[]).filter(h=>h.key!==key);
+        const newLogs = { ...data.logs };
+        Object.keys(newLogs).forEach(d => { if (newLogs[d][key] !== undefined) { newLogs[d] = { ...newLogs[d] }; delete newLogs[d][key]; } });
+        save({ ...data, customHabits: newHabits, logs: newLogs });
+      };
+
       // Edit/delete a specific day from History
       const updateDayLog = (date, newLog) => {
         const newLogs = { ...data.logs, [date]: newLog };
@@ -226,14 +244,14 @@
         let streak=0, d=new Date();
         while (true) {
           const key=localDateKey(d), log=data.logs[key];
-          if (log&&(log.pimsleur||log.anki||log.innerFrench||log.workout)) { streak++; d.setDate(d.getDate()-1); } else break;
+          if (log&&(log.pimsleur||log.anki||log.innerFrench||log.workout||(data.customHabits||[]).some(h=>log[h.key]))) { streak++; d.setDate(d.getDate()-1); } else break;
         }
         return streak;
       };
 
       const days     = (() => {
         const logKeys = Object.keys(data.logs).filter(k=>{
-          const l=data.logs[k]; return l && (l.pimsleur||l.anki||l.innerFrench||l.workout);
+          const l=data.logs[k]; return l && (l.pimsleur||l.anki||l.innerFrench||l.workout||(data.customHabits||[]).some(h=>l[h.key]));
         });
         const earliest = logKeys.length>0 ? logKeys.sort()[0] : data.startDate;
         const start = new Date(earliest+"T00:00:00");
@@ -256,10 +274,11 @@
         let currentWeek=[], cursor=new Date(startDate);
         while (cursor<=endDate||currentWeek.length>0) {
           const dateKey=localDateKey(cursor), log=data.logs[dateKey];
-          const count=log?(log.pimsleur?1:0)+(log.anki?1:0)+(log.innerFrench?1:0)+(log.workout?1:0):0;
+          const customCount=log?(data.customHabits||[]).filter(h=>log[h.key]).length:0;
+          const count=log?(log.pimsleur?1:0)+(log.anki?1:0)+(log.innerFrench?1:0)+(log.workout?1:0)+customCount:0;
           currentWeek.push({ date:dateKey, count, month:cursor.getMonth(), day:cursor.getDate(), year:cursor.getFullYear(),
             isFuture:cursor>todayDate, isToday:dateKey===today,
-            hasFrench:log?!!(log.pimsleur||log.anki||log.innerFrench):false, hasWorkout:log?!!log.workout:false });
+            hasFrench:log?!!(log.pimsleur||log.anki||log.innerFrench||customCount>0):false, hasWorkout:log?!!log.workout:false });
           if (currentWeek.length===7) { weeks.push(currentWeek); currentWeek=[]; }
           cursor.setDate(cursor.getDate()+1);
           if (weeks.length>90) break;
@@ -276,8 +295,8 @@
 
       const yearStats = () => {
         const logs=Object.values(data.logs);
-        return { active:logs.filter(l=>l.pimsleur||l.anki||l.innerFrench||l.workout).length,
-                 full:logs.filter(l=>l.pimsleur&&l.anki&&l.innerFrench).length,
+        return { active:logs.filter(l=>l.pimsleur||l.anki||l.innerFrench||l.workout||(data.customHabits||[]).some(h=>l[h.key])).length,
+                 full:logs.filter(l=>l.pimsleur&&l.anki&&l.innerFrench&&(data.customHabits||[]).every(h=>l[h.key])).length,
                  workouts:logs.filter(l=>l.workout).length };
       };
 
@@ -398,6 +417,10 @@
               <HabitRow habitKey="pimsleur" emoji="🎧" label="Pimsleur" sublabel={`Logging lesson ${data.pimsleurTotal||0}`} countField="pimsleurTotal" countValue={data.pimsleurTotal||0} />
               <HabitRow habitKey="anki"     emoji="🃏" label="Anki / 26s" sublabel="20 new cards + reviews" />
               <HabitRow habitKey="innerFrench" emoji="🎙️" label="Inner French" sublabel={`Logging episode ${data.innerFrenchTotal||0}`} countField="innerFrenchTotal" countValue={data.innerFrenchTotal||0} />
+
+              {(data.customHabits||[]).map(h=>(
+                <HabitRow key={h.key} habitKey={h.key} emoji={h.emoji} label={h.label} sublabel="Custom habit" />
+              ))}
 
               {/* Workout */}
               <div style={{ ...CS, background:todayLog.workout?cardActive:card, border:`1px solid ${todayLog.workout?borderActive:border}` }}>
@@ -540,7 +563,7 @@
 
               <div style={{ fontSize:10, color:textMuted, letterSpacing:1, textAlign:"center" }}>
                 <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6, marginBottom:6 }}>
-                  <span>FRENCH</span>
+                  <span>COMBO</span>
                   {[0,1,2,3,4].map(c=><div key={c} style={{ width:13, height:13, borderRadius:2, background:heatColors[c] }}/>)}
                   <span>MORE</span>
                 </div>
@@ -589,7 +612,7 @@
                         {isToday && <span style={{ marginLeft:6, fontSize:9, color:accent, letterSpacing:1 }}>TODAY</span>}
                       </div>
                       <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-                        {[{key:"pimsleur",emoji:"🎧"},{key:"anki",emoji:"🃏"},{key:"innerFrench",emoji:"🎙️"}].map(h=>(
+                        {[{key:"pimsleur",emoji:"🎧"},{key:"anki",emoji:"🃏"},{key:"innerFrench",emoji:"🎙️"},...(data.customHabits||[])].map(h=>(
                           <span key={h.key} style={{ fontSize:16, opacity:log[h.key]?1:0.15 }}>{h.emoji}</span>
                         ))}
                         <span style={{ fontSize:16, opacity:w?1:0.15 }}>{w?w.emoji:"🏋️"}</span>
@@ -598,7 +621,7 @@
                     </div>
                     {isEditing && (
                       <div style={{ background:bg, borderRadius:10, padding:14, marginBottom:12, border:`1px solid ${border}` }}>
-                        {[{key:"pimsleur",emoji:"🎧",label:"Pimsleur"},{key:"anki",emoji:"🃏",label:"Anki / 26s"},{key:"innerFrench",emoji:"🎙️",label:"Inner French"}].map(h=>(
+                        {[{key:"pimsleur",emoji:"🎧",label:"Pimsleur"},{key:"anki",emoji:"🃏",label:"Anki / 26s"},{key:"innerFrench",emoji:"🎙️",label:"Inner French"},...(data.customHabits||[])].map(h=>(
                           <div key={h.key} onClick={()=>toggleDayHabit(date,h.key)} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0", cursor:"pointer", borderBottom:`1px solid ${border}` }}>
                             <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                               <span style={{ fontSize:20 }}>{h.emoji}</span>
@@ -658,10 +681,34 @@
               {saved&&<div style={{ textAlign:"center", marginTop:4, marginBottom:16, color:green, fontSize:12, letterSpacing:2 }}>✓ SAVED</div>}
 
               <div style={{ borderTop:`1px solid ${border}`, paddingTop:20, marginTop:8 }}>
+                <div style={LS}>Custom habits</div>
+                <div style={CS}>
+                  <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+                    <input type="text" value={newHabitName} onChange={e=>setNewHabitName(e.target.value)} placeholder="New habit name…"
+                      onKeyDown={e=>{ if(e.key==="Enter") addHabit(); }}
+                      style={{ flex:1, background:bg, border:`1px solid ${border}`, borderRadius:8, color:text, fontSize:14, padding:"10px 12px", fontFamily:"Georgia,serif" }} />
+                    <button onClick={addHabit} style={{ background:accent, border:"none", borderRadius:8, color:"#fff", fontSize:13, fontWeight:"bold", padding:"10px 16px", cursor:"pointer", fontFamily:"Georgia,serif" }}>ADD</button>
+                  </div>
+                  {(data.customHabits||[]).length===0 && (
+                    <div style={{ color:textMuted, fontSize:12, textAlign:"center", padding:"8px 0" }}>No custom habits yet. Type a name above to add one.</div>
+                  )}
+                  {(data.customHabits||[]).map(h=>(
+                    <div key={h.key} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0", borderTop:`1px solid ${border}` }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                        <span style={{ fontSize:18 }}>{h.emoji}</span>
+                        <span style={{ fontSize:14, color:text }}>{h.label}</span>
+                      </div>
+                      <button onClick={()=>deleteHabit(h.key)} style={{ background:"none", border:`1px solid ${red}`, borderRadius:8, color:red, fontSize:11, padding:"4px 12px", cursor:"pointer", fontFamily:"Georgia,serif" }}>DELETE</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ borderTop:`1px solid ${border}`, paddingTop:20, marginTop:8 }}>
                 <div style={LS}>Danger zone</div>
                 <button onClick={()=>{
                   if(window.confirm("Reset ALL data? This cannot be undone.")) {
-                    const fresh = { startDate: localDateKey(new Date()), logs:{}, comprehensionLog:[], pimsleurTotal:0, innerFrenchTotal:0 };
+                    const fresh = { startDate: localDateKey(new Date()), logs:{}, comprehensionLog:[], pimsleurTotal:0, innerFrenchTotal:0, customHabits:[] };
                     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh)); } catch(e) {}
                     if (user && window.__firebase) window.__firebase.saveData(user.uid, fresh);
                     setData(fresh);
