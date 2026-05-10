@@ -25,7 +25,7 @@
   <!-- Firebase -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+    import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged }
       from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
     import { getFirestore, doc, getDoc, setDoc }
       from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -47,9 +47,10 @@
     // Expose to window so Babel/React script can call these
     window.__firebase = {
       auth, db, provider,
-      signIn: () => signInWithPopup(auth, provider),
+      signIn: () => signInWithRedirect(auth, provider),
       signOut: () => signOut(auth),
       onAuthStateChanged: (cb) => onAuthStateChanged(auth, cb),
+      handleRedirect: () => getRedirectResult(auth),
       saveData: async (uid, data) => {
         await setDoc(doc(db, "users", uid), data);
         try { localStorage.setItem("tef_tracker_v2", JSON.stringify(data)); } catch(e) {}
@@ -141,6 +142,8 @@
       useEffect(() => {
         const waitForFirebase = () => {
           if (!window.__firebase) { window.addEventListener("firebaseReady", waitForFirebase, {once:true}); return; }
+          // Handle redirect result first (when returning from Google)
+          window.__firebase.handleRedirect().catch(()=>{});
           window.__firebase.onAuthStateChanged(async (u) => {
             setUser(u);
             if (u) {
