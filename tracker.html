@@ -217,6 +217,42 @@
         save({ ...data, customHabits: newHabits, logs: newLogs });
       };
 
+      const exportCSV = () => {
+        const customs = data.customHabits || [];
+        const headers = ["Date","Pimsleur","Anki","Inner French","Workout", ...customs.map(h=>h.label), "Ear%"];
+        const csvEscape = (v) => {
+          const s = String(v??"");
+          return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+        };
+        const compByDate = {};
+        (data.comprehensionLog||[]).forEach(e => { compByDate[e.date] = e.value; });
+        const dates = Object.keys(data.logs).sort();
+        const rows = [headers.map(csvEscape).join(",")];
+        dates.forEach(d => {
+          const l = data.logs[d] || {};
+          const row = [
+            d,
+            l.pimsleur ? "TRUE" : "FALSE",
+            l.anki ? "TRUE" : "FALSE",
+            l.innerFrench ? "TRUE" : "FALSE",
+            l.workout || "",
+            ...customs.map(h => l[h.key] ? "TRUE" : "FALSE"),
+            compByDate[d] ?? ""
+          ];
+          rows.push(row.map(csvEscape).join(","));
+        });
+        const csv = rows.join("\n");
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `tracker-export-${localDateKey(new Date())}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      };
+
       // Edit/delete a specific day from History
       const updateDayLog = (date, newLog) => {
         const newLogs = { ...data.logs, [date]: newLog };
@@ -290,7 +326,7 @@
       const getHeatColor = (cell) => {
         if (cell.isFuture)      return heatColors.future;
         if (cell.hasWorkout&&!cell.hasFrench) return "#2d6a2d";
-        return heatColors[cell.count]||heatColors[0];
+        return heatColors[Math.min(cell.count,4)]||heatColors[0];
       };
 
       const yearStats = () => {
@@ -701,6 +737,18 @@
                       <button onClick={()=>deleteHabit(h.key)} style={{ background:"none", border:`1px solid ${red}`, borderRadius:8, color:red, fontSize:11, padding:"4px 12px", cursor:"pointer", fontFamily:"Georgia,serif" }}>DELETE</button>
                     </div>
                   ))}
+                </div>
+              </div>
+
+              <div style={{ borderTop:`1px solid ${border}`, paddingTop:20, marginTop:8 }}>
+                <div style={LS}>Export</div>
+                <div style={CS}>
+                  <div style={{ fontSize:13, color:textMuted, marginBottom:12, lineHeight:1.5 }}>
+                    Download all logged days as a spreadsheet. Opens in Excel, Numbers, or Google Sheets.
+                  </div>
+                  <button onClick={exportCSV} style={{ width:"100%", padding:"12px", borderRadius:10, background:accent, border:"none", color:"#fff", fontSize:13, fontWeight:"bold", cursor:"pointer", fontFamily:"Georgia,serif", letterSpacing:1 }}>
+                    📊 EXPORT TO CSV
+                  </button>
                 </div>
               </div>
 
