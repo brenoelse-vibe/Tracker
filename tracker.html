@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -23,6 +24,7 @@
   <div id="root"></div>
 
   <!-- Firebase -->
+
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
@@ -100,6 +102,8 @@
       { key:"pimsleur",    emoji:"🎧", label:"Pimsleur",    countField:"pimsleurTotal",    sublabelFn:(d)=>`Logging lesson ${d.pimsleurTotal||0}` },
       { key:"anki",        emoji:"🃏", label:"Flash cards", sublabelFn:()=>"20 new cards + reviews" },
       { key:"innerFrench", emoji:"🎙️", label:"Inner French", countField:"innerFrenchTotal", sublabelFn:(d)=>`Logging episode ${d.innerFrenchTotal||0}` },
+      { key:"workout",     emoji:"🏋️", label:"Workout",     sublabelFn:()=>"Gym, cardio, recovery…" },
+      { key:"eartest",     emoji:"👂", label:"Ear Test",    sublabelFn:()=>"Inner French audio-only %" },
     ];
 
     const WORKOUT_TYPES = [
@@ -485,6 +489,7 @@
               ))}
 
               {/* Workout */}
+              {!hiddenBuiltins.includes("workout") && (
               <div style={{ ...CS, background:todayLog.workout?cardActive:card, border:`1px solid ${todayLog.workout?borderActive:border}` }}>
                 <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                   <div style={{ display:"flex", alignItems:"center", gap:12 }}>
@@ -509,8 +514,10 @@
                   </div>
                 )}
               </div>
+              )}
 
               {/* Ear test */}
+              {!hiddenBuiltins.includes("eartest") && (
               <div style={CS}>
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                   <div>
@@ -529,6 +536,7 @@
                   <div style={{ marginTop:8, fontSize:28, fontWeight:"bold", color:lastComp>=75?green:lastComp>=60?accent:red }}>{lastComp}%</div>
                 )}
               </div>
+              )}
 
               {saved&&<div style={{ textAlign:"center", marginTop:16, color:green, fontSize:12, letterSpacing:2 }}>✓ SAVED</div>}
             </div>
@@ -845,5 +853,6 @@
 
     ReactDOM.render(<App />, document.getElementById("root"));
   </script>
+
 </body>
 </html>
