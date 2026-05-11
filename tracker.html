@@ -94,6 +94,8 @@
       { month:6, label:"Exam Ready", pimsleur:180, comprehension:95, innerFrench:72 },
     ];
 
+    const EMOJI_PRESETS = ["📌","📚","✍️","💪","🧘","🏃","🚴","🥗","💧","☕","🌱","💊","🧠","💤","🎵","🎨","💼","💰","🙏","❤️","🌅","📖"];
+
     const BUILTIN_HABITS = [
       { key:"pimsleur",    emoji:"🎧", label:"Pimsleur",    countField:"pimsleurTotal",    sublabelFn:(d)=>`Logging lesson ${d.pimsleurTotal||0}` },
       { key:"anki",        emoji:"🃏", label:"Flash cards", sublabelFn:()=>"20 new cards + reviews" },
@@ -143,6 +145,8 @@
       const [authLoading, setAuthLoading] = useState(true);
       const [syncing, setSyncing]     = useState(false);
       const [newHabitName, setNewHabitName] = useState("");
+      const [newHabitEmoji, setNewHabitEmoji] = useState("📌");
+      const [editingEmojiFor, setEditingEmojiFor] = useState(null);
 
       const today = localDateKey(new Date());
 
@@ -211,10 +215,14 @@
       const addHabit = () => {
         const name = newHabitName.trim();
         if (!name) return;
-        const key = "custom_" + name.toLowerCase().replace(/[^a-z0-9]/g,"_");
-        if ((data.customHabits||[]).find(h=>h.key===key)) return;
-        save({ ...data, customHabits: [...(data.customHabits||[]), { key, label: name, emoji: "📌" }] });
+        const key = "custom_" + name.toLowerCase().replace(/[^a-z0-9]/g,"_") + "_" + Date.now().toString(36);
+        save({ ...data, customHabits: [...(data.customHabits||[]), { key, label: name, emoji: newHabitEmoji || "📌" }] });
         setNewHabitName("");
+        setNewHabitEmoji("📌");
+      };
+      const updateHabitEmoji = (key, emoji) => {
+        const newHabits = (data.customHabits||[]).map(h => h.key===key ? { ...h, emoji } : h);
+        save({ ...data, customHabits: newHabits });
       };
       const deleteHabit = (key) => {
         if (!window.confirm("Delete this habit? It will be removed from all logged days.")) return;
@@ -757,22 +765,43 @@
 
                 <div style={CS}>
                   <div style={{ fontSize:11, color:textMuted, marginBottom:10, textTransform:"uppercase", letterSpacing:1 }}>Custom</div>
-                  <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+
+                  <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+                    <input type="text" value={newHabitEmoji} onChange={e=>setNewHabitEmoji(e.target.value || "📌")} maxLength="4"
+                      style={{ width:54, textAlign:"center", background:bg, border:`1px solid ${border}`, borderRadius:8, fontSize:20, padding:"8px 0", fontFamily:"Georgia,serif" }} />
                     <input type="text" value={newHabitName} onChange={e=>setNewHabitName(e.target.value)} placeholder="New habit name…"
                       onKeyDown={e=>{ if(e.key==="Enter") addHabit(); }}
                       style={{ flex:1, background:bg, border:`1px solid ${border}`, borderRadius:8, color:text, fontSize:14, padding:"10px 12px", fontFamily:"Georgia,serif" }} />
                     <button onClick={addHabit} style={{ background:accent, border:"none", borderRadius:8, color:"#fff", fontSize:13, fontWeight:"bold", padding:"10px 16px", cursor:"pointer", fontFamily:"Georgia,serif" }}>ADD</button>
                   </div>
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:14 }}>
+                    {EMOJI_PRESETS.map(e=>(
+                      <button key={e} onClick={()=>setNewHabitEmoji(e)} style={{ width:34, height:34, fontSize:18, borderRadius:8, background:newHabitEmoji===e?accent:bg, border:`1px solid ${newHabitEmoji===e?accent:border}`, cursor:"pointer", fontFamily:"Georgia,serif" }}>{e}</button>
+                    ))}
+                  </div>
+                  <div style={{ fontSize:10, color:textMuted, marginBottom:14, fontStyle:"italic", lineHeight:1.5 }}>Pick from above or type any emoji in the box. Tap an existing habit's emoji to change it.</div>
+
                   {(data.customHabits||[]).length===0 && (
                     <div style={{ color:textMuted, fontSize:12, textAlign:"center", padding:"8px 0" }}>No custom habits yet. Type a name above to add one.</div>
                   )}
                   {(data.customHabits||[]).map(h=>(
-                    <div key={h.key} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0", borderTop:`1px solid ${border}` }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                        <span style={{ fontSize:18 }}>{h.emoji}</span>
-                        <span style={{ fontSize:14, color:text }}>{h.label}</span>
+                    <div key={h.key} style={{ borderTop:`1px solid ${border}` }}>
+                      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0" }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                          <span onClick={()=>setEditingEmojiFor(editingEmojiFor===h.key?null:h.key)} style={{ fontSize:22, cursor:"pointer", padding:"2px 8px", borderRadius:8, background:editingEmojiFor===h.key?bg:"none", border:`1px solid ${editingEmojiFor===h.key?border:"transparent"}` }}>{h.emoji}</span>
+                          <span style={{ fontSize:14, color:text }}>{h.label}</span>
+                        </div>
+                        <button onClick={()=>deleteHabit(h.key)} style={{ background:"none", border:`1px solid ${red}`, borderRadius:8, color:red, fontSize:11, padding:"4px 12px", cursor:"pointer", fontFamily:"Georgia,serif" }}>DELETE</button>
                       </div>
-                      <button onClick={()=>deleteHabit(h.key)} style={{ background:"none", border:`1px solid ${red}`, borderRadius:8, color:red, fontSize:11, padding:"4px 12px", cursor:"pointer", fontFamily:"Georgia,serif" }}>DELETE</button>
+                      {editingEmojiFor===h.key && (
+                        <div style={{ display:"flex", flexWrap:"wrap", gap:6, padding:"8px 0 12px" }}>
+                          <input type="text" defaultValue={h.emoji} onBlur={e=>{ updateHabitEmoji(h.key, e.target.value || "📌"); setEditingEmojiFor(null); }} maxLength="4"
+                            style={{ width:54, textAlign:"center", background:bg, border:`1px solid ${border}`, borderRadius:8, fontSize:18, padding:"6px 0", fontFamily:"Georgia,serif" }} />
+                          {EMOJI_PRESETS.map(e=>(
+                            <button key={e} onClick={()=>{ updateHabitEmoji(h.key, e); setEditingEmojiFor(null); }} style={{ width:34, height:34, fontSize:18, borderRadius:8, background:h.emoji===e?accent:bg, border:`1px solid ${h.emoji===e?accent:border}`, cursor:"pointer", fontFamily:"Georgia,serif" }}>{e}</button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
