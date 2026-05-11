@@ -73,7 +73,7 @@
   </script>
 
   <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useRef } = React;
     const STORAGE_KEY = "tef_tracker_v2";
 
     const localDateKey = (d) => {
@@ -147,6 +147,7 @@
       const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
       const [editingDate, setEditingDate] = useState(null);
       const [viewDate, setViewDate] = useState(localDateKey(new Date()));
+      const yearScrollRef = useRef(null);
       const [saved, setSaved]         = useState(false);
       const [user, setUser]           = useState(null);
       const [authLoading, setAuthLoading] = useState(true);
@@ -188,6 +189,21 @@
         setShowCompForm(false);
         setShowWorkoutPicker(false);
       }, [viewDate]);
+
+      // Scroll year view so today is visible (1 week before today at left edge)
+      useEffect(() => {
+        if (activeTab !== "year") return;
+        const timer = setTimeout(() => {
+          const container = yearScrollRef.current;
+          if (!container) return;
+          const todayCol = container.querySelector('[data-today="1"]');
+          if (!todayCol) return;
+          // Position today's column ~1 week (one column ≈ 19px) right of left edge
+          const offsetLeft = todayCol.offsetLeft - 19 - 30;
+          container.scrollLeft = Math.max(0, offsetLeft);
+        }, 60);
+        return () => clearTimeout(timer);
+      }, [activeTab]);
 
       const save = (newData) => {
         setData(newData);
@@ -355,25 +371,45 @@
       const recentComp = (data.comprehensionLog||[]).slice(-7);
       const selWorkout = WORKOUT_TYPES.find(w=>w.key===todayLog.workout);
 
+      const getISOWeek = (date) => {
+        const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+        const dayNum = d.getUTCDay() || 7;
+        d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+        const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+        return Math.ceil((((d - yearStart) / 86400000) + 1)/7);
+      };
+
       const buildYearGrid = () => {
         const todayDate=new Date();
+        // Start: Jan 1 of current year, rounded back to Sunday
         const year=todayDate.getFullYear();
         const startDate=new Date(year,0,1);
         while (startDate.getDay()!==0) startDate.setDate(startDate.getDate()-1);
-        const endDate=new Date(2027,5,30), weeks=[];
+        // End: 12 months after today
+        const endDate=new Date(todayDate.getFullYear(), todayDate.getMonth()+12, todayDate.getDate());
+        const weeks=[];
         let currentWeek=[], cursor=new Date(startDate);
         while (cursor<=endDate||currentWeek.length>0) {
           const dateKey=localDateKey(cursor), log=data.logs[dateKey];
           const customCount=log?(data.customHabits||[]).filter(h=>log[h.key]).length:0;
           const count=log?(log.pimsleur?1:0)+(log.anki?1:0)+(log.innerFrench?1:0)+(log.workout?1:0)+customCount:0;
-          currentWeek.push({ date:dateKey, count, month:cursor.getMonth(), day:cursor.getDate(), year:cursor.getFullYear(),
+          const d=cursor.getDate(), m=cursor.getMonth();
+          currentWeek.push({ date:dateKey, count, month:m, day:d, year:cursor.getFullYear(),
             isFuture:cursor>todayDate, isToday:dateKey===today,
-            hasFrench:log?!!(log.pimsleur||log.anki||log.innerFrench||customCount>0):false, hasWorkout:log?!!log.workout:false });
-          if (currentWeek.length===7) { weeks.push(currentWeek); currentWeek=[]; }
+            hasFrench:log?!!(log.pimsleur||log.anki||log.innerFrench||customCount>0):false, hasWorkout:log?!!log.workout:false,
+            label: (d===1 && m===0) ? String(cursor.getFullYear()).slice(2) : ([1,10,20,30].includes(d) ? String(d) : "") });
+          if (currentWeek.length===7) {
+            const monday = new Date(currentWeek[1].date+"T12:00:00");
+            weeks.push({ days: currentWeek, weekNum: getISOWeek(monday) });
+            currentWeek=[];
+          }
           cursor.setDate(cursor.getDate()+1);
-          if (weeks.length>90) break;
+          if (weeks.length>120) break;
         }
-        if (currentWeek.length>0) { while(currentWeek.length<7) currentWeek.push({isFuture:true,count:0}); weeks.push(currentWeek); }
+        if (currentWeek.length>0) {
+          while(currentWeek.length<7) currentWeek.push({isFuture:true,count:0,label:""});
+          weeks.push({ days: currentWeek, weekNum: 0 });
+        }
         return weeks;
       };
 
@@ -618,7 +654,7 @@
           {/* YEAR */}
           {activeTab==="year" && (
             <div style={{ padding:"20px 16px" }}>
-              <div style={LS}>{new Date().getFullYear()} — Jun 2027</div>
+              <div style={LS}>{(()=>{ const t=new Date(); const end=new Date(t.getFullYear(),t.getMonth()+12,1); return `${t.getFullYear()} — ${monthLabels[end.getMonth()]} ${end.getFullYear()}`; })()}</div>
               <div style={{ ...CS, display:"flex", justifyContent:"space-around", textAlign:"center" }}>
                 {(()=>{ const s=yearStats(); return [{label:"Active days",value:s.active},{label:"Full days",value:s.full},{label:"Workouts",value:s.workouts}].map(st=>(
                   <div key={st.label}>
@@ -628,26 +664,44 @@
                 ))})()}
               </div>
 
-              <div style={{ ...CS, overflowX:"auto" }}>
+              <div ref={yearScrollRef} style={{ ...CS, overflowX:"auto" }}>
                 <div style={{ display:"flex", gap:3, minWidth:"fit-content" }}>
-                  <div style={{ display:"flex", flexDirection:"column", gap:3, marginRight:4, paddingTop:18, position:"sticky", left:0, background:card, zIndex:1, paddingRight:4 }}>
+                  <div style={{ display:"flex", flexDirection:"column", gap:3, marginRight:4, paddingTop:34, position:"sticky", left:0, background:card, zIndex:1, paddingRight:4 }}>
                     {["","M","","W","","F",""].map((d,i)=>(
-                      <div key={i} style={{ height:13, fontSize:8, color:textMuted, display:"flex", alignItems:"center", width:14 }}>{d}</div>
+                      <div key={i} style={{ height:16, fontSize:8, color:textMuted, display:"flex", alignItems:"center", width:14 }}>{d}</div>
                     ))}
                   </div>
                   <div style={{ display:"flex", gap:3 }}>
-                    {buildYearGrid().map((week,wi)=>{
-                      const firstDay=week.find(d=>d.day===1);
-                      const mLabel=firstDay ? (firstDay.month===0 ? `Jan ${String(firstDay.year).slice(2)}` : monthLabels[firstDay.month]) : "";
-                      return (
-                        <div key={wi} style={{ display:"flex", flexDirection:"column", gap:3 }}>
-                          <div style={{ height:14, fontSize:9, color:textMuted, fontWeight:"bold", whiteSpace:"nowrap", overflow:"visible" }}>{mLabel}</div>
-                          {week.map((cell,di)=>(
-                            <div key={di} style={{ width:13, height:13, borderRadius:2, background:getHeatColor(cell), outline:cell.isToday?`1.5px solid ${text}`:"none", outlineOffset:cell.isToday?"1px":"0", boxSizing:"border-box" }} />
-                          ))}
-                        </div>
-                      );
-                    })}
+                    {(() => {
+                      const grid = buildYearGrid();
+                      // Find indices where we should show a week label
+                      return grid.map((week,wi)=>{
+                        const firstDay=week.days.find(d=>d.day===1);
+                        const mLabel=firstDay ? (firstDay.month===0 ? `Jan ${String(firstDay.year).slice(2)}` : monthLabels[firstDay.month]) : "";
+                        // Show week label every 4 weeks OR at very first/last
+                        const wn = week.weekNum;
+                        const showWeek = wn>0 && (wn%4===0 || wi===0 || wi===grid.length-1);
+                        const todayIdx = grid.findIndex(w => w.days.some(d=>d.isToday));
+                        const isTodayCol = wi===todayIdx;
+                        return (
+                          <div key={wi} data-today={isTodayCol?"1":undefined} style={{ display:"flex", flexDirection:"column", gap:3 }}>
+                            <div style={{ height:14, fontSize:8, color:accent, fontWeight:"bold", whiteSpace:"nowrap", textAlign:"center", width:16 }}>{showWeek ? `W${wn}` : ""}</div>
+                            <div style={{ height:14, fontSize:9, color:textMuted, fontWeight:"bold", whiteSpace:"nowrap", overflow:"visible" }}>{mLabel}</div>
+                            {week.days.map((cell,di)=>{
+                              const bgCol = getHeatColor(cell);
+                              // Choose a text color readable on each background
+                              const isDark = ["#c46d10","#7a3f08","#2d6a2d"].includes(bgCol);
+                              const numCol = isDark ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.45)";
+                              return (
+                                <div key={di} style={{ width:16, height:16, borderRadius:3, background:bgCol, outline:cell.isToday?`1.5px solid ${text}`:"none", outlineOffset:cell.isToday?"1px":"0", boxSizing:"border-box", display:"flex", alignItems:"center", justifyContent:"center", fontSize:7, fontWeight:"bold", color:numCol, lineHeight:1, fontFamily:"Georgia,serif" }}>
+                                  {cell.label||""}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
               </div>
@@ -655,11 +709,11 @@
               <div style={{ fontSize:10, color:textMuted, letterSpacing:1, textAlign:"center" }}>
                 <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6, marginBottom:6 }}>
                   <span>COMBO</span>
-                  {[0,1,2,3,4].map(c=><div key={c} style={{ width:13, height:13, borderRadius:2, background:heatColors[c] }}/>)}
+                  {[0,1,2,3,4].map(c=><div key={c} style={{ width:14, height:14, borderRadius:3, background:heatColors[c] }}/>)}
                   <span>MORE</span>
                 </div>
                 <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
-                  <div style={{ width:13, height:13, borderRadius:2, background:"#2d6a2d" }}/>
+                  <div style={{ width:14, height:14, borderRadius:3, background:"#2d6a2d" }}/>
                   <span>WORKOUT ONLY</span>
                 </div>
               </div>
