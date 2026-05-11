@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Tracker" />
+  <title>Tracker</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #f5f0e8; font-family: Georgia, serif; }
+    input:focus { outline: 2px solid #c17f24; }
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    ::-webkit-scrollbar { display: none; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- Firebase -->
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+      from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+    import { getFirestore, doc, getDoc, setDoc }
+      from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAxyUfbjCJqBihgqt27I3r8NEnDzBv0870",
+      authDomain: "tracker-2e97e.firebaseapp.com",
+      projectId: "tracker-2e97e",
+      storageBucket: "tracker-2e97e.firebasestorage.app",
+      messagingSenderId: "415883101548",
+      appId: "1:415883101548:web:2fe1b2d516d0b8713adf49"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    const provider = new GoogleAuthProvider();
+
+    // Expose to window so Babel/React script can call these
+    window.__firebase = {
+      auth, db, provider,
+      signIn: () => signInWithPopup(auth, provider).catch(e => alert("Sign-in error: " + e.message)),
+      signOut: () => signOut(auth),
+      onAuthStateChanged: (cb) => onAuthStateChanged(auth, cb),
+      saveData: async (uid, data) => {
+        await setDoc(doc(db, "users", uid), data);
+        try { localStorage.setItem("tef_tracker_v2", JSON.stringify(data)); } catch(e) {}
+      },
+      loadData: async (uid) => {
+        try {
+          const snap = await getDoc(doc(db, "users", uid));
+          if (snap.exists()) return snap.data();
+        } catch(e) {}
+        // fallback to localStorage
+        try {
+          const local = localStorage.getItem("tef_tracker_v2");
+          if (local) return JSON.parse(local);
+        } catch(e) {}
+        return null;
+      }
+    };
+    window.dispatchEvent(new Event("firebaseReady"));
+  </script>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    const STORAGE_KEY = "tef_tracker_v2";
+
+    const localDateKey = (d) => {
+      const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,"0"), day=String(d.getDate()).padStart(2,"0");
+      return `${y}-${m}-${day}`;
+    };
+
+    const defaultData = {
+      startDate: localDateKey(new Date()),
+      logs: {}, comprehensionLog: [],
+      pimsleurTotal: 14, innerFrenchTotal: 2,
+      customHabits: [],
+      hiddenBuiltins: [],
+    };
+
+    const milestones = [
+      { month:1, label:"Month 1",  pimsleur:30,  comprehension:60, innerFrench:12 },
+      { month:2, label:"Month 2",  pimsleur:60,  comprehension:75, innerFrench:24 },
+      { month:3, label:"Month 3",  pimsleur:90,  comprehension:85, innerFrench:36 },
+      { month:6, label:"Exam Ready", pimsleur:180, comprehension:95, innerFrench:72 },
+    ];
+
+    const EMOJI_PRESETS = ["📌","📚","✍️","💪","🧘","🏃","🚴","🥗","💧","☕","🌱","💊","🧠","💤","🎵","🎨","💼","💰","🙏","❤️","🌅","📖"];
+
+    const BUILTIN_HABITS = [
+      { key:"pimsleur",    emoji:"🎧", label:"Pimsleur",    countField:"pimsleurTotal",    sublabelFn:(d)=>`Logging lesson ${d.pimsleurTotal||0}` },
+      { key:"anki",        emoji:"🃏", label:"Flash cards", sublabelFn:()=>"20 new cards + reviews" },
+      { key:"innerFrench", emoji:"🎙️", label:"Inner French", countField:"innerFrenchTotal", sublabelFn:(d)=>`Logging episode ${d.innerFrenchTotal||0}` },
+      { key:"workout",     emoji:"🏋️", label:"Workout",     sublabelFn:()=>"Gym, cardio, recovery…" },
+      { key:"eartest",     emoji:"👂", label:"Ear Test",    sublabelFn:()=>"Inner French audio-only %" },
+    ];
+
+    const WORKOUT_TYPES = [
+      { key:"push",     label:"Push",     emoji:"💪" },
+      { key:"pull",     label:"Pull",     emoji:"🏋️" },
+      { key:"legs",     label:"Legs",     emoji:"🦵" },
+      { key:"cardio",   label:"Cardio",   emoji:"🏃" },
+      { key:"recovery", label:"Recovery", emoji:"🧘" },
+    ];
+
+    const monthLabels = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const bg="#f5f0e8", card="#ede8df", cardActive="#e8f0e4";
+    const border="#ddd8ce", borderActive="#a8c8a0";
+    const text="#2c2416", textMuted="#8c7e6a";
+    const accent="#c17f24", green="#4a8c4a", red="#c44";
+    const heatColors = { 0:"#e8e2d6",1:"#f5c98a",2:"#e89a3c",3:"#c46d10",4:"#7a3f08",future:"#f5f0e8",beforeStart:"#f0ebe2" };
+
+    // +/- stepper for lesson/episode numbers
+    function Stepper({ value, onChange, min=0, max=999 }) {
+      return (
+        <div style={{ display:"flex", alignItems:"center", border:`1px solid ${border}`, borderRadius:10, overflow:"hidden", background:bg }}>
+          <button onClick={() => onChange(Math.max(min, value-1))}
+            style={{ width:38, height:38, background:"none", border:"none", fontSize:22, color:textMuted, cursor:"pointer", fontFamily:"Georgia,serif", lineHeight:1 }}>−</button>
+          <input type="number" value={value} min={min} max={max}
+            onChange={e => { const v=parseInt(e.target.value); if(!isNaN(v)) onChange(Math.min(max,Math.max(min,v))); }}
+            style={{ width:48, textAlign:"center", border:"none", background:"none", fontSize:16, fontWeight:"bold", color:text, fontFamily:"Georgia,serif", padding:"8px 0" }} />
+          <button onClick={() => onChange(Math.min(max, value+1))}
+            style={{ width:38, height:38, background:"none", border:"none", fontSize:22, color:accent, cursor:"pointer", fontFamily:"Georgia,serif", lineHeight:1 }}>+</button>
+        </div>
+      );
+    }
+
+    function App() {
+      const [data, setData]           = useState(defaultData);
+      const [activeTab, setActiveTab] = useState("today");
+      const [todayLog, setTodayLog]   = useState({ pimsleur:false, anki:false, innerFrench:false, workout:null, comprehension:"" });
+      const [showCompForm, setShowCompForm]         = useState(false);
+      const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
+      const [editingDate, setEditingDate] = useState(null);
+      const [viewDate, setViewDate] = useState(localDateKey(new Date()));
+      const [saved, setSaved]         = useState(false);
+      const [user, setUser]           = useState(null);
+      const [authLoading, setAuthLoading] = useState(true);
+      const [syncing, setSyncing]     = useState(false);
+      const [newHabitName, setNewHabitName] = useState("");
+      const [newHabitEmoji, setNewHabitEmoji] = useState("📌");
+      const [editingEmojiFor, setEditingEmojiFor] = useState(null);
+
+      const today = localDateKey(new Date());
+
+      // Listen for Firebase auth state
+      useEffect(() => {
+        const waitForFirebase = () => {
+          if (!window.__firebase) { window.addEventListener("firebaseReady", waitForFirebase, {once:true}); return; }
+          window.__firebase.onAuthStateChanged(async (u) => {
+            setUser(u);
+            if (u) {
+              setSyncing(true);
+              const loaded = await window.__firebase.loadData(u.uid);
+              if (loaded) {
+                setData(loaded);
+                const tl = loaded.logs && loaded.logs[today];
+                if (tl) setTodayLog(tl);
+              }
+              setSyncing(false);
+            }
+            setAuthLoading(false);
+          });
+        };
+        waitForFirebase();
+      }, []);
+
+      useEffect(() => {
+        const existing = data.logs[viewDate];
+        const compEntry = (data.comprehensionLog||[]).find(e=>e.date===viewDate);
+        setTodayLog(existing
+          ? { ...existing, comprehension: compEntry ? String(compEntry.value) : (existing.comprehension||"") }
+          : { pimsleur:false, anki:false, innerFrench:false, workout:null, comprehension: compEntry ? String(compEntry.value) : "" });
+        setShowCompForm(false);
+        setShowWorkoutPicker(false);
+      }, [viewDate]);
+
+      const save = (newData) => {
+        setData(newData);
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(newData)); } catch(e) {}
+        if (user && window.__firebase) window.__firebase.saveData(user.uid, newData);
+        setSaved(true); setTimeout(() => setSaved(false), 1500);
+      };
+
+      const toggleHabit = (habit) => {
+        const newLog = { ...todayLog, [habit]: !todayLog[habit] };
+        setTodayLog(newLog);
+        save({ ...data, logs: { ...data.logs, [viewDate]: newLog } });
+      };
+
+      const selectWorkout = (type) => {
+        const newLog = { ...todayLog, workout: todayLog.workout===type ? null : type };
+        setTodayLog(newLog);
+        save({ ...data, logs: { ...data.logs, [viewDate]: newLog } });
+        setShowWorkoutPicker(false);
+      };
+
+      const logComprehension = () => {
+        const val = parseInt(todayLog.comprehension);
+        if (isNaN(val)||val<0||val>100) return;
+        const newCompLog = [...(data.comprehensionLog||[]).filter(e=>e.date!==viewDate), {date:viewDate,value:val}];
+        save({ ...data, logs:{...data.logs,[viewDate]:todayLog}, comprehensionLog:newCompLog });
+        setShowCompForm(false);
+      };
+
+      const updateCount = (field, val) => save({ ...data, [field]: val });
+
+      const addHabit = () => {
+        const name = newHabitName.trim();
+        if (!name) return;
+        const key = "custom_" + name.toLowerCase().replace(/[^a-z0-9]/g,"_") + "_" + Date.now().toString(36);
+        save({ ...data, customHabits: [...(data.customHabits||[]), { key, label: name, emoji: newHabitEmoji || "📌" }] });
+        setNewHabitName("");
+        setNewHabitEmoji("📌");
+      };
+      const updateHabitEmoji = (key, emoji) => {
+        const newHabits = (data.customHabits||[]).map(h => h.key===key ? { ...h, emoji } : h);
+        save({ ...data, customHabits: newHabits });
+      };
+      const deleteHabit = (key) => {
+        if (!window.confirm("Delete this habit? It will be removed from all logged days.")) return;
+        const newHabits = (data.customHabits||[]).filter(h=>h.key!==key);
+        const newLogs = { ...data.logs };
+        Object.keys(newLogs).forEach(d => { if (newLogs[d][key] !== undefined) { newLogs[d] = { ...newLogs[d] }; delete newLogs[d][key]; } });
+        save({ ...data, customHabits: newHabits, logs: newLogs });
+      };
+
+      const hiddenBuiltins = data.hiddenBuiltins || [];
+      const activeBuiltins = BUILTIN_HABITS.filter(h => !hiddenBuiltins.includes(h.key));
+
+      const toggleBuiltin = (key) => {
+        const cur = data.hiddenBuiltins || [];
+        const next = cur.includes(key) ? cur.filter(k=>k!==key) : [...cur, key];
+        save({ ...data, hiddenBuiltins: next });
+      };
+
+      const exportCSV = () => {
+        const customs = data.customHabits || [];
+        const headers = ["Date","Pimsleur","Anki","Inner French","Workout", ...customs.map(h=>h.label), "Ear%"];
+        const csvEscape = (v) => {
+          const s = String(v??"");
+          return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+        };
+        const compByDate = {};
+        (data.comprehensionLog||[]).forEach(e => { compByDate[e.date] = e.value; });
+        const dates = Object.keys(data.logs).sort();
+        const rows = [headers.map(csvEscape).join(",")];
+        dates.forEach(d => {
+          const l = data.logs[d] || {};
+          const row = [
+            d,
+            l.pimsleur ? "TRUE" : "FALSE",
+            l.anki ? "TRUE" : "FALSE",
+            l.innerFrench ? "TRUE" : "FALSE",
+            l.workout || "",
+            ...customs.map(h => l[h.key] ? "TRUE" : "FALSE"),
+            compByDate[d] ?? ""
+          ];
+          rows.push(row.map(csvEscape).join(","));
+        });
+        const csv = rows.join("\n");
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `tracker-export-${localDateKey(new Date())}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      };
+
+      // Edit/delete a specific day from History
+      const updateDayLog = (date, newLog) => {
+        const newLogs = { ...data.logs, [date]: newLog };
+        save({ ...data, logs: newLogs });
+        if (date === today) setTodayLog({ ...todayLog, ...newLog });
+      };
+      const toggleDayHabit = (date, habit) => {
+        const cur = data.logs[date] || { pimsleur:false, anki:false, innerFrench:false, workout:null, comprehension:"" };
+        updateDayLog(date, { ...cur, [habit]: !cur[habit] });
+      };
+      const setDayWorkout = (date, type) => {
+        const cur = data.logs[date] || { pimsleur:false, anki:false, innerFrench:false, workout:null, comprehension:"" };
+        updateDayLog(date, { ...cur, workout: cur.workout===type ? null : type });
+      };
+      const deleteDay = (date) => {
+        const newLogs = { ...data.logs };
+        delete newLogs[date];
+        const newCompLog = (data.comprehensionLog||[]).filter(e=>e.date!==date);
+        save({ ...data, logs: newLogs, comprehensionLog: newCompLog });
+        if (date === today) setTodayLog({ pimsleur:false, anki:false, innerFrench:false, workout:null, comprehension:"" });
+        setEditingDate(null);
+      };
+
+      const getStreak = () => {
+        let streak=0, d=new Date();
+        while (true) {
+          const key=localDateKey(d), log=data.logs[key];
+          if (log&&(log.pimsleur||log.anki||log.innerFrench||log.workout||(data.customHabits||[]).some(h=>log[h.key]))) { streak++; d.setDate(d.getDate()-1); } else break;
+        }
+        return streak;
+      };
+
+      const days     = (() => {
+        const logKeys = Object.keys(data.logs).filter(k=>{
+          const l=data.logs[k]; return l && (l.pimsleur||l.anki||l.innerFrench||l.workout||(data.customHabits||[]).some(h=>l[h.key]));
+        });
+        const earliest = logKeys.length>0 ? logKeys.sort()[0] : data.startDate;
+        const start = new Date(earliest+"T00:00:00");
+        const now = new Date(); now.setHours(0,0,0,0);
+        return Math.max(1, Math.floor((now-start)/86400000) + 1);
+      })();
+      const lastComp = (data.comprehensionLog||[]).slice(-1)[0]?.value ?? null;
+      const streak   = getStreak();
+      const curMile  = milestones.find(m=>(data.pimsleurTotal||0)<m.pimsleur)||milestones[milestones.length-1];
+      const pct      = (c,t) => Math.min(100,Math.round((c/t)*100));
+      const recentComp = (data.comprehensionLog||[]).slice(-7);
+      const selWorkout = WORKOUT_TYPES.find(w=>w.key===todayLog.workout);
+
+      const buildYearGrid = () => {
+        const todayDate=new Date();
+        const year=todayDate.getFullYear();
+        const startDate=new Date(year,0,1);
+        while (startDate.getDay()!==0) startDate.setDate(startDate.getDate()-1);
+        const endDate=new Date(2027,5,30), weeks=[];
+        let currentWeek=[], cursor=new Date(startDate);
+        while (cursor<=endDate||currentWeek.length>0) {
+          const dateKey=localDateKey(cursor), log=data.logs[dateKey];
+          const customCount=log?(data.customHabits||[]).filter(h=>log[h.key]).length:0;
+          const count=log?(log.pimsleur?1:0)+(log.anki?1:0)+(log.innerFrench?1:0)+(log.workout?1:0)+customCount:0;
+          currentWeek.push({ date:dateKey, count, month:cursor.getMonth(), day:cursor.getDate(), year:cursor.getFullYear(),
+            isFuture:cursor>todayDate, isToday:dateKey===today,
+            hasFrench:log?!!(log.pimsleur||log.anki||log.innerFrench||customCount>0):false, hasWorkout:log?!!log.workout:false });
+          if (currentWeek.length===7) { weeks.push(currentWeek); currentWeek=[]; }
+          cursor.setDate(cursor.getDate()+1);
+          if (weeks.length>90) break;
+        }
+        if (currentWeek.length>0) { while(currentWeek.length<7) currentWeek.push({isFuture:true,count:0}); weeks.push(currentWeek); }
+        return weeks;
+      };
+
+      const getHeatColor = (cell) => {
+        if (cell.isFuture)      return heatColors.future;
+        if (cell.hasWorkout&&!cell.hasFrench) return "#2d6a2d";
+        return heatColors[Math.min(cell.count,4)]||heatColors[0];
+      };
+
+      const yearStats = () => {
+        const logs=Object.values(data.logs);
+        return { active:logs.filter(l=>l.pimsleur||l.anki||l.innerFrench||l.workout||(data.customHabits||[]).some(h=>l[h.key])).length,
+                 full:logs.filter(l=>l.pimsleur&&l.anki&&l.innerFrench&&(data.customHabits||[]).every(h=>l[h.key])).length,
+                 workouts:logs.filter(l=>l.workout).length };
+      };
+
+      const wCounts = () => {
+        const c={}; WORKOUT_TYPES.forEach(w=>c[w.key]=0);
+        Object.values(data.logs).forEach(l=>{ if(l.workout) c[l.workout]=(c[l.workout]||0)+1; });
+        return c;
+      };
+
+      const T  = (active) => ({ flex:1, padding:"11px 0", background:"none", border:"none", color:active?accent:textMuted, fontSize:10, letterSpacing:1.5, textTransform:"uppercase", borderBottom:active?`2px solid ${accent}`:"2px solid transparent", cursor:"pointer", fontFamily:"Georgia,serif" });
+      const CS = { background:card, borderRadius:14, padding:16, border:`1px solid ${border}`, marginBottom:12, boxShadow:"0 1px 3px rgba(0,0,0,0.06)" };
+      const LS = { fontSize:11, letterSpacing:2, color:textMuted, textTransform:"uppercase", marginBottom:16 };
+      const CK = (on) => ({ width:26, height:26, borderRadius:"50%", background:on?green:"transparent", border:`2px solid ${on?green:border}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, color:"#fff", cursor:"pointer", flexShrink:0 });
+
+      const HabitRow = ({ habitKey, emoji, label, sublabel, countField, countValue, children }) => (
+        <div style={{ ...CS, background:todayLog[habitKey]?cardActive:card, border:`1px solid ${todayLog[habitKey]?borderActive:border}` }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:12, flex:1 }}>
+              <span style={{ fontSize:26 }}>{emoji}</span>
+              <div>
+                <div style={{ color:todayLog[habitKey]?green:text, fontSize:15, fontWeight:"bold" }}>{label}</div>
+                <div style={{ color:textMuted, fontSize:11, marginTop:2 }}>{sublabel}</div>
+              </div>
+            </div>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              {countField && (
+                <Stepper value={countValue} onChange={v => updateCount(countField, v)} />
+              )}
+              <div onClick={() => toggleHabit(habitKey)} style={CK(todayLog[habitKey])}>{todayLog[habitKey]?"✓":""}</div>
+            </div>
+          </div>
+          {children}
+        </div>
+      );
+
+      // Auth loading
+      if (authLoading) return (
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", minHeight:"100vh", background:bg, flexDirection:"column", gap:16 }}>
+          <div style={{ fontSize:28 }}>📊</div>
+          <div style={{ fontSize:13, color:textMuted, letterSpacing:2, textTransform:"uppercase" }}>Loading…</div>
+        </div>
+      );
+
+      // Sign-in screen
+      if (!user) return (
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", minHeight:"100vh", background:bg, flexDirection:"column", gap:24, padding:32 }}>
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontSize:10, letterSpacing:3, color:textMuted, textTransform:"uppercase", marginBottom:8 }}>Breno</div>
+            <div style={{ fontSize:28, fontWeight:"bold", color:text }}>Progress Tracker</div>
+            <div style={{ fontSize:13, color:textMuted, marginTop:8 }}>Sign in to sync your data across devices</div>
+          </div>
+          <button onClick={()=>window.__firebase.signIn()} style={{ display:"flex", alignItems:"center", gap:12, background:card, border:`1px solid ${border}`, borderRadius:14, padding:"14px 24px", fontSize:15, color:text, cursor:"pointer", fontFamily:"Georgia,serif", boxShadow:"0 2px 8px rgba(0,0,0,0.08)" }}>
+            <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+            Continue with Google
+          </button>
+          {syncing && <div style={{ fontSize:11, color:textMuted, letterSpacing:1 }}>Syncing…</div>}
+        </div>
+      );
+
+      return (
+        <div style={{ fontFamily:"Georgia,serif", background:bg, minHeight:"100vh", color:text, maxWidth:430, margin:"0 auto", paddingBottom:80 }}>
+
+          {/* HEADER */}
+          <div style={{ background:"#ede8df", padding:"24px 20px 16px", borderBottom:`1px solid ${border}`, position:"sticky", top:0, zIndex:10 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+              <div>
+                <div style={{ fontSize:10, letterSpacing:3, color:textMuted, textTransform:"uppercase", marginBottom:4 }}>Breno</div>
+                <div style={{ fontSize:22, fontWeight:"bold", color:text }}>Progress Tracker</div>
+                <div style={{ fontSize:9, color:textMuted, marginTop:2, display:"flex", alignItems:"center", gap:6 }}>
+                  <span style={{ width:6, height:6, borderRadius:"50%", background:syncing?"#f0a020":green, display:"inline-block" }}/>
+                  <span>{syncing ? "Syncing…" : user.email}</span>
+                  <span onClick={()=>window.__firebase.signOut()} style={{ color:accent, cursor:"pointer", marginLeft:4 }}>Sign out</span>
+                </div>
+              </div>
+              <div style={{ textAlign:"right" }}>
+                <div style={{ fontSize:30, fontWeight:"bold", color:streak>0?accent:"#c0b8a8" }}>{streak}</div>
+                <div style={{ fontSize:10, color:textMuted, letterSpacing:2, textTransform:"uppercase" }}>day streak</div>
+              </div>
+            </div>
+            <div style={{ marginTop:14, display:"flex", gap:10 }}>
+              {[{label:"Day",value:days},{label:"Pimsleur",value:data.pimsleurTotal||0},{label:"Ear",value:lastComp!==null?`${lastComp}%`:"—"}].map(s=>(
+                <div key={s.label} style={{ flex:1, background:bg, borderRadius:10, padding:"8px 0", border:`1px solid ${border}`, textAlign:"center" }}>
+                  <div style={{ fontSize:18, fontWeight:"bold", color:accent }}>{s.value}</div>
+                  <div style={{ fontSize:9, color:textMuted, letterSpacing:1, textTransform:"uppercase" }}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* TABS */}
+          <div style={{ display:"flex", borderBottom:`1px solid ${border}`, background:"#ede8df" }}>
+            {[{key:"today",label:"day"},{key:"progress",label:"progress"},{key:"year",label:"year"},{key:"history",label:"history"},{key:"settings",label:"settings"}].map(tab=>(
+              <button key={tab.key} onClick={()=>setActiveTab(tab.key)} style={T(activeTab===tab.key)}>{tab.label}</button>
+            ))}
+          </div>
+
+          {/* TODAY */}
+          {activeTab==="today" && (
+            <div style={{ padding:"20px 16px" }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, gap:10 }}>
+                <button onClick={()=>{
+                  const d = new Date(viewDate+"T12:00:00"); d.setDate(d.getDate()-1);
+                  setViewDate(localDateKey(d));
+                }} style={{ width:42, height:42, borderRadius:21, background:card, border:`1px solid ${border}`, color:text, fontSize:20, cursor:"pointer", fontFamily:"Georgia,serif", display:"flex", alignItems:"center", justifyContent:"center" }}>‹</button>
+                <div onClick={()=>setViewDate(today)} style={{ flex:1, textAlign:"center", cursor:viewDate!==today?"pointer":"default" }}>
+                  <div style={{ fontSize:11, letterSpacing:2, color:viewDate===today?accent:textMuted, textTransform:"uppercase" }}>
+                    {viewDate===today ? "Today" : (()=>{ const d=new Date(viewDate+"T12:00:00"); const t=new Date(today+"T12:00:00"); const diff=Math.round((t-d)/86400000); return diff===1?"Yesterday":`${diff} days ago`; })()}
+                  </div>
+                  <div style={{ fontSize:14, color:text, marginTop:2 }}>{new Date(viewDate+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}</div>
+                </div>
+                <button disabled={viewDate>=today} onClick={()=>{
+                  if (viewDate>=today) return;
+                  const d = new Date(viewDate+"T12:00:00"); d.setDate(d.getDate()+1);
+                  setViewDate(localDateKey(d));
+                }} style={{ width:42, height:42, borderRadius:21, background:viewDate>=today?bg:card, border:`1px solid ${border}`, color:viewDate>=today?"#c0b8a8":text, fontSize:20, cursor:viewDate>=today?"default":"pointer", fontFamily:"Georgia,serif", display:"flex", alignItems:"center", justifyContent:"center" }}>›</button>
+              </div>
+
+              {activeBuiltins.map(h => (
+                <HabitRow key={h.key} habitKey={h.key} emoji={h.emoji} label={h.label}
+                  sublabel={h.sublabelFn(data)}
+                  countField={h.countField} countValue={h.countField ? (data[h.countField]||0) : undefined} />
+              ))}
+
+              {(data.customHabits||[]).map(h=>(
+                <HabitRow key={h.key} habitKey={h.key} emoji={h.emoji} label={h.label} sublabel="Custom habit" />
+              ))}
+
+              {/* Workout */}
+              {!hiddenBuiltins.includes("workout") && (
+              <div style={{ ...CS, background:todayLog.workout?cardActive:card, border:`1px solid ${todayLog.workout?borderActive:border}` }}>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                    <span style={{ fontSize:26 }}>🏋️</span>
+                    <div>
+                      <div style={{ color:todayLog.workout?green:text, fontSize:15, fontWeight:"bold" }}>Workout</div>
+                      <div style={{ color:textMuted, fontSize:11, marginTop:2 }}>{selWorkout?`${selWorkout.emoji} ${selWorkout.label}`:"Tap to log"}</div>
+                    </div>
+                  </div>
+                  <button onClick={()=>setShowWorkoutPicker(!showWorkoutPicker)} style={{ background:todayLog.workout?green:bg, border:`1px solid ${todayLog.workout?green:border}`, borderRadius:8, color:todayLog.workout?"#fff":textMuted, fontSize:11, padding:"6px 14px", cursor:"pointer", fontFamily:"Georgia,serif" }}>
+                    {todayLog.workout?"CHANGE":"LOG"}
+                  </button>
+                </div>
+                {showWorkoutPicker && (
+                  <div style={{ marginTop:14, display:"flex", gap:8, flexWrap:"wrap" }}>
+                    {WORKOUT_TYPES.map(w=>(
+                      <button key={w.key} onClick={()=>selectWorkout(w.key)} style={{ flex:"1 1 calc(33% - 8px)", padding:"10px 6px", borderRadius:10, background:todayLog.workout===w.key?green:bg, border:`1px solid ${todayLog.workout===w.key?green:border}`, color:todayLog.workout===w.key?"#fff":text, fontSize:12, cursor:"pointer", fontFamily:"Georgia,serif", textAlign:"center" }}>
+                        <div style={{ fontSize:20 }}>{w.emoji}</div>
+                        <div style={{ marginTop:4, fontWeight:"bold" }}>{w.label}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              )}
+
+              {/* Ear test */}
+              {!hiddenBuiltins.includes("eartest") && (
+              <div style={CS}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                  <div>
+                    <div style={{ fontSize:15, fontWeight:"bold", color:text }}>👂 Ear Test</div>
+                    <div style={{ color:textMuted, fontSize:11, marginTop:2 }}>Inner French audio-only %</div>
+                  </div>
+                  <button onClick={()=>setShowCompForm(!showCompForm)} style={{ background:bg, border:`1px solid ${border}`, borderRadius:8, color:textMuted, fontSize:11, padding:"6px 14px", cursor:"pointer", fontFamily:"Georgia,serif" }}>LOG</button>
+                </div>
+                {showCompForm && (
+                  <div style={{ marginTop:12, display:"flex", gap:8 }}>
+                    <input type="number" min="0" max="100" value={todayLog.comprehension} onChange={e=>setTodayLog({...todayLog,comprehension:e.target.value})} placeholder="e.g. 65" style={{ flex:1, background:bg, border:`1px solid ${border}`, borderRadius:8, color:text, fontSize:16, padding:"8px 12px", fontFamily:"Georgia,serif" }} />
+                    <button onClick={logComprehension} style={{ background:accent, border:"none", borderRadius:8, color:"#fff", fontSize:13, fontWeight:"bold", padding:"8px 16px", cursor:"pointer", fontFamily:"Georgia,serif" }}>SAVE</button>
+                  </div>
+                )}
+                {lastComp!==null&&!showCompForm&&(
+                  <div style={{ marginTop:8, fontSize:28, fontWeight:"bold", color:lastComp>=75?green:lastComp>=60?accent:red }}>{lastComp}%</div>
+                )}
+              </div>
+              )}
+
+              {saved&&<div style={{ textAlign:"center", marginTop:16, color:green, fontSize:12, letterSpacing:2 }}>✓ SAVED</div>}
+            </div>
+          )}
+
+          {/* PROGRESS */}
+          {activeTab==="progress" && (
+            <div style={{ padding:"20px 16px" }}>
+              <div style={LS}>Next: {curMile.label}</div>
+              {[
+                { label:"Pimsleur Lessons", current:data.pimsleurTotal||0, target:curMile.pimsleur, unit:"lessons", emoji:"🎧" },
+                { label:"Inner French",     current:data.innerFrenchTotal||0, target:curMile.innerFrench, unit:"episodes", emoji:"🎙️" },
+                { label:"Ear Comprehension",current:lastComp||0, target:curMile.comprehension, unit:"%", emoji:"👂" },
+              ].map(item=>(
+                <div key={item.label} style={CS}>
+                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:10 }}>
+                    <div style={{ fontSize:14, color:text }}>{item.emoji} {item.label}</div>
+                    <div style={{ fontSize:14, color:accent, fontWeight:"bold" }}>{item.current}/{item.target} {item.unit}</div>
+                  </div>
+                  <div style={{ height:8, background:border, borderRadius:4, overflow:"hidden" }}>
+                    <div style={{ height:"100%", borderRadius:4, width:`${pct(item.current,item.target)}%`, background:pct(item.current,item.target)>=100?green:accent, transition:"width 0.6s ease" }} />
+                  </div>
+                  <div style={{ fontSize:11, color:textMuted, marginTop:6, textAlign:"right" }}>{pct(item.current,item.target)}% complete</div>
+                </div>
+              ))}
+
+              <div style={CS}>
+                <div style={{ fontSize:14, color:text, marginBottom:12 }}>🏋️ Workout Breakdown</div>
+                <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                  {WORKOUT_TYPES.map(w=>(
+                    <div key={w.key} style={{ flex:"1 1 calc(33% - 8px)", background:bg, borderRadius:10, padding:"10px 6px", border:`1px solid ${border}`, textAlign:"center" }}>
+                      <div style={{ fontSize:18 }}>{w.emoji}</div>
+                      <div style={{ fontSize:18, fontWeight:"bold", color:accent, marginTop:4 }}>{wCounts()[w.key]||0}</div>
+                      <div style={{ fontSize:9, color:textMuted, textTransform:"uppercase", letterSpacing:1 }}>{w.label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ marginTop:20, borderTop:`1px solid ${border}`, paddingTop:20 }}>
+                <div style={LS}>6-month roadmap</div>
+                {milestones.map(m=>{
+                  const done=(data.pimsleurTotal||0)>=m.pimsleur;
+                  return (
+                    <div key={m.month} style={{ display:"flex", alignItems:"center", gap:14, marginBottom:14, opacity:done?1:0.6 }}>
+                      <div style={{ width:34, height:34, borderRadius:"50%", flexShrink:0, background:done?green:bg, border:`2px solid ${done?green:border}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, color:done?"#fff":textMuted, fontWeight:"bold" }}>{done?"✓":m.month}</div>
+                      <div>
+                        <div style={{ fontSize:14, color:done?green:text, fontWeight:"bold" }}>{m.label}</div>
+                        <div style={{ fontSize:11, color:textMuted }}>Pimsleur {m.pimsleur} · Ear {m.comprehension}% · Inner French {m.innerFrench} eps</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* YEAR */}
+          {activeTab==="year" && (
+            <div style={{ padding:"20px 16px" }}>
+              <div style={LS}>{new Date().getFullYear()} — Jun 2027</div>
+              <div style={{ ...CS, display:"flex", justifyContent:"space-around", textAlign:"center" }}>
+                {(()=>{ const s=yearStats(); return [{label:"Active days",value:s.active},{label:"Full days",value:s.full},{label:"Workouts",value:s.workouts}].map(st=>(
+                  <div key={st.label}>
+                    <div style={{ fontSize:22, fontWeight:"bold", color:accent }}>{st.value}</div>
+                    <div style={{ fontSize:10, color:textMuted, letterSpacing:1, textTransform:"uppercase", marginTop:2 }}>{st.label}</div>
+                  </div>
+                ))})()}
+              </div>
+
+              <div style={{ ...CS, overflowX:"auto" }}>
+                <div style={{ display:"flex", gap:3, minWidth:"fit-content" }}>
+                  <div style={{ display:"flex", flexDirection:"column", gap:3, marginRight:4, paddingTop:18, position:"sticky", left:0, background:card, zIndex:1, paddingRight:4 }}>
+                    {["","M","","W","","F",""].map((d,i)=>(
+                      <div key={i} style={{ height:13, fontSize:8, color:textMuted, display:"flex", alignItems:"center", width:14 }}>{d}</div>
+                    ))}
+                  </div>
+                  <div style={{ display:"flex", gap:3 }}>
+                    {buildYearGrid().map((week,wi)=>{
+                      const firstDay=week.find(d=>d.day===1);
+                      const mLabel=firstDay ? (firstDay.month===0 ? `Jan ${String(firstDay.year).slice(2)}` : monthLabels[firstDay.month]) : "";
+                      return (
+                        <div key={wi} style={{ display:"flex", flexDirection:"column", gap:3 }}>
+                          <div style={{ height:14, fontSize:9, color:textMuted, fontWeight:"bold", whiteSpace:"nowrap", overflow:"visible" }}>{mLabel}</div>
+                          {week.map((cell,di)=>(
+                            <div key={di} style={{ width:13, height:13, borderRadius:2, background:getHeatColor(cell), outline:cell.isToday?`1.5px solid ${text}`:"none", outlineOffset:cell.isToday?"1px":"0", boxSizing:"border-box" }} />
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ fontSize:10, color:textMuted, letterSpacing:1, textAlign:"center" }}>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6, marginBottom:6 }}>
+                  <span>COMBO</span>
+                  {[0,1,2,3,4].map(c=><div key={c} style={{ width:13, height:13, borderRadius:2, background:heatColors[c] }}/>)}
+                  <span>MORE</span>
+                </div>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                  <div style={{ width:13, height:13, borderRadius:2, background:"#2d6a2d" }}/>
+                  <span>WORKOUT ONLY</span>
+                </div>
+              </div>
+              <div style={{ marginTop:16, fontSize:11, color:textMuted, textAlign:"center", lineHeight:1.6 }}>
+                Each square = one day. Fill every square before your exam.
+              </div>
+            </div>
+          )}
+
+          {/* HISTORY */}
+          {activeTab==="history" && (
+            <div style={{ padding:"20px 16px" }}>
+              <div style={LS}>Ear comprehension trend</div>
+              {recentComp.length>0 ? (
+                <div style={CS}>
+                  <div style={{ display:"flex", alignItems:"flex-end", gap:6, height:90 }}>
+                    {recentComp.map((entry,i)=>(
+                      <div key={i} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
+                        <div style={{ fontSize:9, color:accent, fontWeight:"bold" }}>{entry.value}%</div>
+                        <div style={{ width:"100%", borderRadius:4, minHeight:4, height:`${(entry.value/100)*65}px`, background:entry.value>=75?green:entry.value>=60?accent:red }}/>
+                        <div style={{ fontSize:8, color:textMuted }}>{new Date(entry.date).getDate()}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ ...CS, textAlign:"center", color:textMuted, fontSize:13 }}>No ear test data yet. Log in Today tab.</div>
+              )}
+
+              <div style={{ ...LS, marginTop:8 }}>Daily log</div>
+              <div style={{ fontSize:11, color:textMuted, marginBottom:10, fontStyle:"italic" }}>Tap a day to edit or delete it.</div>
+              {Object.entries(data.logs).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,30).map(([date,log])=>{
+                const w=WORKOUT_TYPES.find(w=>w.key===log.workout);
+                const isEditing = editingDate===date;
+                const isToday = date===today;
+                return (
+                  <div key={date} style={{ borderBottom:`1px solid ${border}` }}>
+                    <div onClick={()=>setEditingDate(isEditing?null:date)} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 0", cursor:"pointer" }}>
+                      <div style={{ fontSize:12, color:isEditing?accent:textMuted, fontWeight:isEditing?"bold":"normal" }}>
+                        {new Date(date+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}
+                        {isToday && <span style={{ marginLeft:6, fontSize:9, color:accent, letterSpacing:1 }}>TODAY</span>}
+                      </div>
+                      <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                        {[{key:"pimsleur",emoji:"🎧"},{key:"anki",emoji:"🃏"},{key:"innerFrench",emoji:"🎙️"},...(data.customHabits||[])].map(h=>(
+                          <span key={h.key} style={{ fontSize:16, opacity:log[h.key]?1:0.15 }}>{h.emoji}</span>
+                        ))}
+                        <span style={{ fontSize:16, opacity:w?1:0.15 }}>{w?w.emoji:"🏋️"}</span>
+                        <span style={{ fontSize:11, color:textMuted, marginLeft:4 }}>{isEditing?"▲":"▼"}</span>
+                      </div>
+                    </div>
+                    {isEditing && (
+                      <div style={{ background:bg, borderRadius:10, padding:14, marginBottom:12, border:`1px solid ${border}` }}>
+                        {[{key:"pimsleur",emoji:"🎧",label:"Pimsleur"},{key:"anki",emoji:"🃏",label:"Flash cards"},{key:"innerFrench",emoji:"🎙️",label:"Inner French"},...(data.customHabits||[])].map(h=>(
+                          <div key={h.key} onClick={()=>toggleDayHabit(date,h.key)} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0", cursor:"pointer", borderBottom:`1px solid ${border}` }}>
+                            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                              <span style={{ fontSize:20 }}>{h.emoji}</span>
+                              <span style={{ fontSize:13, color:text }}>{h.label}</span>
+                            </div>
+                            <div style={CK(log[h.key])}>{log[h.key]?"✓":""}</div>
+                          </div>
+                        ))}
+                        <div style={{ padding:"12px 0 8px" }}>
+                          <div style={{ fontSize:11, color:textMuted, marginBottom:8, letterSpacing:1, textTransform:"uppercase" }}>Workout</div>
+                          <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                            {WORKOUT_TYPES.map(wk=>(
+                              <button key={wk.key} onClick={()=>setDayWorkout(date,wk.key)} style={{ flex:"1 1 calc(33% - 6px)", padding:"8px 4px", borderRadius:8, background:log.workout===wk.key?green:card, border:`1px solid ${log.workout===wk.key?green:border}`, color:log.workout===wk.key?"#fff":text, fontSize:11, cursor:"pointer", fontFamily:"Georgia,serif", textAlign:"center" }}>
+                                <div style={{ fontSize:16 }}>{wk.emoji}</div>
+                                <div style={{ marginTop:2 }}>{wk.label}</div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <button onClick={()=>{ if(window.confirm(`Delete ${new Date(date+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"})}?`)) deleteDay(date); }} style={{ width:"100%", padding:"10px", borderRadius:10, background:"none", border:`1px solid ${red}`, color:red, fontSize:12, cursor:"pointer", fontFamily:"Georgia,serif", marginTop:10 }}>
+                          Delete this day
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {Object.keys(data.logs).length===0&&(
+                <div style={{ color:textMuted, fontSize:13, textAlign:"center", padding:"20px 0" }}>No days logged yet.</div>
+              )}
+            </div>
+          )}
+
+          {/* SETTINGS */}
+          {activeTab==="settings" && (
+            <div style={{ padding:"20px 16px" }}>
+              <div style={LS}>Adjust current progress</div>
+
+              <div style={CS}>
+                <div style={{ fontSize:14, fontWeight:"bold", color:text, marginBottom:4 }}>🎧 Pimsleur</div>
+                <div style={{ fontSize:12, color:textMuted, marginBottom:16 }}>Set the lesson number you are currently on</div>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                  <div style={{ color:textMuted, fontSize:13 }}>Current lesson</div>
+                  <Stepper value={data.pimsleurTotal||0} onChange={v=>updateCount("pimsleurTotal",v)} min={0} max={180} />
+                </div>
+              </div>
+
+              <div style={CS}>
+                <div style={{ fontSize:14, fontWeight:"bold", color:text, marginBottom:4 }}>🎙️ Inner French</div>
+                <div style={{ fontSize:12, color:textMuted, marginBottom:16 }}>Set the episode number you are currently on</div>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                  <div style={{ color:textMuted, fontSize:13 }}>Current episode</div>
+                  <Stepper value={data.innerFrenchTotal||0} onChange={v=>updateCount("innerFrenchTotal",v)} min={0} max={200} />
+                </div>
+              </div>
+
+              {saved&&<div style={{ textAlign:"center", marginTop:4, marginBottom:16, color:green, fontSize:12, letterSpacing:2 }}>✓ SAVED</div>}
+
+              <div style={{ borderTop:`1px solid ${border}`, paddingTop:20, marginTop:8 }}>
+                <div style={LS}>Habits</div>
+                <div style={CS}>
+                  <div style={{ fontSize:11, color:textMuted, marginBottom:10, textTransform:"uppercase", letterSpacing:1 }}>Built-in</div>
+                  {BUILTIN_HABITS.map(h => {
+                    const hidden = hiddenBuiltins.includes(h.key);
+                    return (
+                      <div key={h.key} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0", borderTop:`1px solid ${border}`, opacity:hidden?0.5:1 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                          <span style={{ fontSize:18 }}>{h.emoji}</span>
+                          <span style={{ fontSize:14, color:text, textDecoration:hidden?"line-through":"none" }}>{h.label}</span>
+                        </div>
+                        <button onClick={()=>toggleBuiltin(h.key)} style={{ background:hidden?accent:"none", border:`1px solid ${hidden?accent:border}`, borderRadius:8, color:hidden?"#fff":textMuted, fontSize:11, padding:"4px 12px", cursor:"pointer", fontFamily:"Georgia,serif" }}>
+                          {hidden ? "RESTORE" : "HIDE"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <div style={{ fontSize:10, color:textMuted, marginTop:10, fontStyle:"italic", lineHeight:1.5 }}>Hiding a built-in habit removes it from new days. Days where you already logged it keep their data.</div>
+                </div>
+
+                <div style={CS}>
+                  <div style={{ fontSize:11, color:textMuted, marginBottom:10, textTransform:"uppercase", letterSpacing:1 }}>Custom</div>
+
+                  <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+                    <input type="text" value={newHabitEmoji} onChange={e=>setNewHabitEmoji(e.target.value || "📌")} maxLength="4"
+                      style={{ width:54, textAlign:"center", background:bg, border:`1px solid ${border}`, borderRadius:8, fontSize:20, padding:"8px 0", fontFamily:"Georgia,serif" }} />
+                    <input type="text" value={newHabitName} onChange={e=>setNewHabitName(e.target.value)} placeholder="New habit name…"
+                      onKeyDown={e=>{ if(e.key==="Enter") addHabit(); }}
+                      style={{ flex:1, background:bg, border:`1px solid ${border}`, borderRadius:8, color:text, fontSize:14, padding:"10px 12px", fontFamily:"Georgia,serif" }} />
+                    <button onClick={addHabit} style={{ background:accent, border:"none", borderRadius:8, color:"#fff", fontSize:13, fontWeight:"bold", padding:"10px 16px", cursor:"pointer", fontFamily:"Georgia,serif" }}>ADD</button>
+                  </div>
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:14 }}>
+                    {EMOJI_PRESETS.map(e=>(
+                      <button key={e} onClick={()=>setNewHabitEmoji(e)} style={{ width:34, height:34, fontSize:18, borderRadius:8, background:newHabitEmoji===e?accent:bg, border:`1px solid ${newHabitEmoji===e?accent:border}`, cursor:"pointer", fontFamily:"Georgia,serif" }}>{e}</button>
+                    ))}
+                  </div>
+                  <div style={{ fontSize:10, color:textMuted, marginBottom:14, fontStyle:"italic", lineHeight:1.5 }}>Pick from above or type any emoji in the box. Tap an existing habit's emoji to change it.</div>
+
+                  {(data.customHabits||[]).length===0 && (
+                    <div style={{ color:textMuted, fontSize:12, textAlign:"center", padding:"8px 0" }}>No custom habits yet. Type a name above to add one.</div>
+                  )}
+                  {(data.customHabits||[]).map(h=>(
+                    <div key={h.key} style={{ borderTop:`1px solid ${border}` }}>
+                      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0" }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                          <span onClick={()=>setEditingEmojiFor(editingEmojiFor===h.key?null:h.key)} style={{ fontSize:22, cursor:"pointer", padding:"2px 8px", borderRadius:8, background:editingEmojiFor===h.key?bg:"none", border:`1px solid ${editingEmojiFor===h.key?border:"transparent"}` }}>{h.emoji}</span>
+                          <span style={{ fontSize:14, color:text }}>{h.label}</span>
+                        </div>
+                        <button onClick={()=>deleteHabit(h.key)} style={{ background:"none", border:`1px solid ${red}`, borderRadius:8, color:red, fontSize:11, padding:"4px 12px", cursor:"pointer", fontFamily:"Georgia,serif" }}>DELETE</button>
+                      </div>
+                      {editingEmojiFor===h.key && (
+                        <div style={{ display:"flex", flexWrap:"wrap", gap:6, padding:"8px 0 12px" }}>
+                          <input type="text" defaultValue={h.emoji} onBlur={e=>{ updateHabitEmoji(h.key, e.target.value || "📌"); setEditingEmojiFor(null); }} maxLength="4"
+                            style={{ width:54, textAlign:"center", background:bg, border:`1px solid ${border}`, borderRadius:8, fontSize:18, padding:"6px 0", fontFamily:"Georgia,serif" }} />
+                          {EMOJI_PRESETS.map(e=>(
+                            <button key={e} onClick={()=>{ updateHabitEmoji(h.key, e); setEditingEmojiFor(null); }} style={{ width:34, height:34, fontSize:18, borderRadius:8, background:h.emoji===e?accent:bg, border:`1px solid ${h.emoji===e?accent:border}`, cursor:"pointer", fontFamily:"Georgia,serif" }}>{e}</button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ borderTop:`1px solid ${border}`, paddingTop:20, marginTop:8 }}>
+                <div style={LS}>Export</div>
+                <div style={CS}>
+                  <div style={{ fontSize:13, color:textMuted, marginBottom:12, lineHeight:1.5 }}>
+                    Download all logged days as a spreadsheet. Opens in Excel, Numbers, or Google Sheets.
+                  </div>
+                  <button onClick={exportCSV} style={{ width:"100%", padding:"12px", borderRadius:10, background:accent, border:"none", color:"#fff", fontSize:13, fontWeight:"bold", cursor:"pointer", fontFamily:"Georgia,serif", letterSpacing:1 }}>
+                    📊 EXPORT TO CSV
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ borderTop:`1px solid ${border}`, paddingTop:20, marginTop:8 }}>
+                <div style={LS}>Danger zone</div>
+                <button onClick={()=>{
+                  if(window.confirm("Reset ALL data? This cannot be undone.")) {
+                    const fresh = { startDate: localDateKey(new Date()), logs:{}, comprehensionLog:[], pimsleurTotal:0, innerFrenchTotal:0, customHabits:[], hiddenBuiltins:[] };
+                    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh)); } catch(e) {}
+                    if (user && window.__firebase) window.__firebase.saveData(user.uid, fresh);
+                    setData(fresh);
+                    setTodayLog({pimsleur:false,anki:false,innerFrench:false,workout:null,comprehension:""});
+                    setShowCompForm(false);
+                    setShowWorkoutPicker(false);
+                    setSaved(true); setTimeout(()=>setSaved(false),1500);
+                  }
+                }} style={{ width:"100%", padding:"14px", borderRadius:14, background:"none", border:`1px solid ${red}`, color:red, fontSize:14, cursor:"pointer", fontFamily:"Georgia,serif" }}>
+                  Reset all data
+                </button>
+              </div>
+            </div>
+          )}
+
+        </div>
+      );
+    }
+
+    ReactDOM.render(<App />, document.getElementById("root"));
+  </script>
+
+</body>
+</html>
