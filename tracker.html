@@ -478,7 +478,7 @@
                 }} style={{ width:42, height:42, borderRadius:21, background:viewDate>=today?bg:card, border:`1px solid ${border}`, color:viewDate>=today?"#c0b8a8":text, fontSize:20, cursor:viewDate>=today?"default":"pointer", fontFamily:"Georgia,serif", display:"flex", alignItems:"center", justifyContent:"center" }}>›</button>
               </div>
 
-              {activeBuiltins.map(h => (
+              {activeBuiltins.filter(h=>h.key!=="workout"&&h.key!=="eartest").map(h => (
                 <HabitRow key={h.key} habitKey={h.key} emoji={h.emoji} label={h.label}
                   sublabel={h.sublabelFn(data)}
                   countField={h.countField} countValue={h.countField ? (data[h.countField]||0) : undefined} />
