@@ -84,6 +84,7 @@
       logs: {}, comprehensionLog: [],
       pimsleurTotal: 14, innerFrenchTotal: 2,
       customHabits: [],
+      hiddenBuiltins: [],
     };
 
     const milestones = [
@@ -91,6 +92,12 @@
       { month:2, label:"Month 2",  pimsleur:60,  comprehension:75, innerFrench:24 },
       { month:3, label:"Month 3",  pimsleur:90,  comprehension:85, innerFrench:36 },
       { month:6, label:"Exam Ready", pimsleur:180, comprehension:95, innerFrench:72 },
+    ];
+
+    const BUILTIN_HABITS = [
+      { key:"pimsleur",    emoji:"🎧", label:"Pimsleur",    countField:"pimsleurTotal",    sublabelFn:(d)=>`Logging lesson ${d.pimsleurTotal||0}` },
+      { key:"anki",        emoji:"🃏", label:"Flash cards", sublabelFn:()=>"20 new cards + reviews" },
+      { key:"innerFrench", emoji:"🎙️", label:"Inner French", countField:"innerFrenchTotal", sublabelFn:(d)=>`Logging episode ${d.innerFrenchTotal||0}` },
     ];
 
     const WORKOUT_TYPES = [
@@ -215,6 +222,15 @@
         const newLogs = { ...data.logs };
         Object.keys(newLogs).forEach(d => { if (newLogs[d][key] !== undefined) { newLogs[d] = { ...newLogs[d] }; delete newLogs[d][key]; } });
         save({ ...data, customHabits: newHabits, logs: newLogs });
+      };
+
+      const hiddenBuiltins = data.hiddenBuiltins || [];
+      const activeBuiltins = BUILTIN_HABITS.filter(h => !hiddenBuiltins.includes(h.key));
+
+      const toggleBuiltin = (key) => {
+        const cur = data.hiddenBuiltins || [];
+        const next = cur.includes(key) ? cur.filter(k=>k!==key) : [...cur, key];
+        save({ ...data, hiddenBuiltins: next });
       };
 
       const exportCSV = () => {
@@ -450,9 +466,11 @@
                 }} style={{ width:42, height:42, borderRadius:21, background:viewDate>=today?bg:card, border:`1px solid ${border}`, color:viewDate>=today?"#c0b8a8":text, fontSize:20, cursor:viewDate>=today?"default":"pointer", fontFamily:"Georgia,serif", display:"flex", alignItems:"center", justifyContent:"center" }}>›</button>
               </div>
 
-              <HabitRow habitKey="pimsleur" emoji="🎧" label="Pimsleur" sublabel={`Logging lesson ${data.pimsleurTotal||0}`} countField="pimsleurTotal" countValue={data.pimsleurTotal||0} />
-              <HabitRow habitKey="anki"     emoji="🃏" label="Anki / 26s" sublabel="20 new cards + reviews" />
-              <HabitRow habitKey="innerFrench" emoji="🎙️" label="Inner French" sublabel={`Logging episode ${data.innerFrenchTotal||0}`} countField="innerFrenchTotal" countValue={data.innerFrenchTotal||0} />
+              {activeBuiltins.map(h => (
+                <HabitRow key={h.key} habitKey={h.key} emoji={h.emoji} label={h.label}
+                  sublabel={h.sublabelFn(data)}
+                  countField={h.countField} countValue={h.countField ? (data[h.countField]||0) : undefined} />
+              ))}
 
               {(data.customHabits||[]).map(h=>(
                 <HabitRow key={h.key} habitKey={h.key} emoji={h.emoji} label={h.label} sublabel="Custom habit" />
@@ -657,7 +675,7 @@
                     </div>
                     {isEditing && (
                       <div style={{ background:bg, borderRadius:10, padding:14, marginBottom:12, border:`1px solid ${border}` }}>
-                        {[{key:"pimsleur",emoji:"🎧",label:"Pimsleur"},{key:"anki",emoji:"🃏",label:"Anki / 26s"},{key:"innerFrench",emoji:"🎙️",label:"Inner French"},...(data.customHabits||[])].map(h=>(
+                        {[{key:"pimsleur",emoji:"🎧",label:"Pimsleur"},{key:"anki",emoji:"🃏",label:"Flash cards"},{key:"innerFrench",emoji:"🎙️",label:"Inner French"},...(data.customHabits||[])].map(h=>(
                           <div key={h.key} onClick={()=>toggleDayHabit(date,h.key)} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0", cursor:"pointer", borderBottom:`1px solid ${border}` }}>
                             <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                               <span style={{ fontSize:20 }}>{h.emoji}</span>
@@ -717,8 +735,28 @@
               {saved&&<div style={{ textAlign:"center", marginTop:4, marginBottom:16, color:green, fontSize:12, letterSpacing:2 }}>✓ SAVED</div>}
 
               <div style={{ borderTop:`1px solid ${border}`, paddingTop:20, marginTop:8 }}>
-                <div style={LS}>Custom habits</div>
+                <div style={LS}>Habits</div>
                 <div style={CS}>
+                  <div style={{ fontSize:11, color:textMuted, marginBottom:10, textTransform:"uppercase", letterSpacing:1 }}>Built-in</div>
+                  {BUILTIN_HABITS.map(h => {
+                    const hidden = hiddenBuiltins.includes(h.key);
+                    return (
+                      <div key={h.key} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0", borderTop:`1px solid ${border}`, opacity:hidden?0.5:1 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                          <span style={{ fontSize:18 }}>{h.emoji}</span>
+                          <span style={{ fontSize:14, color:text, textDecoration:hidden?"line-through":"none" }}>{h.label}</span>
+                        </div>
+                        <button onClick={()=>toggleBuiltin(h.key)} style={{ background:hidden?accent:"none", border:`1px solid ${hidden?accent:border}`, borderRadius:8, color:hidden?"#fff":textMuted, fontSize:11, padding:"4px 12px", cursor:"pointer", fontFamily:"Georgia,serif" }}>
+                          {hidden ? "RESTORE" : "HIDE"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <div style={{ fontSize:10, color:textMuted, marginTop:10, fontStyle:"italic", lineHeight:1.5 }}>Hiding a built-in habit removes it from new days. Days where you already logged it keep their data.</div>
+                </div>
+
+                <div style={CS}>
+                  <div style={{ fontSize:11, color:textMuted, marginBottom:10, textTransform:"uppercase", letterSpacing:1 }}>Custom</div>
                   <div style={{ display:"flex", gap:8, marginBottom:12 }}>
                     <input type="text" value={newHabitName} onChange={e=>setNewHabitName(e.target.value)} placeholder="New habit name…"
                       onKeyDown={e=>{ if(e.key==="Enter") addHabit(); }}
@@ -756,7 +794,7 @@
                 <div style={LS}>Danger zone</div>
                 <button onClick={()=>{
                   if(window.confirm("Reset ALL data? This cannot be undone.")) {
-                    const fresh = { startDate: localDateKey(new Date()), logs:{}, comprehensionLog:[], pimsleurTotal:0, innerFrenchTotal:0, customHabits:[] };
+                    const fresh = { startDate: localDateKey(new Date()), logs:{}, comprehensionLog:[], pimsleurTotal:0, innerFrenchTotal:0, customHabits:[], hiddenBuiltins:[] };
                     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh)); } catch(e) {}
                     if (user && window.__firebase) window.__firebase.saveData(user.uid, fresh);
                     setData(fresh);
