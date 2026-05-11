@@ -87,6 +87,7 @@
       pimsleurTotal: 14, innerFrenchTotal: 2,
       customHabits: [],
       hiddenBuiltins: [],
+      habitOrder: [],
     };
 
     const milestones = [
@@ -240,6 +241,29 @@
 
       const hiddenBuiltins = data.hiddenBuiltins || [];
       const activeBuiltins = BUILTIN_HABITS.filter(h => !hiddenBuiltins.includes(h.key));
+
+      // All active habits in user-defined order
+      const allActiveHabits = (() => {
+        const builtinItems = activeBuiltins.map(h => ({ ...h, isBuiltin: true }));
+        const customItems = (data.customHabits||[]).map(h => ({ ...h, isBuiltin: false }));
+        const all = [...builtinItems, ...customItems];
+        const order = data.habitOrder || [];
+        if (!order.length) return all;
+        const sorted = order.map(k => all.find(h => h.key===k)).filter(Boolean);
+        const remaining = all.filter(h => !order.includes(h.key));
+        return [...sorted, ...remaining];
+      })();
+
+      const moveHabit = (key, dir) => {
+        const keys = allActiveHabits.map(h => h.key);
+        const idx = keys.indexOf(key);
+        if (idx < 0) return;
+        const newIdx = idx + dir;
+        if (newIdx < 0 || newIdx >= keys.length) return;
+        const newOrder = [...keys];
+        [newOrder[idx], newOrder[newIdx]] = [newOrder[newIdx], newOrder[idx]];
+        save({ ...data, habitOrder: newOrder });
+      };
 
       const toggleBuiltin = (key) => {
         const cur = data.hiddenBuiltins || [];
@@ -480,65 +504,60 @@
                 }} style={{ width:42, height:42, borderRadius:21, background:viewDate>=today?bg:card, border:`1px solid ${border}`, color:viewDate>=today?"#c0b8a8":text, fontSize:20, cursor:viewDate>=today?"default":"pointer", fontFamily:"Georgia,serif", display:"flex", alignItems:"center", justifyContent:"center" }}>›</button>
               </div>
 
-              {activeBuiltins.filter(h=>h.key!=="workout"&&h.key!=="eartest").map(h => (
-                <HabitRow key={h.key} habitKey={h.key} emoji={h.emoji} label={h.label}
-                  sublabel={h.sublabelFn(data)}
-                  countField={h.countField} countValue={h.countField ? (data[h.countField]||0) : undefined} />
-              ))}
-
-              {(data.customHabits||[]).map(h=>(
-                <HabitRow key={h.key} habitKey={h.key} emoji={h.emoji} label={h.label} sublabel="Custom habit" />
-              ))}
-
-              {/* Workout */}
-              {!hiddenBuiltins.includes("workout") && (
-              <div style={{ ...CS, background:todayLog.workout?cardActive:card, border:`1px solid ${todayLog.workout?borderActive:border}` }}>
-                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-                    <span style={{ fontSize:26 }}>🏋️</span>
-                    <div>
-                      <div style={{ color:todayLog.workout?green:text, fontSize:15, fontWeight:"bold" }}>Workout</div>
-                      <div style={{ color:textMuted, fontSize:11, marginTop:2 }}>{selWorkout?`${selWorkout.emoji} ${selWorkout.label}`:"Tap to log"}</div>
-                    </div>
-                  </div>
-                  <button onClick={()=>setShowWorkoutPicker(!showWorkoutPicker)} style={{ background:todayLog.workout?green:bg, border:`1px solid ${todayLog.workout?green:border}`, borderRadius:8, color:todayLog.workout?"#fff":textMuted, fontSize:11, padding:"6px 14px", cursor:"pointer", fontFamily:"Georgia,serif" }}>
-                    {todayLog.workout?"CHANGE":"LOG"}
-                  </button>
-                </div>
-                {showWorkoutPicker && (
-                  <div style={{ marginTop:14, display:"flex", gap:8, flexWrap:"wrap" }}>
-                    {WORKOUT_TYPES.map(w=>(
-                      <button key={w.key} onClick={()=>selectWorkout(w.key)} style={{ flex:"1 1 calc(33% - 8px)", padding:"10px 6px", borderRadius:10, background:todayLog.workout===w.key?green:bg, border:`1px solid ${todayLog.workout===w.key?green:border}`, color:todayLog.workout===w.key?"#fff":text, fontSize:12, cursor:"pointer", fontFamily:"Georgia,serif", textAlign:"center" }}>
-                        <div style={{ fontSize:20 }}>{w.emoji}</div>
-                        <div style={{ marginTop:4, fontWeight:"bold" }}>{w.label}</div>
+              {allActiveHabits.map(h => {
+                if (h.key === "workout") return (
+                  <div key="workout" style={{ ...CS, background:todayLog.workout?cardActive:card, border:`1px solid ${todayLog.workout?borderActive:border}` }}>
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                        <span style={{ fontSize:26 }}>🏋️</span>
+                        <div>
+                          <div style={{ color:todayLog.workout?green:text, fontSize:15, fontWeight:"bold" }}>Workout</div>
+                          <div style={{ color:textMuted, fontSize:11, marginTop:2 }}>{selWorkout?`${selWorkout.emoji} ${selWorkout.label}`:"Tap to log"}</div>
+                        </div>
+                      </div>
+                      <button onClick={()=>setShowWorkoutPicker(!showWorkoutPicker)} style={{ background:todayLog.workout?green:bg, border:`1px solid ${todayLog.workout?green:border}`, borderRadius:8, color:todayLog.workout?"#fff":textMuted, fontSize:11, padding:"6px 14px", cursor:"pointer", fontFamily:"Georgia,serif" }}>
+                        {todayLog.workout?"CHANGE":"LOG"}
                       </button>
-                    ))}
+                    </div>
+                    {showWorkoutPicker && (
+                      <div style={{ marginTop:14, display:"flex", gap:8, flexWrap:"wrap" }}>
+                        {WORKOUT_TYPES.map(w=>(
+                          <button key={w.key} onClick={()=>selectWorkout(w.key)} style={{ flex:"1 1 calc(33% - 8px)", padding:"10px 6px", borderRadius:10, background:todayLog.workout===w.key?green:bg, border:`1px solid ${todayLog.workout===w.key?green:border}`, color:todayLog.workout===w.key?"#fff":text, fontSize:12, cursor:"pointer", fontFamily:"Georgia,serif", textAlign:"center" }}>
+                            <div style={{ fontSize:20 }}>{w.emoji}</div>
+                            <div style={{ marginTop:4, fontWeight:"bold" }}>{w.label}</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-              )}
-
-              {/* Ear test */}
-              {!hiddenBuiltins.includes("eartest") && (
-              <div style={CS}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                  <div>
-                    <div style={{ fontSize:15, fontWeight:"bold", color:text }}>👂 Ear Test</div>
-                    <div style={{ color:textMuted, fontSize:11, marginTop:2 }}>Inner French audio-only %</div>
+                );
+                if (h.key === "eartest") return (
+                  <div key="eartest" style={CS}>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                      <div>
+                        <div style={{ fontSize:15, fontWeight:"bold", color:text }}>👂 Ear Test</div>
+                        <div style={{ color:textMuted, fontSize:11, marginTop:2 }}>Inner French audio-only %</div>
+                      </div>
+                      <button onClick={()=>setShowCompForm(!showCompForm)} style={{ background:bg, border:`1px solid ${border}`, borderRadius:8, color:textMuted, fontSize:11, padding:"6px 14px", cursor:"pointer", fontFamily:"Georgia,serif" }}>LOG</button>
+                    </div>
+                    {showCompForm && (
+                      <div style={{ marginTop:12, display:"flex", gap:8 }}>
+                        <input type="number" min="0" max="100" value={todayLog.comprehension} onChange={e=>setTodayLog({...todayLog,comprehension:e.target.value})} placeholder="e.g. 65" style={{ flex:1, background:bg, border:`1px solid ${border}`, borderRadius:8, color:text, fontSize:16, padding:"8px 12px", fontFamily:"Georgia,serif" }} />
+                        <button onClick={logComprehension} style={{ background:accent, border:"none", borderRadius:8, color:"#fff", fontSize:13, fontWeight:"bold", padding:"8px 16px", cursor:"pointer", fontFamily:"Georgia,serif" }}>SAVE</button>
+                      </div>
+                    )}
+                    {lastComp!==null&&!showCompForm&&(
+                      <div style={{ marginTop:8, fontSize:28, fontWeight:"bold", color:lastComp>=75?green:lastComp>=60?accent:red }}>{lastComp}%</div>
+                    )}
                   </div>
-                  <button onClick={()=>setShowCompForm(!showCompForm)} style={{ background:bg, border:`1px solid ${border}`, borderRadius:8, color:textMuted, fontSize:11, padding:"6px 14px", cursor:"pointer", fontFamily:"Georgia,serif" }}>LOG</button>
-                </div>
-                {showCompForm && (
-                  <div style={{ marginTop:12, display:"flex", gap:8 }}>
-                    <input type="number" min="0" max="100" value={todayLog.comprehension} onChange={e=>setTodayLog({...todayLog,comprehension:e.target.value})} placeholder="e.g. 65" style={{ flex:1, background:bg, border:`1px solid ${border}`, borderRadius:8, color:text, fontSize:16, padding:"8px 12px", fontFamily:"Georgia,serif" }} />
-                    <button onClick={logComprehension} style={{ background:accent, border:"none", borderRadius:8, color:"#fff", fontSize:13, fontWeight:"bold", padding:"8px 16px", cursor:"pointer", fontFamily:"Georgia,serif" }}>SAVE</button>
-                  </div>
-                )}
-                {lastComp!==null&&!showCompForm&&(
-                  <div style={{ marginTop:8, fontSize:28, fontWeight:"bold", color:lastComp>=75?green:lastComp>=60?accent:red }}>{lastComp}%</div>
-                )}
-              </div>
-              )}
+                );
+                if (h.isBuiltin) return (
+                  <HabitRow key={h.key} habitKey={h.key} emoji={h.emoji} label={h.label}
+                    sublabel={h.sublabelFn(data)}
+                    countField={h.countField} countValue={h.countField ? (data[h.countField]||0) : undefined} />
+                );
+                return <HabitRow key={h.key} habitKey={h.key} emoji={h.emoji} label={h.label} sublabel="Custom habit" />;
+              })}
 
               {saved&&<div style={{ textAlign:"center", marginTop:16, color:green, fontSize:12, letterSpacing:2 }}>✓ SAVED</div>}
             </div>
@@ -818,6 +837,27 @@
               </div>
 
               <div style={{ borderTop:`1px solid ${border}`, paddingTop:20, marginTop:8 }}>
+                <div style={LS}>Habit order</div>
+                <div style={CS}>
+                  <div style={{ fontSize:12, color:textMuted, marginBottom:12, lineHeight:1.5 }}>Tap ▲▼ to reorder how habits appear on the Day tab.</div>
+                  {allActiveHabits.map((h, i) => (
+                    <div key={h.key} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0", borderTop: i===0?"none":`1px solid ${border}` }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                        <span style={{ fontSize:18 }}>{h.emoji}</span>
+                        <span style={{ fontSize:14, color:text }}>{h.label}</span>
+                      </div>
+                      <div style={{ display:"flex", gap:6 }}>
+                        <button onClick={()=>moveHabit(h.key,-1)} disabled={i===0}
+                          style={{ width:32, height:32, borderRadius:8, background:i===0?bg:card, border:`1px solid ${border}`, color:i===0?"#c0b8a8":text, fontSize:14, cursor:i===0?"default":"pointer", fontFamily:"Georgia,serif" }}>▲</button>
+                        <button onClick={()=>moveHabit(h.key,1)} disabled={i===allActiveHabits.length-1}
+                          style={{ width:32, height:32, borderRadius:8, background:i===allActiveHabits.length-1?bg:card, border:`1px solid ${border}`, color:i===allActiveHabits.length-1?"#c0b8a8":text, fontSize:14, cursor:i===allActiveHabits.length-1?"default":"pointer", fontFamily:"Georgia,serif" }}>▼</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ borderTop:`1px solid ${border}`, paddingTop:20, marginTop:8 }}>
                 <div style={LS}>Export</div>
                 <div style={CS}>
                   <div style={{ fontSize:13, color:textMuted, marginBottom:12, lineHeight:1.5 }}>
@@ -833,7 +873,7 @@
                 <div style={LS}>Danger zone</div>
                 <button onClick={()=>{
                   if(window.confirm("Reset ALL data? This cannot be undone.")) {
-                    const fresh = { startDate: localDateKey(new Date()), logs:{}, comprehensionLog:[], pimsleurTotal:0, innerFrenchTotal:0, customHabits:[], hiddenBuiltins:[] };
+                    const fresh = { startDate: localDateKey(new Date()), logs:{}, comprehensionLog:[], pimsleurTotal:0, innerFrenchTotal:0, customHabits:[], hiddenBuiltins:[], habitOrder:[] };
                     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh)); } catch(e) {}
                     if (user && window.__firebase) window.__firebase.saveData(user.uid, fresh);
                     setData(fresh);
