@@ -88,6 +88,9 @@
       customHabits: [],
       hiddenBuiltins: [],
       habitOrder: [],
+      workoutSessions: {}, // { "2026-05-11": { type:"upper", exercises:[{id, name, sets:[{weight,reps}], notes, done}] } }
+      customExercises: {}, // { push: ["Decline Bench"], pull: [...] } user-added exercises per type
+      exerciseOrder: {},   // { push: ["Bench Press","Pushups",...] } user-defined ordering of all exercises (preset+custom)
     };
 
     const milestones = [
@@ -116,6 +119,16 @@
       { key:"cardio",   label:"Cardio",   emoji:"🏃" },
       { key:"recovery", label:"Recovery", emoji:"🧘" },
     ];
+
+    const EXERCISE_PRESETS = {
+      push:     ["Bench Press","Overhead Press","Incline Dumbbell Press","Push-ups","Tricep Pushdown","Lateral Raise","Dips","Chest Fly"],
+      pull:     ["Pull-ups","Barbell Row","Lat Pulldown","Seated Cable Row","Face Pull","Bicep Curl","Hammer Curl","Reverse Fly"],
+      legs:     ["Back Squat","Romanian Deadlift","Leg Press","Walking Lunge","Leg Curl","Leg Extension","Calf Raise","Hip Thrust","Bulgarian Split Squat"],
+      upper:    ["Bench Press","Overhead Press","Pull-ups","Barbell Row","Dumbbell Curl","Tricep Extension"],
+      lower:    ["Back Squat","Deadlift","Leg Press","Walking Lunge","Calf Raise","Hip Thrust"],
+      cardio:   ["Running","Cycling","Rowing","Stairmaster","Incline Walk"],
+      recovery: ["Foam Rolling","Stretching","Yoga","Walk","Mobility Drills"],
+    };
 
     const monthLabels = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     const bg="#f5f0e8", card="#ede8df", cardActive="#e8f0e4";
@@ -155,6 +168,7 @@
       const [newHabitName, setNewHabitName] = useState("");
       const [newHabitEmoji, setNewHabitEmoji] = useState("📌");
       const [editingEmojiFor, setEditingEmojiFor] = useState(null);
+      const [newExerciseName, setNewExerciseName] = useState("");
 
       const today = localDateKey(new Date());
 
@@ -252,6 +266,106 @@
         save({ ...data, comprehensionLog:newCompLog });
         setTodayLog({ ...todayLog, comprehension:"" });
         setShowCompForm(false);
+      };
+
+      // --- Workout session helpers ---
+      const getSession = (date) => (data.workoutSessions||{})[date] || null;
+      const todaySession = getSession(today);
+
+      // Get full ordered exercise list for a workout type (presets + custom, applying user ordering)
+      const getExercisesForType = (typeKey) => {
+        const presets = EXERCISE_PRESETS[typeKey] || [];
+        const customs = (data.customExercises||{})[typeKey] || [];
+        const all = [...presets, ...customs];
+        const order = (data.exerciseOrder||{})[typeKey] || [];
+        if (!order.length) return all;
+        const sorted = order.filter(n => all.includes(n));
+        const remaining = all.filter(n => !order.includes(n));
+        return [...sorted, ...remaining];
+      };
+
+      // Start a new session for today (or replace existing) with all preset+custom exercises
+      const startSession = (typeKey) => {
+        const exNames = getExercisesForType(typeKey);
+        const exercises = exNames.map((name, i) => ({ id: `${typeKey}_${i}_${name}`, name, sets: [], notes: "", done: false }));
+        const session = { type: typeKey, exercises };
+        const newSessions = { ...(data.workoutSessions||{}), [today]: session };
+        // Also flip the workout habit on Day tab
+        const newLogs = { ...data.logs };
+        const curLog = newLogs[today] || { pimsleur:false, anki:false, innerFrench:false, workout:null, comprehension:"" };
+        newLogs[today] = { ...curLog, workout: typeKey };
+        save({ ...data, workoutSessions: newSessions, logs: newLogs });
+      };
+
+      const clearSession = () => {
+        const newSessions = { ...(data.workoutSessions||{}) };
+        delete newSessions[today];
+        save({ ...data, workoutSessions: newSessions });
+      };
+
+      const updateSession = (updater) => {
+        const cur = getSession(today);
+        if (!cur) return;
+        const next = updater(cur);
+        save({ ...data, workoutSessions: { ...(data.workoutSessions||{}), [today]: next } });
+      };
+
+      const addSet = (exId) => updateSession(s => ({
+        ...s,
+        exercises: s.exercises.map(e => e.id===exId ? { ...e, sets: [...e.sets, { weight:0, reps:0 }] } : e)
+      }));
+      const removeSet = (exId, idx) => updateSession(s => ({
+        ...s,
+        exercises: s.exercises.map(e => e.id===exId ? { ...e, sets: e.sets.filter((_,i)=>i!==idx) } : e)
+      }));
+      const updateSet = (exId, idx, field, delta) => updateSession(s => ({
+        ...s,
+        exercises: s.exercises.map(e => e.id===exId
+          ? { ...e, sets: e.sets.map((st,i)=> i===idx ? { ...st, [field]: Math.max(0, (st[field]||0) + delta) } : st) }
+          : e)
+      }));
+      const setSetValue = (exId, idx, field, val) => updateSession(s => ({
+        ...s,
+        exercises: s.exercises.map(e => e.id===exId
+          ? { ...e, sets: e.sets.map((st,i)=> i===idx ? { ...st, [field]: val } : st) }
+          : e)
+      }));
+      const toggleExerciseDone = (exId) => updateSession(s => ({
+        ...s,
+        exercises: s.exercises.map(e => e.id===exId ? { ...e, done: !e.done } : e)
+      }));
+      const moveExercise = (exId, dir) => updateSession(s => {
+        const idx = s.exercises.findIndex(e => e.id===exId);
+        const newIdx = idx + dir;
+        if (idx<0 || newIdx<0 || newIdx>=s.exercises.length) return s;
+        const arr = [...s.exercises];
+        [arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]];
+        // Persist new order to exerciseOrder for this workout type
+        const typeKey = s.type;
+        const newExerciseOrder = { ...(data.exerciseOrder||{}), [typeKey]: arr.map(e=>e.name) };
+        // We need to save exerciseOrder via the outer save call, but updateSession only writes session.
+        // So apply order via separate save call after:
+        setTimeout(() => save({ ...data, exerciseOrder: newExerciseOrder, workoutSessions: { ...(data.workoutSessions||{}), [today]: { ...s, exercises: arr } } }), 0);
+        return { ...s, exercises: arr };
+      });
+      const updateExerciseNotes = (exId, notes) => updateSession(s => ({
+        ...s,
+        exercises: s.exercises.map(e => e.id===exId ? { ...e, notes } : e)
+      }));
+      const addCustomExercise = (typeKey, name) => {
+        const trimmed = name.trim();
+        if (!trimmed) return;
+        const cur = (data.customExercises||{})[typeKey] || [];
+        if (cur.includes(trimmed) || (EXERCISE_PRESETS[typeKey]||[]).includes(trimmed)) return;
+        const newCustomExercises = { ...(data.customExercises||{}), [typeKey]: [...cur, trimmed] };
+        // Also add to current session if active
+        const sess = getSession(today);
+        let newSessions = data.workoutSessions || {};
+        if (sess && sess.type === typeKey) {
+          const newEx = { id: `${typeKey}_custom_${Date.now()}`, name: trimmed, sets: [], notes: "", done: false };
+          newSessions = { ...newSessions, [today]: { ...sess, exercises: [...sess.exercises, newEx] } };
+        }
+        save({ ...data, customExercises: newCustomExercises, workoutSessions: newSessions });
       };
 
       const updateCount = (field, val) => save({ ...data, [field]: val });
@@ -456,7 +570,7 @@
         return c;
       };
 
-      const T  = (active) => ({ flex:1, padding:"11px 0", background:"none", border:"none", color:active?accent:textMuted, fontSize:10, letterSpacing:1.5, textTransform:"uppercase", borderBottom:active?`2px solid ${accent}`:"2px solid transparent", cursor:"pointer", fontFamily:"Georgia,serif" });
+      const T  = (active) => ({ flexShrink:0, padding:"11px 18px", background:"none", border:"none", color:active?accent:textMuted, fontSize:10, letterSpacing:1.5, textTransform:"uppercase", borderBottom:active?`2px solid ${accent}`:"2px solid transparent", cursor:"pointer", fontFamily:"Georgia,serif", whiteSpace:"nowrap" });
       const CS = { background:card, borderRadius:14, padding:16, border:`1px solid ${border}`, marginBottom:12, boxShadow:"0 1px 3px rgba(0,0,0,0.06)" };
       const LS = { fontSize:11, letterSpacing:2, color:textMuted, textTransform:"uppercase", marginBottom:16 };
       const CK = (on) => ({ width:26, height:26, borderRadius:"50%", background:on?green:"transparent", border:`2px solid ${on?green:border}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, color:"#fff", cursor:"pointer", flexShrink:0 });
@@ -537,10 +651,13 @@
           </div>
 
           {/* TABS */}
-          <div style={{ display:"flex", borderBottom:`1px solid ${border}`, background:"#ede8df" }}>
-            {[{key:"today",label:"day"},{key:"progress",label:"progress"},{key:"year",label:"year"},{key:"history",label:"history"},{key:"settings",label:"settings"}].map(tab=>(
-              <button key={tab.key} onClick={()=>setActiveTab(tab.key)} style={T(activeTab===tab.key)}>{tab.label}</button>
-            ))}
+          <div style={{ position:"relative", background:"#ede8df", borderBottom:`1px solid ${border}` }}>
+            <div style={{ display:"flex", overflowX:"auto", scrollbarWidth:"none" }}>
+              {[{key:"today",label:"day"},{key:"workout",label:"workout"},{key:"progress",label:"progress"},{key:"year",label:"year"},{key:"history",label:"history"},{key:"settings",label:"settings"}].map(tab=>(
+                <button key={tab.key} onClick={()=>setActiveTab(tab.key)} style={T(activeTab===tab.key)}>{tab.label}</button>
+              ))}
+            </div>
+            <div style={{ position:"absolute", right:0, top:0, bottom:2, width:24, background:"linear-gradient(to right, rgba(237,232,223,0), #ede8df 60%)", pointerEvents:"none" }}/>
           </div>
 
           {/* TODAY */}
@@ -624,6 +741,136 @@
               })}
 
               {saved&&<div style={{ textAlign:"center", marginTop:16, color:green, fontSize:12, letterSpacing:2 }}>✓ SAVED</div>}
+            </div>
+          )}
+
+          {/* WORKOUT */}
+          {activeTab==="workout" && (
+            <div style={{ padding:"20px 16px" }}>
+              {!todaySession && (
+                <>
+                  <div style={LS}>Pick today's workout</div>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:20 }}>
+                    {WORKOUT_TYPES.map(w => (
+                      <button key={w.key} onClick={()=>startSession(w.key)}
+                        style={{ background:card, border:`1px solid ${border}`, borderRadius:14, padding:"18px 12px", textAlign:"center", boxShadow:"0 1px 3px rgba(0,0,0,0.06)", cursor:"pointer", fontFamily:"Georgia,serif" }}>
+                        <div style={{ fontSize:30, lineHeight:1, marginBottom:6 }}>{w.emoji}</div>
+                        <div style={{ fontSize:14, fontWeight:"bold", color:text }}>{w.label}</div>
+                        <div style={{ fontSize:10, color:textMuted, marginTop:2 }}>{(EXERCISE_PRESETS[w.key]||[]).length + ((data.customExercises||{})[w.key]||[]).length} exercises</div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {(() => {
+                    const recent = Object.entries(data.workoutSessions||{})
+                      .filter(([d])=>d!==today)
+                      .sort((a,b)=>b[0].localeCompare(a[0]))
+                      .slice(0,5);
+                    if (!recent.length) return null;
+                    return (
+                      <div style={CS}>
+                        <div style={{ fontSize:13, fontWeight:"bold", marginBottom:10 }}>Recent sessions</div>
+                        {recent.map(([d, s], i) => {
+                          const w = WORKOUT_TYPES.find(t=>t.key===s.type);
+                          const doneCount = (s.exercises||[]).filter(e=>e.done).length;
+                          return (
+                            <div key={d} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0", borderTop: i===0?"none":`1px solid ${border}`, fontSize:12 }}>
+                              <span style={{ color:textMuted }}>{new Date(d+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}</span>
+                              <span style={{ fontWeight:"bold", color:text }}>{w?w.emoji:""} {w?w.label:s.type} · {doneCount} ex</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </>
+              )}
+
+              {todaySession && (() => {
+                const w = WORKOUT_TYPES.find(t=>t.key===todaySession.type);
+                const doneCount = (todaySession.exercises||[]).filter(e=>e.done).length;
+                const totalCount = (todaySession.exercises||[]).length;
+                return (
+                  <>
+                    {/* Session header */}
+                    <div style={{ background:cardActive, border:`1px solid ${borderActive}`, borderRadius:14, padding:16, marginBottom:16, display:"flex", alignItems:"center", gap:12, boxShadow:"0 1px 3px rgba(0,0,0,0.06)" }}>
+                      <div style={{ fontSize:32 }}>{w?w.emoji:"🏋️"}</div>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontSize:17, fontWeight:"bold", color:green }}>{w?w.label:"Workout"} Day</div>
+                        <div style={{ fontSize:11, color:textMuted, marginTop:2 }}>{new Date(today+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})} · {doneCount} of {totalCount} done</div>
+                      </div>
+                      <button onClick={()=>{ if(window.confirm("Change workout type? Current sets and notes will be lost.")) clearSession(); }}
+                        style={{ background:"none", border:`1px solid ${border}`, borderRadius:8, color:textMuted, fontSize:10, padding:"6px 10px", letterSpacing:1, fontFamily:"Georgia,serif", cursor:"pointer" }}>CHANGE</button>
+                    </div>
+
+                    {todaySession.exercises.map((ex, exIdx) => (
+                      <div key={ex.id} style={{ background:ex.done?cardActive:card, border:`1px solid ${ex.done?borderActive:border}`, borderRadius:14, padding:14, marginBottom:12, boxShadow:"0 1px 3px rgba(0,0,0,0.06)" }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12, gap:10 }}>
+                          <div style={{ flex:1, display:"flex", alignItems:"center", gap:8 }}>
+                            <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+                              <button onClick={()=>moveExercise(ex.id,-1)} disabled={exIdx===0}
+                                style={{ width:22, height:14, border:`1px solid ${border}`, borderRadius:4, background:bg, color:exIdx===0?"#c0b8a8":textMuted, fontSize:9, lineHeight:1, fontFamily:"Georgia,serif", cursor:exIdx===0?"default":"pointer", padding:0 }}>▲</button>
+                              <button onClick={()=>moveExercise(ex.id,1)} disabled={exIdx===todaySession.exercises.length-1}
+                                style={{ width:22, height:14, border:`1px solid ${border}`, borderRadius:4, background:bg, color:exIdx===todaySession.exercises.length-1?"#c0b8a8":textMuted, fontSize:9, lineHeight:1, fontFamily:"Georgia,serif", cursor:exIdx===todaySession.exercises.length-1?"default":"pointer", padding:0 }}>▼</button>
+                            </div>
+                            <div style={{ fontSize:14, fontWeight:"bold", color:ex.done?green:text }}>{ex.name}</div>
+                          </div>
+                          <button onClick={()=>toggleExerciseDone(ex.id)}
+                            style={{ width:26, height:26, borderRadius:"50%", border:`2px solid ${ex.done?green:border}`, background:ex.done?green:"transparent", color:"#fff", fontSize:13, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontFamily:"Georgia,serif" }}>{ex.done?"✓":""}</button>
+                        </div>
+
+                        {ex.sets.length > 0 && (
+                          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                            {ex.sets.map((st, idx) => (
+                              <div key={idx} style={{ display:"grid", gridTemplateColumns:"22px 1fr 1fr 20px", gap:6, alignItems:"center" }}>
+                                <div style={{ fontSize:10, color:textMuted, fontWeight:"bold", letterSpacing:1 }}>S{idx+1}</div>
+                                {/* Weight stepper ±5 lb */}
+                                <div style={{ display:"flex", alignItems:"center", background:bg, border:`1px solid ${border}`, borderRadius:8, overflow:"hidden" }}>
+                                  <button onClick={()=>updateSet(ex.id,idx,"weight",-5)} style={{ width:26, height:32, background:"none", border:"none", color:textMuted, fontSize:16, fontFamily:"Georgia,serif", lineHeight:1, cursor:"pointer" }}>−</button>
+                                  <div style={{ flex:1, textAlign:"center", fontSize:12, fontWeight:"bold", color:text, fontFamily:"Georgia,serif" }}>
+                                    <input type="number" value={st.weight||0} onChange={e=>setSetValue(ex.id,idx,"weight",parseInt(e.target.value)||0)}
+                                      style={{ width:40, textAlign:"center", border:"none", background:"none", fontSize:12, fontWeight:"bold", fontFamily:"Georgia,serif", color:text, padding:0 }} />
+                                    <span style={{ fontSize:8, color:textMuted, letterSpacing:1, marginLeft:2, fontWeight:"normal" }}>LB</span>
+                                  </div>
+                                  <button onClick={()=>updateSet(ex.id,idx,"weight",5)} style={{ width:26, height:32, background:"none", border:"none", color:accent, fontSize:16, fontFamily:"Georgia,serif", lineHeight:1, cursor:"pointer" }}>+</button>
+                                </div>
+                                {/* Reps stepper ±1 */}
+                                <div style={{ display:"flex", alignItems:"center", background:bg, border:`1px solid ${border}`, borderRadius:8, overflow:"hidden" }}>
+                                  <button onClick={()=>updateSet(ex.id,idx,"reps",-1)} style={{ width:26, height:32, background:"none", border:"none", color:textMuted, fontSize:16, fontFamily:"Georgia,serif", lineHeight:1, cursor:"pointer" }}>−</button>
+                                  <div style={{ flex:1, textAlign:"center", fontSize:12, fontWeight:"bold", color:text, fontFamily:"Georgia,serif" }}>
+                                    <input type="number" value={st.reps||0} onChange={e=>setSetValue(ex.id,idx,"reps",parseInt(e.target.value)||0)}
+                                      style={{ width:32, textAlign:"center", border:"none", background:"none", fontSize:12, fontWeight:"bold", fontFamily:"Georgia,serif", color:text, padding:0 }} />
+                                    <span style={{ fontSize:8, color:textMuted, letterSpacing:1, marginLeft:2, fontWeight:"normal" }}>REPS</span>
+                                  </div>
+                                  <button onClick={()=>updateSet(ex.id,idx,"reps",1)} style={{ width:26, height:32, background:"none", border:"none", color:accent, fontSize:16, fontFamily:"Georgia,serif", lineHeight:1, cursor:"pointer" }}>+</button>
+                                </div>
+                                <button onClick={()=>removeSet(ex.id,idx)} style={{ width:20, height:20, background:"none", border:"none", color:textMuted, fontSize:14, cursor:"pointer", fontFamily:"Georgia,serif" }}>×</button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <button onClick={()=>addSet(ex.id)}
+                          style={{ marginTop:ex.sets.length?8:0, background:"none", border:`1px dashed ${border}`, borderRadius:8, width:"100%", padding:7, fontSize:11, color:textMuted, letterSpacing:1, fontFamily:"Georgia,serif", cursor:"pointer" }}>+ ADD SET</button>
+
+                        <textarea value={ex.notes||""} onChange={e=>updateExerciseNotes(ex.id, e.target.value)} placeholder="Notes (optional)…" rows="1"
+                          style={{ width:"100%", marginTop:8, fontSize:11, color:text, fontStyle:"italic", padding:"8px 10px", background:bg, borderRadius:6, borderLeft:`2px solid ${accent}`, border:`1px solid ${border}`, borderLeftWidth:2, borderLeftColor:accent, fontFamily:"Georgia,serif", resize:"vertical", minHeight:32 }} />
+                      </div>
+                    ))}
+
+                    {/* Add custom exercise */}
+                    <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+                      <input type="text" value={newExerciseName} onChange={e=>setNewExerciseName(e.target.value)} placeholder="Add custom exercise…"
+                        onKeyDown={e=>{ if(e.key==="Enter") { addCustomExercise(todaySession.type, newExerciseName); setNewExerciseName(""); } }}
+                        style={{ flex:1, background:bg, border:`1px dashed ${accent}`, borderRadius:14, padding:"12px 14px", fontSize:12, color:text, fontFamily:"Georgia,serif", letterSpacing:1 }} />
+                      <button onClick={()=>{ addCustomExercise(todaySession.type, newExerciseName); setNewExerciseName(""); }}
+                        style={{ background:accent, border:"none", borderRadius:14, color:"#fff", fontSize:12, fontWeight:"bold", padding:"0 18px", cursor:"pointer", fontFamily:"Georgia,serif", letterSpacing:1 }}>ADD</button>
+                    </div>
+
+                    {saved&&<div style={{ textAlign:"center", marginTop:8, color:green, fontSize:12, letterSpacing:2 }}>✓ SAVED</div>}
+                  </>
+                );
+              })()}
             </div>
           )}
 
@@ -938,7 +1185,7 @@
                 <div style={LS}>Danger zone</div>
                 <button onClick={()=>{
                   if(window.confirm("Reset ALL data? This cannot be undone.")) {
-                    const fresh = { startDate: localDateKey(new Date()), logs:{}, comprehensionLog:[], pimsleurTotal:0, innerFrenchTotal:0, customHabits:[], hiddenBuiltins:[], habitOrder:[] };
+                    const fresh = { startDate: localDateKey(new Date()), logs:{}, comprehensionLog:[], pimsleurTotal:0, innerFrenchTotal:0, customHabits:[], hiddenBuiltins:[], habitOrder:[], workoutSessions:{}, customExercises:{}, exerciseOrder:{} };
                     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh)); } catch(e) {}
                     if (user && window.__firebase) window.__firebase.saveData(user.uid, fresh);
                     setData(fresh);
