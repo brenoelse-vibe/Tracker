@@ -198,10 +198,14 @@
           if (!container) return;
           const todayCol = container.querySelector('[data-today="1"]');
           if (!todayCol) return;
-          // Position today's column ~1 week (one column ≈ 19px) right of left edge
-          const offsetLeft = todayCol.offsetLeft - 19 - 30;
-          container.scrollLeft = Math.max(0, offsetLeft);
-        }, 60);
+          // One column is 16px wide + 3px gap = 19px. Show ~1 week before today.
+          // Account for sticky day-label column (~22px) so today appears about 2 columns from left.
+          const colWidth = 19;
+          const stickyOffset = 22;
+          const weeksBefore = 1;
+          const target = todayCol.offsetLeft - stickyOffset - (colWidth * weeksBefore);
+          container.scrollLeft = Math.max(0, target);
+        }, 80);
         return () => clearTimeout(timer);
       }, [activeTab]);
 
