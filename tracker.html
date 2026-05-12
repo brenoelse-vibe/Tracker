@@ -193,20 +193,30 @@
       // Scroll year view so today is visible (1 week before today at left edge)
       useEffect(() => {
         if (activeTab !== "year") return;
-        const timer = setTimeout(() => {
+        let cancelled = false;
+        const doScroll = () => {
+          if (cancelled) return;
           const container = yearScrollRef.current;
           if (!container) return;
           const todayCol = container.querySelector('[data-today="1"]');
-          if (!todayCol) return;
-          // One column is 16px wide + 3px gap = 19px. Show ~1 week before today.
-          // Account for sticky day-label column (~22px) so today appears about 2 columns from left.
-          const colWidth = 19;
-          const stickyOffset = 22;
-          const weeksBefore = 1;
-          const target = todayCol.offsetLeft - stickyOffset - (colWidth * weeksBefore);
+          if (!todayCol) {
+            // Retry once layout is ready
+            requestAnimationFrame(doScroll);
+            return;
+          }
+          // Use the actual measured position of today's column relative to the scroll container
+          const containerRect = container.getBoundingClientRect();
+          const todayRect = todayCol.getBoundingClientRect();
+          const currentScrollLeft = container.scrollLeft;
+          // Absolute position of today within the scrollable content
+          const todayPosInContent = currentScrollLeft + (todayRect.left - containerRect.left);
+          // We want today positioned ~1 week (19px) from left edge, plus sticky day-label width (~22px)
+          const target = todayPosInContent - 22 - 19;
           container.scrollLeft = Math.max(0, target);
-        }, 80);
-        return () => clearTimeout(timer);
+        };
+        // Wait two frames so the grid is rendered before measuring
+        requestAnimationFrame(() => requestAnimationFrame(doScroll));
+        return () => { cancelled = true; };
       }, [activeTab]);
 
       const save = (newData) => {
