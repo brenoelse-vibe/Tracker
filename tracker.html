@@ -596,9 +596,12 @@
                         <button onClick={logComprehension} style={{ background:accent, border:"none", borderRadius:8, color:"#fff", fontSize:13, fontWeight:"bold", padding:"8px 16px", cursor:"pointer", fontFamily:"Georgia,serif" }}>SAVE</button>
                       </div>
                     )}
-                    {lastComp!==null&&!showCompForm&&(
-                      <div style={{ marginTop:8, fontSize:28, fontWeight:"bold", color:lastComp>=75?green:lastComp>=60?accent:red }}>{lastComp}%</div>
-                    )}
+                    {(() => {
+                      const compForViewDate = (data.comprehensionLog||[]).find(e=>e.date===viewDate);
+                      if (showCompForm || !compForViewDate) return null;
+                      const v = compForViewDate.value;
+                      return <div style={{ marginTop:8, fontSize:28, fontWeight:"bold", color:v>=75?green:v>=60?accent:red }}>{v}%</div>;
+                    })()}
                   </div>
                 );
                 if (h.isBuiltin) return (
@@ -740,24 +743,7 @@
           {/* HISTORY */}
           {activeTab==="history" && (
             <div style={{ padding:"20px 16px" }}>
-              <div style={LS}>Ear comprehension trend</div>
-              {recentComp.length>0 ? (
-                <div style={CS}>
-                  <div style={{ display:"flex", alignItems:"flex-end", gap:6, height:90 }}>
-                    {recentComp.map((entry,i)=>(
-                      <div key={i} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
-                        <div style={{ fontSize:9, color:accent, fontWeight:"bold" }}>{entry.value}%</div>
-                        <div style={{ width:"100%", borderRadius:4, minHeight:4, height:`${(entry.value/100)*65}px`, background:entry.value>=75?green:entry.value>=60?accent:red }}/>
-                        <div style={{ fontSize:8, color:textMuted }}>{new Date(entry.date).getDate()}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div style={{ ...CS, textAlign:"center", color:textMuted, fontSize:13 }}>No ear test data yet. Log in Today tab.</div>
-              )}
-
-              <div style={{ ...LS, marginTop:8 }}>Daily log</div>
+              <div style={LS}>Daily log</div>
               <div style={{ fontSize:11, color:textMuted, marginBottom:10, fontStyle:"italic" }}>Tap a day to edit or delete it.</div>
               {Object.entries(data.logs).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,30).map(([date,log])=>{
                 const w=WORKOUT_TYPES.find(w=>w.key===log.workout);
