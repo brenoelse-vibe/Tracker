@@ -211,7 +211,7 @@
           // Absolute position of today within the scrollable content
           const todayPosInContent = currentScrollLeft + (todayRect.left - containerRect.left);
           // We want today positioned ~1 week (19px) from left edge, plus sticky day-label width (~22px)
-          const target = todayPosInContent - 22 - 19;
+          const target = todayPosInContent - 22 - 38;
           container.scrollLeft = Math.max(0, target);
         };
         // Wait two frames so the grid is rendered before measuring
