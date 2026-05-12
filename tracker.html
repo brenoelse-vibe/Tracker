@@ -23,8 +23,6 @@
 <body>
   <div id="root"></div>
 
-  <!-- Firebase -->
-
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
@@ -40,15 +38,12 @@
       messagingSenderId: "415883101548",
       appId: "1:415883101548:web:2fe1b2d516d0b8713adf49"
     };
-
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
     const provider = new GoogleAuthProvider();
 
-    // Expose to window so Babel/React script can call these
     window.__firebase = {
-      auth, db, provider,
       signIn: () => signInWithPopup(auth, provider).catch(e => alert("Sign-in error: " + e.message)),
       signOut: () => signOut(auth),
       onAuthStateChanged: (cb) => onAuthStateChanged(auth, cb),
@@ -61,7 +56,6 @@
           const snap = await getDoc(doc(db, "users", uid));
           if (snap.exists()) return snap.data();
         } catch(e) {}
-        // fallback to localStorage
         try {
           const local = localStorage.getItem("tef_tracker_v2");
           if (local) return JSON.parse(local);
@@ -73,41 +67,34 @@
   </script>
 
   <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
+    const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+    // ═══ CONSTANTS ═══════════════════════════════════════════════════════════
     const STORAGE_KEY = "tef_tracker_v2";
 
-    const localDateKey = (d) => {
-      const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,"0"), day=String(d.getDate()).padStart(2,"0");
-      return `${y}-${m}-${day}`;
+    const C = {
+      bg:"#f5f0e8", card:"#ede8df", cardActive:"#e8f0e4",
+      border:"#ddd8ce", borderActive:"#a8c8a0",
+      text:"#2c2416", textMuted:"#8c7e6a", mutedGray:"#c0b8a8",
+      accent:"#c17f24", green:"#4a8c4a", red:"#c44",
+      workoutOnly:"#2d6a2d",
     };
+    const HEAT = { 0:"#e8e2d6", 1:"#f5c98a", 2:"#e89a3c", 3:"#c46d10", 4:"#7a3f08", future:"#f5f0e8" };
+    const MONTH_LABELS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-    const defaultData = {
-      startDate: localDateKey(new Date()),
-      logs: {}, comprehensionLog: [],
-      pimsleurTotal: 14, innerFrenchTotal: 2,
-      customHabits: [],
-      hiddenBuiltins: [],
-      habitOrder: [],
-      workoutSessions: {}, // { "2026-05-11": { type:"upper", exercises:[{id, name, sets:[{weight,reps}], notes, done}] } }
-      customExercises: {}, // { push: ["Decline Bench"], pull: [...] } user-added exercises per type
-      exerciseOrder: {},   // { push: ["Bench Press","Pushups",...] } user-defined ordering of all exercises (preset+custom)
-      hiddenPresets: {},   // { push: ["Cable Fly"] } preset exercise names the user has deleted
-      renamedPresets: {},  // { push: { "Bench Press": "Heavy Bench" } } preset → user's preferred name
-    };
-
-    const milestones = [
-      { month:1, label:"Month 1",  pimsleur:30,  comprehension:60, innerFrench:12 },
-      { month:2, label:"Month 2",  pimsleur:60,  comprehension:75, innerFrench:24 },
-      { month:3, label:"Month 3",  pimsleur:90,  comprehension:85, innerFrench:36 },
+    const MILESTONES = [
+      { month:1, label:"Month 1",    pimsleur:30,  comprehension:60, innerFrench:12 },
+      { month:2, label:"Month 2",    pimsleur:60,  comprehension:75, innerFrench:24 },
+      { month:3, label:"Month 3",    pimsleur:90,  comprehension:85, innerFrench:36 },
       { month:6, label:"Exam Ready", pimsleur:180, comprehension:95, innerFrench:72 },
     ];
 
     const EMOJI_PRESETS = ["📌","📚","✍️","💪","🧘","🏃","🚴","🥗","💧","☕","🌱","💊","🧠","💤","🎵","🎨","💼","💰","🙏","❤️","🌅","📖"];
 
     const BUILTIN_HABITS = [
-      { key:"pimsleur",    emoji:"🎧", label:"Pimsleur",    countField:"pimsleurTotal",    sublabelFn:(d)=>`Logging lesson ${d.pimsleurTotal||0}` },
+      { key:"pimsleur",    emoji:"🎧", label:"Pimsleur",    countField:"pimsleurTotal",    sublabelFn:d=>`Logging lesson ${d.pimsleurTotal||0}` },
       { key:"anki",        emoji:"🃏", label:"Flash cards", sublabelFn:()=>"20 new cards + reviews" },
-      { key:"innerFrench", emoji:"🎙️", label:"Inner French", countField:"innerFrenchTotal", sublabelFn:(d)=>`Logging episode ${d.innerFrenchTotal||0}` },
+      { key:"innerFrench", emoji:"🎙️", label:"Inner French", countField:"innerFrenchTotal", sublabelFn:d=>`Logging episode ${d.innerFrenchTotal||0}` },
       { key:"workout",     emoji:"🏋️", label:"Workout",     sublabelFn:()=>"Gym, cardio, recovery…" },
       { key:"eartest",     emoji:"👂", label:"Ear Test",    sublabelFn:()=>"Inner French audio-only %" },
     ];
@@ -123,92 +110,240 @@
     ];
 
     const EXERCISE_PRESETS = {
-      push:     ["Bench Press","Overhead Press","Incline Dumbbell Press","Push-ups","Tricep Pushdown","Lateral Raise","Dips","Chest Fly"],
-      pull:     ["Pull-ups","Barbell Row","Lat Pulldown","Seated Cable Row","Face Pull","Bicep Curl","Hammer Curl","Reverse Fly"],
-      legs:     ["Back Squat","Romanian Deadlift","Leg Press","Walking Lunge","Leg Curl","Leg Extension","Calf Raise","Hip Thrust","Bulgarian Split Squat"],
-      upper:    ["Bench Press","Overhead Press","Pull-ups","Barbell Row","Dumbbell Curl","Tricep Extension"],
-      lower:    ["Back Squat","Deadlift","Leg Press","Walking Lunge","Calf Raise","Hip Thrust"],
-      cardio:   ["Running","Cycling","Rowing","Stairmaster","Incline Walk"],
-      recovery: ["Foam Rolling","Stretching","Yoga","Walk","Mobility Drills"],
+      push:    ["Bench Press","Overhead Press","Incline Dumbbell Press","Push-ups","Tricep Pushdown","Lateral Raise","Dips","Chest Fly"],
+      pull:    ["Pull-ups","Barbell Row","Lat Pulldown","Seated Cable Row","Face Pull","Bicep Curl","Hammer Curl","Reverse Fly"],
+      legs:    ["Back Squat","Romanian Deadlift","Leg Press","Walking Lunge","Leg Curl","Leg Extension","Calf Raise","Hip Thrust","Bulgarian Split Squat"],
+      upper:   ["Bench Press","Overhead Press","Pull-ups","Barbell Row","Dumbbell Curl","Tricep Extension"],
+      lower:   ["Back Squat","Deadlift","Leg Press","Walking Lunge","Calf Raise","Hip Thrust"],
+      cardio:  ["Running","Cycling","Rowing","Stairmaster","Incline Walk"],
+      recovery:["Foam Rolling","Stretching","Yoga","Walk","Mobility Drills"],
     };
 
-    const monthLabels = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-    const bg="#f5f0e8", card="#ede8df", cardActive="#e8f0e4";
-    const border="#ddd8ce", borderActive="#a8c8a0";
-    const text="#2c2416", textMuted="#8c7e6a";
-    const accent="#c17f24", green="#4a8c4a", red="#c44";
-    const heatColors = { 0:"#e8e2d6",1:"#f5c98a",2:"#e89a3c",3:"#c46d10",4:"#7a3f08",future:"#f5f0e8",beforeStart:"#f0ebe2" };
+    const TABS = [
+      { key:"day", label:"day" }, { key:"workout", label:"workout" },
+      { key:"progress", label:"progress" }, { key:"year", label:"year" },
+      { key:"history", label:"history" }, { key:"settings", label:"settings" },
+    ];
 
-    // +/- stepper for lesson/episode numbers
-    function Stepper({ value, onChange, min=0, max=999 }) {
+    const DEFAULT_DATA = {
+      startDate: "", logs: {}, comprehensionLog: [],
+      pimsleurTotal: 14, innerFrenchTotal: 2,
+      customHabits: [], hiddenBuiltins: [], habitOrder: [],
+      workoutSessions: {}, customExercises: {}, exerciseOrder: {},
+      hiddenPresets: {}, renamedPresets: {},
+    };
+
+    // ═══ SHARED STYLES ═══════════════════════════════════════════════════════
+    const S = {
+      card:        { background:C.card, borderRadius:14, padding:16, border:`1px solid ${C.border}`, marginBottom:12, boxShadow:"0 1px 3px rgba(0,0,0,0.06)" },
+      cardActive:  { background:C.cardActive, borderRadius:14, padding:16, border:`1px solid ${C.borderActive}`, marginBottom:12, boxShadow:"0 1px 3px rgba(0,0,0,0.06)" },
+      sectionLabel:{ fontSize:11, letterSpacing:2, color:C.textMuted, textTransform:"uppercase", marginBottom:16 },
+      smallLabel:  { fontSize:11, color:C.textMuted, textTransform:"uppercase", letterSpacing:1, marginBottom:10 },
+      pillBtn:     { background:C.bg, border:`1px solid ${C.border}`, borderRadius:8, color:C.textMuted, fontSize:11, padding:"6px 14px", cursor:"pointer", fontFamily:"Georgia,serif" },
+      pillBtnOn:   { background:C.green, border:`1px solid ${C.green}`, borderRadius:8, color:"#fff", fontSize:11, padding:"6px 14px", cursor:"pointer", fontFamily:"Georgia,serif" },
+      input:       { background:C.bg, border:`1px solid ${C.border}`, borderRadius:8, color:C.text, fontSize:14, padding:"10px 12px", fontFamily:"Georgia,serif" },
+      primaryBtn:  { background:C.accent, border:"none", borderRadius:8, color:"#fff", fontSize:13, fontWeight:"bold", padding:"10px 16px", cursor:"pointer", fontFamily:"Georgia,serif" },
+      dangerBtn:   { width:"100%", padding:"14px", borderRadius:14, background:"none", border:`1px solid ${C.red}`, color:C.red, fontSize:14, cursor:"pointer", fontFamily:"Georgia,serif" },
+      bodyPad:     { padding:"20px 16px" },
+    };
+
+    // ═══ PURE HELPERS ════════════════════════════════════════════════════════
+    const localDateKey = d => {
+      const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,"0"), day=String(d.getDate()).padStart(2,"0");
+      return `${y}-${m}-${day}`;
+    };
+    const formatDate = (key, opts) => new Date(key+"T12:00:00").toLocaleDateString("en-US", opts);
+    const getISOWeek = date => {
+      const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+      const dayNum = d.getUTCDay() || 7;
+      d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+      const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+      return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+    };
+    const pct = (cur, tgt) => Math.min(100, Math.round((cur/tgt)*100));
+    const blankLog = () => ({ pimsleur:false, anki:false, innerFrench:false, workout:null, comprehension:"" });
+    const hasAnyHabit = (log, customs) => !!log && (
+      log.pimsleur || log.anki || log.innerFrench || log.workout ||
+      (customs||[]).some(h => log[h.key])
+    );
+
+    function getExercisesForType(data, typeKey) {
+      const hidden = (data.hiddenPresets||{})[typeKey] || [];
+      const renames = (data.renamedPresets||{})[typeKey] || {};
+      const presets = (EXERCISE_PRESETS[typeKey]||[]).filter(n => !hidden.includes(n)).map(n => renames[n] || n);
+      const customs = (data.customExercises||{})[typeKey] || [];
+      const all = [...presets, ...customs];
+      const order = (data.exerciseOrder||{})[typeKey] || [];
+      if (!order.length) return all;
+      const sorted = order.filter(n => all.includes(n));
+      const remaining = all.filter(n => !order.includes(n));
+      return [...sorted, ...remaining];
+    }
+
+    // ═══ REUSABLE COMPONENTS ═════════════════════════════════════════════════
+
+    function NumberStepper({ value, onChange, min=0, max=999, step=1 }) {
       return (
-        <div style={{ display:"flex", alignItems:"center", border:`1px solid ${border}`, borderRadius:10, overflow:"hidden", background:bg }}>
-          <button onClick={() => onChange(Math.max(min, value-1))}
-            style={{ width:38, height:38, background:"none", border:"none", fontSize:22, color:textMuted, cursor:"pointer", fontFamily:"Georgia,serif", lineHeight:1 }}>−</button>
+        <div style={{ display:"flex", alignItems:"center", border:`1px solid ${C.border}`, borderRadius:10, overflow:"hidden", background:C.bg }}>
+          <button onClick={()=>onChange(Math.max(min, value-step))}
+            style={{ width:38, height:38, background:"none", border:"none", fontSize:22, color:C.textMuted, cursor:"pointer", fontFamily:"Georgia,serif", lineHeight:1 }}>−</button>
           <input type="number" value={value} min={min} max={max}
-            onChange={e => { const v=parseInt(e.target.value); if(!isNaN(v)) onChange(Math.min(max,Math.max(min,v))); }}
-            style={{ width:48, textAlign:"center", border:"none", background:"none", fontSize:16, fontWeight:"bold", color:text, fontFamily:"Georgia,serif", padding:"8px 0" }} />
-          <button onClick={() => onChange(Math.min(max, value+1))}
-            style={{ width:38, height:38, background:"none", border:"none", fontSize:22, color:accent, cursor:"pointer", fontFamily:"Georgia,serif", lineHeight:1 }}>+</button>
+            onChange={e=>{ const v=parseInt(e.target.value); if(!isNaN(v)) onChange(Math.min(max,Math.max(min,v))); }}
+            style={{ width:48, textAlign:"center", border:"none", background:"none", fontSize:16, fontWeight:"bold", color:C.text, fontFamily:"Georgia,serif", padding:"8px 0" }} />
+          <button onClick={()=>onChange(Math.min(max, value+step))}
+            style={{ width:38, height:38, background:"none", border:"none", fontSize:22, color:C.accent, cursor:"pointer", fontFamily:"Georgia,serif", lineHeight:1 }}>+</button>
         </div>
       );
     }
 
+    function Toggle({ on, onClick, size=26 }) {
+      return (
+        <div onClick={onClick} style={{
+          width:size, height:size, borderRadius:"50%",
+          background: on?C.green:"transparent",
+          border:`2px solid ${on?C.green:C.border}`,
+          display:"flex", alignItems:"center", justifyContent:"center",
+          fontSize:14, color:"#fff", cursor:"pointer", flexShrink:0,
+        }}>{on?"✓":""}</div>
+      );
+    }
+
+    function ReorderArrows({ onUp, onDown, canUp, canDown }) {
+      const btn = enabled => ({
+        width:22, height:14, border:`1px solid ${C.border}`, borderRadius:4,
+        background:C.bg, color: enabled?C.textMuted:C.mutedGray,
+        fontSize:9, lineHeight:1, fontFamily:"Georgia,serif",
+        cursor: enabled?"pointer":"default", padding:0,
+      });
+      return (
+        <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+          <button onClick={onUp} disabled={!canUp} style={btn(canUp)}>▲</button>
+          <button onClick={onDown} disabled={!canDown} style={btn(canDown)}>▼</button>
+        </div>
+      );
+    }
+
+    function HabitCard({ active, emoji, label, sublabel, onToggle, stepper, children }) {
+      return (
+        <div style={active ? S.cardActive : S.card}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:12, flex:1 }}>
+              <span style={{ fontSize:26 }}>{emoji}</span>
+              <div>
+                <div style={{ color: active?C.green:C.text, fontSize:15, fontWeight:"bold" }}>{label}</div>
+                <div style={{ color:C.textMuted, fontSize:11, marginTop:2 }}>{sublabel}</div>
+              </div>
+            </div>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              {stepper}
+              <Toggle on={active} onClick={onToggle} />
+            </div>
+          </div>
+          {children}
+        </div>
+      );
+    }
+
+    function EmojiPalette({ selected, onSelect }) {
+      return (
+        <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:14 }}>
+          {EMOJI_PRESETS.map(e => (
+            <button key={e} onClick={()=>onSelect(e)} style={{
+              width:34, height:34, fontSize:18, borderRadius:8,
+              background: selected===e ? C.accent : C.bg,
+              border: `1px solid ${selected===e ? C.accent : C.border}`,
+              cursor:"pointer", fontFamily:"Georgia,serif",
+            }}>{e}</button>
+          ))}
+        </div>
+      );
+    }
+
+    function SavedToast({ show }) {
+      if (!show) return null;
+      return <div style={{ textAlign:"center", marginTop:16, color:C.green, fontSize:12, letterSpacing:2 }}>✓ SAVED</div>;
+    }
+
+    function SectionDivider({ children }) {
+      return <div style={{ borderTop:`1px solid ${C.border}`, paddingTop:20, marginTop:8 }}>{children}</div>;
+    }
+
+    // ═══ MAIN APP ════════════════════════════════════════════════════════════
     function App() {
-      const [data, setData]           = useState(defaultData);
-      const [activeTab, setActiveTab] = useState("today");
-      const [todayLog, setTodayLog]   = useState({ pimsleur:false, anki:false, innerFrench:false, workout:null, comprehension:"" });
-      const [showCompForm, setShowCompForm]         = useState(false);
+      // Auth
+      const [user, setUser] = useState(null);
+      const [authLoading, setAuthLoading] = useState(true);
+      const [syncing, setSyncing] = useState(false);
+
+      // Core
+      const [data, setData] = useState({ ...DEFAULT_DATA, startDate: localDateKey(new Date()) });
+      const [activeTab, setActiveTab] = useState("day");
+      const [viewDate, setViewDate] = useState(localDateKey(new Date()));
+      const [todayLog, setTodayLog] = useState(blankLog());
+      const [saved, setSaved] = useState(false);
+
+      // UI flags
+      const [showCompForm, setShowCompForm] = useState(false);
       const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
       const [editingDate, setEditingDate] = useState(null);
-      const [viewDate, setViewDate] = useState(localDateKey(new Date()));
-      const yearScrollRef = useRef(null);
-      const [saved, setSaved]         = useState(false);
-      const [user, setUser]           = useState(null);
-      const [authLoading, setAuthLoading] = useState(true);
-      const [syncing, setSyncing]     = useState(false);
       const [newHabitName, setNewHabitName] = useState("");
       const [newHabitEmoji, setNewHabitEmoji] = useState("📌");
       const [editingEmojiFor, setEditingEmojiFor] = useState(null);
       const [newExerciseName, setNewExerciseName] = useState("");
       const [expandedSession, setExpandedSession] = useState(null);
-      const [editingExercise, setEditingExercise] = useState(null); // { id } — exercise id being renamed
+      const [editingExercise, setEditingExercise] = useState(null);
 
+      const yearScrollRef = useRef(null);
       const today = localDateKey(new Date());
 
-      // Listen for Firebase auth state
+      // ─── Centralized data update ────────────────────────────────────────
+      const update = useCallback(patch => {
+        setData(prev => {
+          const next = typeof patch === "function" ? patch(prev) : { ...prev, ...patch };
+          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch(e) {}
+          if (user && window.__firebase) window.__firebase.saveData(user.uid, next);
+          setSaved(true);
+          setTimeout(() => setSaved(false), 1500);
+          return next;
+        });
+      }, [user]);
+
+      // ─── Auth ───────────────────────────────────────────────────────────
       useEffect(() => {
-        const waitForFirebase = () => {
-          if (!window.__firebase) { window.addEventListener("firebaseReady", waitForFirebase, {once:true}); return; }
-          window.__firebase.onAuthStateChanged(async (u) => {
+        const wait = () => {
+          if (!window.__firebase) {
+            window.addEventListener("firebaseReady", wait, { once:true });
+            return;
+          }
+          window.__firebase.onAuthStateChanged(async u => {
             setUser(u);
             if (u) {
               setSyncing(true);
               const loaded = await window.__firebase.loadData(u.uid);
               if (loaded) {
-                setData(loaded);
-                const tl = loaded.logs && loaded.logs[today];
-                if (tl) setTodayLog(tl);
+                setData({ ...DEFAULT_DATA, ...loaded });
+                if (loaded.logs?.[today]) setTodayLog(loaded.logs[today]);
               }
               setSyncing(false);
             }
             setAuthLoading(false);
           });
         };
-        waitForFirebase();
-      }, []);
+        wait();
+      }, [today]);
 
+      // ─── Sync local todayLog when viewDate changes ──────────────────────
       useEffect(() => {
         const existing = data.logs[viewDate];
-        const compEntry = (data.comprehensionLog||[]).find(e=>e.date===viewDate);
+        const compEntry = (data.comprehensionLog||[]).find(e => e.date===viewDate);
         setTodayLog(existing
           ? { ...existing, comprehension: compEntry ? String(compEntry.value) : (existing.comprehension||"") }
-          : { pimsleur:false, anki:false, innerFrench:false, workout:null, comprehension: compEntry ? String(compEntry.value) : "" });
+          : { ...blankLog(), comprehension: compEntry ? String(compEntry.value) : "" });
         setShowCompForm(false);
         setShowWorkoutPicker(false);
-      }, [viewDate]);
+      }, [viewDate, data.logs, data.comprehensionLog]);
 
-      // Scroll year view so today is visible (1 week before today at left edge)
+      // ─── Year tab auto-scroll ───────────────────────────────────────────
       useEffect(() => {
         if (activeTab !== "year") return;
         let cancelled = false;
@@ -217,1127 +352,1227 @@
           const container = yearScrollRef.current;
           if (!container) return;
           const todayCol = container.querySelector('[data-today="1"]');
-          if (!todayCol) {
-            // Retry once layout is ready
-            requestAnimationFrame(doScroll);
-            return;
-          }
-          // Use the actual measured position of today's column relative to the scroll container
-          const containerRect = container.getBoundingClientRect();
-          const todayRect = todayCol.getBoundingClientRect();
-          const currentScrollLeft = container.scrollLeft;
-          // Absolute position of today within the scrollable content
-          const todayPosInContent = currentScrollLeft + (todayRect.left - containerRect.left);
-          // We want today positioned ~1 week (19px) from left edge, plus sticky day-label width (~22px)
-          const target = todayPosInContent - 22 - 38;
-          container.scrollLeft = Math.max(0, target);
+          if (!todayCol) { requestAnimationFrame(doScroll); return; }
+          const cRect = container.getBoundingClientRect();
+          const tRect = todayCol.getBoundingClientRect();
+          const todayPos = container.scrollLeft + (tRect.left - cRect.left);
+          container.scrollLeft = Math.max(0, todayPos - 22 - 38);
         };
-        // Wait two frames so the grid is rendered before measuring
         requestAnimationFrame(() => requestAnimationFrame(doScroll));
         return () => { cancelled = true; };
       }, [activeTab]);
 
-      const save = (newData) => {
-        setData(newData);
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(newData)); } catch(e) {}
-        if (user && window.__firebase) window.__firebase.saveData(user.uid, newData);
-        setSaved(true); setTimeout(() => setSaved(false), 1500);
-      };
+      // ─── Derived values ─────────────────────────────────────────────────
+      const hiddenBuiltins = data.hiddenBuiltins || [];
+      const activeBuiltins = BUILTIN_HABITS.filter(h => !hiddenBuiltins.includes(h.key));
 
-      const toggleHabit = (habit) => {
-        const newLog = { ...todayLog, [habit]: !todayLog[habit] };
+      const allActiveHabits = useMemo(() => {
+        const items = [
+          ...activeBuiltins.map(h => ({ ...h, isBuiltin:true })),
+          ...(data.customHabits||[]).map(h => ({ ...h, isBuiltin:false })),
+        ];
+        const order = data.habitOrder || [];
+        if (!order.length) return items;
+        const sorted = order.map(k => items.find(h => h.key===k)).filter(Boolean);
+        const remaining = items.filter(h => !order.includes(h.key));
+        return [...sorted, ...remaining];
+      }, [data.hiddenBuiltins, data.customHabits, data.habitOrder]);
+
+      const streak = useMemo(() => {
+        let count = 0;
+        const d = new Date();
+        while (true) {
+          const log = data.logs[localDateKey(d)];
+          if (!hasAnyHabit(log, data.customHabits)) break;
+          count++;
+          d.setDate(d.getDate()-1);
+        }
+        return count;
+      }, [data.logs, data.customHabits]);
+
+      const dayCount = useMemo(() => {
+        const keys = Object.keys(data.logs).filter(k => hasAnyHabit(data.logs[k], data.customHabits));
+        const earliest = keys.length ? keys.sort()[0] : data.startDate;
+        const start = new Date(earliest + "T00:00:00");
+        const now = new Date(); now.setHours(0,0,0,0);
+        return Math.max(1, Math.floor((now-start)/86400000) + 1);
+      }, [data.logs, data.customHabits, data.startDate]);
+
+      const lastComp = useMemo(() => {
+        const log = (data.comprehensionLog||[]).slice().sort((a,b) => a.date.localeCompare(b.date));
+        return log.length ? log[log.length-1].value : null;
+      }, [data.comprehensionLog]);
+
+      const currentMilestone = MILESTONES.find(m => (data.pimsleurTotal||0) < m.pimsleur) || MILESTONES[MILESTONES.length-1];
+      const selectedWorkout = WORKOUT_TYPES.find(w => w.key === todayLog.workout);
+      const todaySession = (data.workoutSessions||{})[today] || null;
+
+      // ─── Action: habits ─────────────────────────────────────────────────
+      const toggleHabit = key => {
+        const newLog = { ...todayLog, [key]: !todayLog[key] };
         setTodayLog(newLog);
-        save({ ...data, logs: { ...data.logs, [viewDate]: newLog } });
+        update({ logs: { ...data.logs, [viewDate]: newLog } });
       };
 
-      const selectWorkout = (type) => {
+      const selectWorkout = type => {
         const newLog = { ...todayLog, workout: todayLog.workout===type ? null : type };
         setTodayLog(newLog);
-        save({ ...data, logs: { ...data.logs, [viewDate]: newLog } });
+        update({ logs: { ...data.logs, [viewDate]: newLog } });
         setShowWorkoutPicker(false);
       };
 
       const logComprehension = () => {
         const val = parseInt(todayLog.comprehension);
-        if (isNaN(val)||val<0||val>100) return;
-        const newCompLog = [...(data.comprehensionLog||[]).filter(e=>e.date!==viewDate), {date:viewDate,value:val}];
-        save({ ...data, logs:{...data.logs,[viewDate]:todayLog}, comprehensionLog:newCompLog });
+        if (isNaN(val) || val<0 || val>100) return;
+        update({
+          logs: { ...data.logs, [viewDate]: todayLog },
+          comprehensionLog: [...(data.comprehensionLog||[]).filter(e=>e.date!==viewDate), { date:viewDate, value:val }],
+        });
         setShowCompForm(false);
       };
 
       const clearComprehension = () => {
-        const newCompLog = (data.comprehensionLog||[]).filter(e=>e.date!==viewDate);
-        save({ ...data, comprehensionLog:newCompLog });
+        update({ comprehensionLog: (data.comprehensionLog||[]).filter(e => e.date!==viewDate) });
         setTodayLog({ ...todayLog, comprehension:"" });
         setShowCompForm(false);
       };
 
-      // --- Workout session helpers ---
-      const getSession = (date) => (data.workoutSessions||{})[date] || null;
-      const todaySession = getSession(today);
+      const updateCount = (field, val) => update({ [field]: val });
 
-      // Get full ordered exercise list for a workout type (presets + custom, applying user ordering)
-      const getExercisesForType = (typeKey) => {
-        const hidden = (data.hiddenPresets||{})[typeKey] || [];
-        const renames = (data.renamedPresets||{})[typeKey] || {};
-        const presets = (EXERCISE_PRESETS[typeKey] || [])
-          .filter(n => !hidden.includes(n))
-          .map(n => renames[n] || n);
-        const customs = (data.customExercises||{})[typeKey] || [];
-        const all = [...presets, ...customs];
-        const order = (data.exerciseOrder||{})[typeKey] || [];
-        if (!order.length) return all;
-        const sorted = order.filter(n => all.includes(n));
-        const remaining = all.filter(n => !order.includes(n));
-        return [...sorted, ...remaining];
+      const addCustomHabit = () => {
+        const name = newHabitName.trim();
+        if (!name) return;
+        const key = "custom_" + name.toLowerCase().replace(/[^a-z0-9]/g,"_") + "_" + Date.now().toString(36);
+        update({ customHabits: [...(data.customHabits||[]), { key, label:name, emoji: newHabitEmoji||"📌" }] });
+        setNewHabitName("");
+        setNewHabitEmoji("📌");
       };
 
-      // Helpers for managing the exercise pool of a workout type
+      const updateHabitEmoji = (key, emoji) =>
+        update({ customHabits: (data.customHabits||[]).map(h => h.key===key ? { ...h, emoji } : h) });
+
+      const deleteCustomHabit = key => {
+        if (!window.confirm("Delete this habit? It will be removed from all logged days.")) return;
+        const newLogs = { ...data.logs };
+        Object.keys(newLogs).forEach(d => {
+          if (newLogs[d][key] !== undefined) {
+            newLogs[d] = { ...newLogs[d] };
+            delete newLogs[d][key];
+          }
+        });
+        update({
+          customHabits: (data.customHabits||[]).filter(h => h.key!==key),
+          logs: newLogs,
+        });
+      };
+
+      const toggleBuiltin = key => {
+        const cur = data.hiddenBuiltins || [];
+        update({ hiddenBuiltins: cur.includes(key) ? cur.filter(k=>k!==key) : [...cur, key] });
+      };
+
+      const moveHabit = (key, dir) => {
+        const keys = allActiveHabits.map(h => h.key);
+        const idx = keys.indexOf(key);
+        const newIdx = idx + dir;
+        if (idx<0 || newIdx<0 || newIdx>=keys.length) return;
+        const newOrder = [...keys];
+        [newOrder[idx], newOrder[newIdx]] = [newOrder[newIdx], newOrder[idx]];
+        update({ habitOrder: newOrder });
+      };
+
+      // ─── Action: history ────────────────────────────────────────────────
+      const toggleDayHabit = (date, habit) => {
+        const cur = data.logs[date] || blankLog();
+        const newLog = { ...cur, [habit]: !cur[habit] };
+        update({ logs: { ...data.logs, [date]: newLog } });
+        if (date === today) setTodayLog({ ...todayLog, ...newLog });
+      };
+
+      const setDayWorkout = (date, type) => {
+        const cur = data.logs[date] || blankLog();
+        const newLog = { ...cur, workout: cur.workout===type ? null : type };
+        update({ logs: { ...data.logs, [date]: newLog } });
+        if (date === today) setTodayLog({ ...todayLog, ...newLog });
+      };
+
+      const deleteDay = date => {
+        const newLogs = { ...data.logs };
+        delete newLogs[date];
+        update({
+          logs: newLogs,
+          comprehensionLog: (data.comprehensionLog||[]).filter(e => e.date!==date),
+        });
+        if (date === today) setTodayLog(blankLog());
+        setEditingDate(null);
+      };
+
+
+      // ─── Action: workout sessions ───────────────────────────────────────
+      const startSession = typeKey => {
+        const exNames = getExercisesForType(data, typeKey);
+        const past = Object.entries(data.workoutSessions||{})
+          .filter(([d, s]) => d !== today && s.type === typeKey)
+          .sort((a,b) => b[0].localeCompare(a[0]));
+        const last = past[0]?.[1];
+
+        const exercises = exNames.map((name, i) => {
+          const prev = last ? (last.exercises||[]).find(e => e.name === name) : null;
+          return {
+            id: `${typeKey}_${i}_${name}`,
+            name,
+            sets: prev ? (prev.sets||[]).map(s => ({ weight: s.weight||0, reps: s.reps||0 })) : [],
+            notes: "",
+            done: false,
+          };
+        });
+
+        const curLog = data.logs[today] || blankLog();
+        update({
+          workoutSessions: { ...(data.workoutSessions||{}), [today]: { type: typeKey, exercises } },
+          logs: { ...data.logs, [today]: { ...curLog, workout: typeKey } },
+        });
+      };
+
+      const clearSession = () => {
+        const next = { ...(data.workoutSessions||{}) };
+        delete next[today];
+        update({ workoutSessions: next });
+      };
+
+      // Helper: apply a function to today's exercises array
+      const mapExercises = fn => {
+        const cur = (data.workoutSessions||{})[today];
+        if (!cur) return;
+        update({ workoutSessions: { ...(data.workoutSessions||{}), [today]: { ...cur, exercises: cur.exercises.map(fn) } } });
+      };
+
+      const addSet = exId => mapExercises(e =>
+        e.id===exId ? { ...e, sets: [...e.sets, { weight:0, reps:0 }] } : e);
+
+      const removeSet = (exId, idx) => mapExercises(e =>
+        e.id===exId ? { ...e, sets: e.sets.filter((_,i) => i!==idx) } : e);
+
+      const stepSet = (exId, idx, field, delta) => mapExercises(e =>
+        e.id===exId
+          ? { ...e, sets: e.sets.map((st,i) => i===idx
+              ? { ...st, [field]: Math.round(Math.max(0, (st[field]||0) + delta) * 10) / 10 }
+              : st) }
+          : e);
+
+      const setSetValue = (exId, idx, field, val) => mapExercises(e =>
+        e.id===exId
+          ? { ...e, sets: e.sets.map((st,i) => i===idx ? { ...st, [field]: val } : st) }
+          : e);
+
+      const toggleExerciseDone = exId => mapExercises(e =>
+        e.id===exId ? { ...e, done: !e.done } : e);
+
+      const updateExerciseNotes = (exId, notes) => mapExercises(e =>
+        e.id===exId ? { ...e, notes } : e);
+
+      const moveExercise = (exId, dir) => {
+        const cur = (data.workoutSessions||{})[today];
+        if (!cur) return;
+        const idx = cur.exercises.findIndex(e => e.id===exId);
+        const newIdx = idx + dir;
+        if (idx<0 || newIdx<0 || newIdx>=cur.exercises.length) return;
+        const arr = [...cur.exercises];
+        [arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]];
+        update({
+          exerciseOrder: { ...(data.exerciseOrder||{}), [cur.type]: arr.map(e => e.name) },
+          workoutSessions: { ...(data.workoutSessions||{}), [today]: { ...cur, exercises: arr } },
+        });
+      };
+
+      const addCustomExercise = (typeKey, name) => {
+        const trimmed = name.trim();
+        if (!trimmed) return;
+        const cur = (data.customExercises||{})[typeKey] || [];
+        if (cur.includes(trimmed) || (EXERCISE_PRESETS[typeKey]||[]).includes(trimmed)) return;
+        const patch = { customExercises: { ...(data.customExercises||{}), [typeKey]: [...cur, trimmed] } };
+        const sess = (data.workoutSessions||{})[today];
+        if (sess && sess.type === typeKey) {
+          patch.workoutSessions = {
+            ...(data.workoutSessions||{}),
+            [today]: { ...sess, exercises: [...sess.exercises, { id:`${typeKey}_custom_${Date.now()}`, name:trimmed, sets:[], notes:"", done:false }] },
+          };
+        }
+        update(patch);
+      };
+
       const renameExercise = (typeKey, oldName, newName) => {
         const trimmed = newName.trim();
         if (!trimmed || trimmed === oldName) return;
         const presets = EXERCISE_PRESETS[typeKey] || [];
         const renames = (data.renamedPresets||{})[typeKey] || {};
         const customs = (data.customExercises||{})[typeKey] || [];
-        // Figure out the original preset name (in case it was already renamed)
         const originalPreset = presets.find(p => (renames[p] || p) === oldName);
-        let newData = { ...data };
+        const patch = {};
         if (originalPreset) {
-          newData.renamedPresets = { ...(data.renamedPresets||{}), [typeKey]: { ...renames, [originalPreset]: trimmed } };
+          patch.renamedPresets = { ...(data.renamedPresets||{}), [typeKey]: { ...renames, [originalPreset]: trimmed } };
         } else {
-          // It's a custom exercise — rename in customExercises
-          newData.customExercises = { ...(data.customExercises||{}), [typeKey]: customs.map(c => c===oldName ? trimmed : c) };
+          patch.customExercises = { ...(data.customExercises||{}), [typeKey]: customs.map(c => c===oldName ? trimmed : c) };
         }
-        // Update order mapping
         const order = (data.exerciseOrder||{})[typeKey] || [];
         if (order.includes(oldName)) {
-          newData.exerciseOrder = { ...(data.exerciseOrder||{}), [typeKey]: order.map(o => o===oldName ? trimmed : o) };
+          patch.exerciseOrder = { ...(data.exerciseOrder||{}), [typeKey]: order.map(o => o===oldName ? trimmed : o) };
         }
-        // Update current session if active for this type
-        const sess = getSession(today);
+        const sess = (data.workoutSessions||{})[today];
         if (sess && sess.type === typeKey) {
-          newData.workoutSessions = {
+          patch.workoutSessions = {
             ...(data.workoutSessions||{}),
-            [today]: { ...sess, exercises: sess.exercises.map(e => e.name===oldName ? { ...e, name: trimmed } : e) }
+            [today]: { ...sess, exercises: sess.exercises.map(e => e.name===oldName ? { ...e, name:trimmed } : e) },
           };
         }
-        save(newData);
+        update(patch);
       };
+
       const deleteExercise = (typeKey, name) => {
         const presets = EXERCISE_PRESETS[typeKey] || [];
         const renames = (data.renamedPresets||{})[typeKey] || {};
         const customs = (data.customExercises||{})[typeKey] || [];
         const originalPreset = presets.find(p => (renames[p] || p) === name);
-        let newData = { ...data };
+        const patch = {};
         if (originalPreset) {
           const hidden = (data.hiddenPresets||{})[typeKey] || [];
-          newData.hiddenPresets = { ...(data.hiddenPresets||{}), [typeKey]: [...hidden, originalPreset] };
+          patch.hiddenPresets = { ...(data.hiddenPresets||{}), [typeKey]: [...hidden, originalPreset] };
         } else {
-          newData.customExercises = { ...(data.customExercises||{}), [typeKey]: customs.filter(c => c!==name) };
+          patch.customExercises = { ...(data.customExercises||{}), [typeKey]: customs.filter(c => c!==name) };
         }
         const order = (data.exerciseOrder||{})[typeKey] || [];
         if (order.includes(name)) {
-          newData.exerciseOrder = { ...(data.exerciseOrder||{}), [typeKey]: order.filter(o => o!==name) };
+          patch.exerciseOrder = { ...(data.exerciseOrder||{}), [typeKey]: order.filter(o => o!==name) };
         }
-        // Remove from current session if active
-        const sess = getSession(today);
+        const sess = (data.workoutSessions||{})[today];
         if (sess && sess.type === typeKey) {
-          newData.workoutSessions = {
+          patch.workoutSessions = {
             ...(data.workoutSessions||{}),
-            [today]: { ...sess, exercises: sess.exercises.filter(e => e.name!==name) }
+            [today]: { ...sess, exercises: sess.exercises.filter(e => e.name!==name) },
           };
         }
-        save(newData);
+        update(patch);
       };
+
       const restorePreset = (typeKey, originalName) => {
         const hidden = (data.hiddenPresets||{})[typeKey] || [];
-        save({ ...data, hiddenPresets: { ...(data.hiddenPresets||{}), [typeKey]: hidden.filter(h => h!==originalName) } });
+        update({ hiddenPresets: { ...(data.hiddenPresets||{}), [typeKey]: hidden.filter(h => h!==originalName) } });
       };
 
-      // Start a new session for today (or replace existing) with all preset+custom exercises
-      const startSession = (typeKey) => {
-        const exNames = getExercisesForType(typeKey);
-        const exercises = exNames.map((name, i) => ({ id: `${typeKey}_${i}_${name}`, name, sets: [], notes: "", done: false }));
-        const session = { type: typeKey, exercises };
-        const newSessions = { ...(data.workoutSessions||{}), [today]: session };
-        // Also flip the workout habit on Day tab
-        const newLogs = { ...data.logs };
-        const curLog = newLogs[today] || { pimsleur:false, anki:false, innerFrench:false, workout:null, comprehension:"" };
-        newLogs[today] = { ...curLog, workout: typeKey };
-        save({ ...data, workoutSessions: newSessions, logs: newLogs });
-      };
-
-      const clearSession = () => {
-        const newSessions = { ...(data.workoutSessions||{}) };
-        delete newSessions[today];
-        save({ ...data, workoutSessions: newSessions });
-      };
-
-      const updateSession = (updater) => {
-        const cur = getSession(today);
-        if (!cur) return;
-        const next = updater(cur);
-        save({ ...data, workoutSessions: { ...(data.workoutSessions||{}), [today]: next } });
-      };
-
-      const addSet = (exId) => updateSession(s => ({
-        ...s,
-        exercises: s.exercises.map(e => e.id===exId ? { ...e, sets: [...e.sets, { weight:0, reps:0 }] } : e)
-      }));
-      const removeSet = (exId, idx) => updateSession(s => ({
-        ...s,
-        exercises: s.exercises.map(e => e.id===exId ? { ...e, sets: e.sets.filter((_,i)=>i!==idx) } : e)
-      }));
-      const updateSet = (exId, idx, field, delta) => updateSession(s => ({
-        ...s,
-        exercises: s.exercises.map(e => e.id===exId
-          ? { ...e, sets: e.sets.map((st,i)=> i===idx ? { ...st, [field]: Math.max(0, (st[field]||0) + delta) } : st) }
-          : e)
-      }));
-      const setSetValue = (exId, idx, field, val) => updateSession(s => ({
-        ...s,
-        exercises: s.exercises.map(e => e.id===exId
-          ? { ...e, sets: e.sets.map((st,i)=> i===idx ? { ...st, [field]: val } : st) }
-          : e)
-      }));
-      const toggleExerciseDone = (exId) => updateSession(s => ({
-        ...s,
-        exercises: s.exercises.map(e => e.id===exId ? { ...e, done: !e.done } : e)
-      }));
-      const moveExercise = (exId, dir) => updateSession(s => {
-        const idx = s.exercises.findIndex(e => e.id===exId);
-        const newIdx = idx + dir;
-        if (idx<0 || newIdx<0 || newIdx>=s.exercises.length) return s;
-        const arr = [...s.exercises];
-        [arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]];
-        // Persist new order to exerciseOrder for this workout type
-        const typeKey = s.type;
-        const newExerciseOrder = { ...(data.exerciseOrder||{}), [typeKey]: arr.map(e=>e.name) };
-        // We need to save exerciseOrder via the outer save call, but updateSession only writes session.
-        // So apply order via separate save call after:
-        setTimeout(() => save({ ...data, exerciseOrder: newExerciseOrder, workoutSessions: { ...(data.workoutSessions||{}), [today]: { ...s, exercises: arr } } }), 0);
-        return { ...s, exercises: arr };
-      });
-      const updateExerciseNotes = (exId, notes) => updateSession(s => ({
-        ...s,
-        exercises: s.exercises.map(e => e.id===exId ? { ...e, notes } : e)
-      }));
-      const addCustomExercise = (typeKey, name) => {
-        const trimmed = name.trim();
-        if (!trimmed) return;
-        const cur = (data.customExercises||{})[typeKey] || [];
-        if (cur.includes(trimmed) || (EXERCISE_PRESETS[typeKey]||[]).includes(trimmed)) return;
-        const newCustomExercises = { ...(data.customExercises||{}), [typeKey]: [...cur, trimmed] };
-        // Also add to current session if active
-        const sess = getSession(today);
-        let newSessions = data.workoutSessions || {};
-        if (sess && sess.type === typeKey) {
-          const newEx = { id: `${typeKey}_custom_${Date.now()}`, name: trimmed, sets: [], notes: "", done: false };
-          newSessions = { ...newSessions, [today]: { ...sess, exercises: [...sess.exercises, newEx] } };
-        }
-        save({ ...data, customExercises: newCustomExercises, workoutSessions: newSessions });
-      };
-
-      const updateCount = (field, val) => save({ ...data, [field]: val });
-
-      const addHabit = () => {
-        const name = newHabitName.trim();
-        if (!name) return;
-        const key = "custom_" + name.toLowerCase().replace(/[^a-z0-9]/g,"_") + "_" + Date.now().toString(36);
-        save({ ...data, customHabits: [...(data.customHabits||[]), { key, label: name, emoji: newHabitEmoji || "📌" }] });
-        setNewHabitName("");
-        setNewHabitEmoji("📌");
-      };
-      const updateHabitEmoji = (key, emoji) => {
-        const newHabits = (data.customHabits||[]).map(h => h.key===key ? { ...h, emoji } : h);
-        save({ ...data, customHabits: newHabits });
-      };
-      const deleteHabit = (key) => {
-        if (!window.confirm("Delete this habit? It will be removed from all logged days.")) return;
-        const newHabits = (data.customHabits||[]).filter(h=>h.key!==key);
-        const newLogs = { ...data.logs };
-        Object.keys(newLogs).forEach(d => { if (newLogs[d][key] !== undefined) { newLogs[d] = { ...newLogs[d] }; delete newLogs[d][key]; } });
-        save({ ...data, customHabits: newHabits, logs: newLogs });
-      };
-
-      const hiddenBuiltins = data.hiddenBuiltins || [];
-      const activeBuiltins = BUILTIN_HABITS.filter(h => !hiddenBuiltins.includes(h.key));
-
-      // All active habits in user-defined order
-      const allActiveHabits = (() => {
-        const builtinItems = activeBuiltins.map(h => ({ ...h, isBuiltin: true }));
-        const customItems = (data.customHabits||[]).map(h => ({ ...h, isBuiltin: false }));
-        const all = [...builtinItems, ...customItems];
-        const order = data.habitOrder || [];
-        if (!order.length) return all;
-        const sorted = order.map(k => all.find(h => h.key===k)).filter(Boolean);
-        const remaining = all.filter(h => !order.includes(h.key));
-        return [...sorted, ...remaining];
-      })();
-
-      const moveHabit = (key, dir) => {
-        const keys = allActiveHabits.map(h => h.key);
-        const idx = keys.indexOf(key);
-        if (idx < 0) return;
-        const newIdx = idx + dir;
-        if (newIdx < 0 || newIdx >= keys.length) return;
-        const newOrder = [...keys];
-        [newOrder[idx], newOrder[newIdx]] = [newOrder[newIdx], newOrder[idx]];
-        save({ ...data, habitOrder: newOrder });
-      };
-
-      const toggleBuiltin = (key) => {
-        const cur = data.hiddenBuiltins || [];
-        const next = cur.includes(key) ? cur.filter(k=>k!==key) : [...cur, key];
-        save({ ...data, hiddenBuiltins: next });
-      };
-
+      // ─── Export & Reset ─────────────────────────────────────────────────
       const exportCSV = () => {
         const customs = data.customHabits || [];
         const headers = ["Date","Pimsleur","Anki","Inner French","Workout", ...customs.map(h=>h.label), "Ear%"];
-        const csvEscape = (v) => {
+        const esc = v => {
           const s = String(v??"");
           return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
         };
         const compByDate = {};
         (data.comprehensionLog||[]).forEach(e => { compByDate[e.date] = e.value; });
-        const dates = Object.keys(data.logs).sort();
-        const rows = [headers.map(csvEscape).join(",")];
-        dates.forEach(d => {
+        const rows = [headers.map(esc).join(",")];
+        Object.keys(data.logs).sort().forEach(d => {
           const l = data.logs[d] || {};
-          const row = [
+          rows.push([
             d,
             l.pimsleur ? "TRUE" : "FALSE",
             l.anki ? "TRUE" : "FALSE",
             l.innerFrench ? "TRUE" : "FALSE",
             l.workout || "",
             ...customs.map(h => l[h.key] ? "TRUE" : "FALSE"),
-            compByDate[d] ?? ""
-          ];
-          rows.push(row.map(csvEscape).join(","));
+            compByDate[d] ?? "",
+          ].map(esc).join(","));
         });
-        const csv = rows.join("\n");
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8;" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `tracker-export-${localDateKey(new Date())}.csv`;
+        a.download = `tracker-export-${today}.csv`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
       };
 
-      // Edit/delete a specific day from History
-      const updateDayLog = (date, newLog) => {
-        const newLogs = { ...data.logs, [date]: newLog };
-        save({ ...data, logs: newLogs });
-        if (date === today) setTodayLog({ ...todayLog, ...newLog });
-      };
-      const toggleDayHabit = (date, habit) => {
-        const cur = data.logs[date] || { pimsleur:false, anki:false, innerFrench:false, workout:null, comprehension:"" };
-        updateDayLog(date, { ...cur, [habit]: !cur[habit] });
-      };
-      const setDayWorkout = (date, type) => {
-        const cur = data.logs[date] || { pimsleur:false, anki:false, innerFrench:false, workout:null, comprehension:"" };
-        updateDayLog(date, { ...cur, workout: cur.workout===type ? null : type });
-      };
-      const deleteDay = (date) => {
-        const newLogs = { ...data.logs };
-        delete newLogs[date];
-        const newCompLog = (data.comprehensionLog||[]).filter(e=>e.date!==date);
-        save({ ...data, logs: newLogs, comprehensionLog: newCompLog });
-        if (date === today) setTodayLog({ pimsleur:false, anki:false, innerFrench:false, workout:null, comprehension:"" });
-        setEditingDate(null);
+      const resetAllData = () => {
+        if (!window.confirm("Reset ALL data? This cannot be undone.")) return;
+        const fresh = { ...DEFAULT_DATA, startDate: today };
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh)); } catch(e) {}
+        if (user && window.__firebase) window.__firebase.saveData(user.uid, fresh);
+        setData(fresh);
+        setTodayLog(blankLog());
+        setShowCompForm(false);
+        setShowWorkoutPicker(false);
+        setSaved(true);
+        setTimeout(() => setSaved(false), 1500);
       };
 
-      const getStreak = () => {
-        let streak=0, d=new Date();
-        while (true) {
-          const key=localDateKey(d), log=data.logs[key];
-          if (log&&(log.pimsleur||log.anki||log.innerFrench||log.workout||(data.customHabits||[]).some(h=>log[h.key]))) { streak++; d.setDate(d.getDate()-1); } else break;
-        }
-        return streak;
-      };
-
-      const days     = (() => {
-        const logKeys = Object.keys(data.logs).filter(k=>{
-          const l=data.logs[k]; return l && (l.pimsleur||l.anki||l.innerFrench||l.workout||(data.customHabits||[]).some(h=>l[h.key]));
-        });
-        const earliest = logKeys.length>0 ? logKeys.sort()[0] : data.startDate;
-        const start = new Date(earliest+"T00:00:00");
-        const now = new Date(); now.setHours(0,0,0,0);
-        return Math.max(1, Math.floor((now-start)/86400000) + 1);
-      })();
-      const lastComp = (() => {
-        const log = (data.comprehensionLog||[]).slice().sort((a,b)=>a.date.localeCompare(b.date));
-        return log.length ? log[log.length-1].value : null;
-      })();
-      const streak   = getStreak();
-      const curMile  = milestones.find(m=>(data.pimsleurTotal||0)<m.pimsleur)||milestones[milestones.length-1];
-      const pct      = (c,t) => Math.min(100,Math.round((c/t)*100));
-      const recentComp = (data.comprehensionLog||[]).slice(-7);
-      const selWorkout = WORKOUT_TYPES.find(w=>w.key===todayLog.workout);
-
-      const getISOWeek = (date) => {
-        const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-        const dayNum = d.getUTCDay() || 7;
-        d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-        const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
-        return Math.ceil((((d - yearStart) / 86400000) + 1)/7);
-      };
-
-      const buildYearGrid = () => {
-        const todayDate=new Date();
-        // Start: Jan 1 of current year, rounded back to Sunday
-        const year=todayDate.getFullYear();
-        const startDate=new Date(year,0,1);
-        while (startDate.getDay()!==0) startDate.setDate(startDate.getDate()-1);
-        // End: 12 months after today
-        const endDate=new Date(todayDate.getFullYear(), todayDate.getMonth()+12, todayDate.getDate());
-        const weeks=[];
-        let currentWeek=[], cursor=new Date(startDate);
-        while (cursor<=endDate||currentWeek.length>0) {
-          const dateKey=localDateKey(cursor), log=data.logs[dateKey];
-          const customCount=log?(data.customHabits||[]).filter(h=>log[h.key]).length:0;
-          const count=log?(log.pimsleur?1:0)+(log.anki?1:0)+(log.innerFrench?1:0)+(log.workout?1:0)+customCount:0;
-          const d=cursor.getDate(), m=cursor.getMonth();
-          currentWeek.push({ date:dateKey, count, month:m, day:d, year:cursor.getFullYear(),
-            isFuture:cursor>todayDate, isToday:dateKey===today,
-            hasFrench:log?!!(log.pimsleur||log.anki||log.innerFrench||customCount>0):false, hasWorkout:log?!!log.workout:false,
-            label: (d===1 && m===0) ? String(cursor.getFullYear()).slice(2) : ([1,10,20,30].includes(d) ? String(d) : "") });
-          if (currentWeek.length===7) {
-            const monday = new Date(currentWeek[1].date+"T12:00:00");
-            weeks.push({ days: currentWeek, weekNum: getISOWeek(monday) });
-            currentWeek=[];
+      // ─── Year grid computation ──────────────────────────────────────────
+      const yearGrid = useMemo(() => {
+        const todayDate = new Date();
+        const year = todayDate.getFullYear();
+        const startDate = new Date(year, 0, 1);
+        while (startDate.getDay() !== 0) startDate.setDate(startDate.getDate()-1);
+        const endDate = new Date(todayDate.getFullYear(), todayDate.getMonth()+12, todayDate.getDate());
+        const weeks = [];
+        let current = [], cursor = new Date(startDate);
+        while (cursor <= endDate || current.length > 0) {
+          const dateKey = localDateKey(cursor);
+          const log = data.logs[dateKey];
+          const customCount = log ? (data.customHabits||[]).filter(h => log[h.key]).length : 0;
+          const count = log
+            ? (log.pimsleur?1:0)+(log.anki?1:0)+(log.innerFrench?1:0)+(log.workout?1:0)+customCount
+            : 0;
+          const d = cursor.getDate(), m = cursor.getMonth();
+          current.push({
+            date: dateKey, count, month: m, day: d, year: cursor.getFullYear(),
+            isFuture: cursor > todayDate,
+            isToday: dateKey === today,
+            hasFrench: log ? !!(log.pimsleur||log.anki||log.innerFrench||customCount>0) : false,
+            hasWorkout: log ? !!log.workout : false,
+            label: (d===1 && m===0) ? String(cursor.getFullYear()).slice(2) : ([1,10,20,30].includes(d) ? String(d) : ""),
+          });
+          if (current.length === 7) {
+            const monday = new Date(current[1].date+"T12:00:00");
+            weeks.push({ days: current, weekNum: getISOWeek(monday) });
+            current = [];
           }
           cursor.setDate(cursor.getDate()+1);
-          if (weeks.length>120) break;
+          if (weeks.length > 120) break;
         }
-        if (currentWeek.length>0) {
-          while(currentWeek.length<7) currentWeek.push({isFuture:true,count:0,label:""});
-          weeks.push({ days: currentWeek, weekNum: 0 });
+        if (current.length > 0) {
+          while (current.length < 7) current.push({ isFuture:true, count:0, label:"" });
+          weeks.push({ days: current, weekNum: 0 });
         }
         return weeks;
+      }, [data.logs, data.customHabits, today]);
+
+      const heatColor = cell => {
+        if (cell.isFuture) return HEAT.future;
+        if (cell.hasWorkout && !cell.hasFrench) return C.workoutOnly;
+        return HEAT[Math.min(cell.count, 4)] || HEAT[0];
       };
 
-      const getHeatColor = (cell) => {
-        if (cell.isFuture)      return heatColors.future;
-        if (cell.hasWorkout&&!cell.hasFrench) return "#2d6a2d";
-        return heatColors[Math.min(cell.count,4)]||heatColors[0];
-      };
+      const yearStats = useMemo(() => {
+        const logs = Object.values(data.logs);
+        return {
+          active: logs.filter(l => hasAnyHabit(l, data.customHabits)).length,
+          full: logs.filter(l => l.pimsleur && l.anki && l.innerFrench && (data.customHabits||[]).every(h => l[h.key])).length,
+          workouts: logs.filter(l => l.workout).length,
+        };
+      }, [data.logs, data.customHabits]);
 
-      const yearStats = () => {
-        const logs=Object.values(data.logs);
-        return { active:logs.filter(l=>l.pimsleur||l.anki||l.innerFrench||l.workout||(data.customHabits||[]).some(h=>l[h.key])).length,
-                 full:logs.filter(l=>l.pimsleur&&l.anki&&l.innerFrench&&(data.customHabits||[]).every(h=>l[h.key])).length,
-                 workouts:logs.filter(l=>l.workout).length };
-      };
-
-      const wCounts = () => {
-        const c={}; WORKOUT_TYPES.forEach(w=>c[w.key]=0);
-        Object.values(data.logs).forEach(l=>{ if(l.workout) c[l.workout]=(c[l.workout]||0)+1; });
+      const workoutCounts = useMemo(() => {
+        const c = {};
+        WORKOUT_TYPES.forEach(w => c[w.key] = 0);
+        Object.values(data.logs).forEach(l => { if (l.workout) c[l.workout] = (c[l.workout]||0) + 1; });
         return c;
-      };
+      }, [data.logs]);
 
-      const T  = (active) => ({ flexShrink:0, padding:"11px 18px", background:"none", border:"none", color:active?accent:textMuted, fontSize:10, letterSpacing:1.5, textTransform:"uppercase", borderBottom:active?`2px solid ${accent}`:"2px solid transparent", cursor:"pointer", fontFamily:"Georgia,serif", whiteSpace:"nowrap" });
-      const CS = { background:card, borderRadius:14, padding:16, border:`1px solid ${border}`, marginBottom:12, boxShadow:"0 1px 3px rgba(0,0,0,0.06)" };
-      const LS = { fontSize:11, letterSpacing:2, color:textMuted, textTransform:"uppercase", marginBottom:16 };
-      const CK = (on) => ({ width:26, height:26, borderRadius:"50%", background:on?green:"transparent", border:`2px solid ${on?green:border}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, color:"#fff", cursor:"pointer", flexShrink:0 });
 
-      const HabitRow = ({ habitKey, emoji, label, sublabel, countField, countValue, children }) => (
-        <div style={{ ...CS, background:todayLog[habitKey]?cardActive:card, border:`1px solid ${todayLog[habitKey]?borderActive:border}` }}>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:12, flex:1 }}>
-              <span style={{ fontSize:26 }}>{emoji}</span>
-              <div>
-                <div style={{ color:todayLog[habitKey]?green:text, fontSize:15, fontWeight:"bold" }}>{label}</div>
-                <div style={{ color:textMuted, fontSize:11, marginTop:2 }}>{sublabel}</div>
-              </div>
-            </div>
-            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-              {countField && (
-                <Stepper value={countValue} onChange={v => updateCount(countField, v)} />
-              )}
-              <div onClick={() => toggleHabit(habitKey)} style={CK(todayLog[habitKey])}>{todayLog[habitKey]?"✓":""}</div>
-            </div>
-          </div>
-          {children}
-        </div>
-      );
-
-      // Auth loading
+      // ─── Gates ──────────────────────────────────────────────────────────
       if (authLoading) return (
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", minHeight:"100vh", background:bg, flexDirection:"column", gap:16 }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", minHeight:"100vh", background:C.bg, flexDirection:"column", gap:16 }}>
           <div style={{ fontSize:28 }}>📊</div>
-          <div style={{ fontSize:13, color:textMuted, letterSpacing:2, textTransform:"uppercase" }}>Loading…</div>
+          <div style={{ fontSize:13, color:C.textMuted, letterSpacing:2, textTransform:"uppercase" }}>Loading…</div>
         </div>
       );
 
-      // Sign-in screen
       if (!user) return (
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", minHeight:"100vh", background:bg, flexDirection:"column", gap:24, padding:32 }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", minHeight:"100vh", background:C.bg, flexDirection:"column", gap:24, padding:32 }}>
           <div style={{ textAlign:"center" }}>
-            <div style={{ fontSize:10, letterSpacing:3, color:textMuted, textTransform:"uppercase", marginBottom:8 }}>Breno</div>
-            <div style={{ fontSize:28, fontWeight:"bold", color:text }}>Progress Tracker</div>
-            <div style={{ fontSize:13, color:textMuted, marginTop:8 }}>Sign in to sync your data across devices</div>
+            <div style={{ fontSize:10, letterSpacing:3, color:C.textMuted, textTransform:"uppercase", marginBottom:8 }}>Breno</div>
+            <div style={{ fontSize:28, fontWeight:"bold", color:C.text }}>Progress Tracker</div>
+            <div style={{ fontSize:13, color:C.textMuted, marginTop:8 }}>Sign in to sync your data across devices</div>
           </div>
-          <button onClick={()=>window.__firebase.signIn()} style={{ display:"flex", alignItems:"center", gap:12, background:card, border:`1px solid ${border}`, borderRadius:14, padding:"14px 24px", fontSize:15, color:text, cursor:"pointer", fontFamily:"Georgia,serif", boxShadow:"0 2px 8px rgba(0,0,0,0.08)" }}>
+          <button onClick={()=>window.__firebase.signIn()} style={{ display:"flex", alignItems:"center", gap:12, background:C.card, border:`1px solid ${C.border}`, borderRadius:14, padding:"14px 24px", fontSize:15, color:C.text, cursor:"pointer", fontFamily:"Georgia,serif", boxShadow:"0 2px 8px rgba(0,0,0,0.08)" }}>
             <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
             Continue with Google
           </button>
-          {syncing && <div style={{ fontSize:11, color:textMuted, letterSpacing:1 }}>Syncing…</div>}
         </div>
       );
 
-      return (
-        <div style={{ fontFamily:"Georgia,serif", background:bg, minHeight:"100vh", color:text, maxWidth:430, margin:"0 auto", paddingBottom:80 }}>
+      // ─── Header + Tabs ──────────────────────────────────────────────────
+      const renderHeader = () => (
+        <div style={{ background:"#ede8df", padding:"24px 20px 16px", borderBottom:`1px solid ${C.border}`, position:"sticky", top:0, zIndex:10 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+            <div>
+              <div style={{ fontSize:10, letterSpacing:3, color:C.textMuted, textTransform:"uppercase", marginBottom:4 }}>Breno</div>
+              <div style={{ fontSize:22, fontWeight:"bold", color:C.text }}>Progress Tracker</div>
+              <div style={{ fontSize:9, color:C.textMuted, marginTop:2, display:"flex", alignItems:"center", gap:6 }}>
+                <span style={{ width:6, height:6, borderRadius:"50%", background: syncing?"#f0a020":C.green, display:"inline-block" }}/>
+                <span>{syncing ? "Syncing…" : user.email}</span>
+                <span onClick={()=>window.__firebase.signOut()} style={{ color:C.accent, cursor:"pointer", marginLeft:4 }}>Sign out</span>
+              </div>
+            </div>
+            <div style={{ textAlign:"right" }}>
+              <div style={{ fontSize:30, fontWeight:"bold", color: streak>0?C.accent:C.mutedGray }}>{streak}</div>
+              <div style={{ fontSize:10, color:C.textMuted, letterSpacing:2, textTransform:"uppercase" }}>day streak</div>
+            </div>
+          </div>
+          <div style={{ marginTop:14, display:"flex", gap:10 }}>
+            {[
+              { label:"Day", value: dayCount },
+              { label:"Pimsleur", value: data.pimsleurTotal||0 },
+              { label:"Ear", value: lastComp!==null?`${lastComp}%`:"—" },
+            ].map(s => (
+              <div key={s.label} style={{ flex:1, background:C.bg, borderRadius:10, padding:"8px 0", border:`1px solid ${C.border}`, textAlign:"center" }}>
+                <div style={{ fontSize:18, fontWeight:"bold", color:C.accent }}>{s.value}</div>
+                <div style={{ fontSize:9, color:C.textMuted, letterSpacing:1, textTransform:"uppercase" }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
 
-          {/* HEADER */}
-          <div style={{ background:"#ede8df", padding:"24px 20px 16px", borderBottom:`1px solid ${border}`, position:"sticky", top:0, zIndex:10 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+      const tabStyle = active => ({
+        flexShrink:0, padding:"11px 18px", background:"none", border:"none",
+        color: active?C.accent:C.textMuted, fontSize:10, letterSpacing:1.5,
+        textTransform:"uppercase",
+        borderBottom: active?`2px solid ${C.accent}`:"2px solid transparent",
+        cursor:"pointer", fontFamily:"Georgia,serif", whiteSpace:"nowrap",
+      });
+
+      const renderTabs = () => (
+        <div style={{ position:"relative", background:"#ede8df", borderBottom:`1px solid ${C.border}` }}>
+          <div style={{ display:"flex", overflowX:"auto", scrollbarWidth:"none" }}>
+            {TABS.map(t => (
+              <button key={t.key} onClick={()=>setActiveTab(t.key)} style={tabStyle(activeTab===t.key)}>{t.label}</button>
+            ))}
+          </div>
+          <div style={{ position:"absolute", right:0, top:0, bottom:2, width:24, background:"linear-gradient(to right, rgba(237,232,223,0), #ede8df 60%)", pointerEvents:"none" }}/>
+        </div>
+      );
+
+
+      // ─── TAB: DAY ───────────────────────────────────────────────────────
+      const renderWorkoutHabitCard = () => (
+        <div key="workout" style={ todayLog.workout ? S.cardActive : S.card }>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+              <span style={{ fontSize:26 }}>🏋️</span>
               <div>
-                <div style={{ fontSize:10, letterSpacing:3, color:textMuted, textTransform:"uppercase", marginBottom:4 }}>Breno</div>
-                <div style={{ fontSize:22, fontWeight:"bold", color:text }}>Progress Tracker</div>
-                <div style={{ fontSize:9, color:textMuted, marginTop:2, display:"flex", alignItems:"center", gap:6 }}>
-                  <span style={{ width:6, height:6, borderRadius:"50%", background:syncing?"#f0a020":green, display:"inline-block" }}/>
-                  <span>{syncing ? "Syncing…" : user.email}</span>
-                  <span onClick={()=>window.__firebase.signOut()} style={{ color:accent, cursor:"pointer", marginLeft:4 }}>Sign out</span>
+                <div style={{ color: todayLog.workout?C.green:C.text, fontSize:15, fontWeight:"bold" }}>Workout</div>
+                <div style={{ color:C.textMuted, fontSize:11, marginTop:2 }}>
+                  {selectedWorkout ? `${selectedWorkout.emoji} ${selectedWorkout.label}` : "Tap to log"}
                 </div>
               </div>
-              <div style={{ textAlign:"right" }}>
-                <div style={{ fontSize:30, fontWeight:"bold", color:streak>0?accent:"#c0b8a8" }}>{streak}</div>
-                <div style={{ fontSize:10, color:textMuted, letterSpacing:2, textTransform:"uppercase" }}>day streak</div>
-              </div>
             </div>
-            <div style={{ marginTop:14, display:"flex", gap:10 }}>
-              {[{label:"Day",value:days},{label:"Pimsleur",value:data.pimsleurTotal||0},{label:"Ear",value:lastComp!==null?`${lastComp}%`:"—"}].map(s=>(
-                <div key={s.label} style={{ flex:1, background:bg, borderRadius:10, padding:"8px 0", border:`1px solid ${border}`, textAlign:"center" }}>
-                  <div style={{ fontSize:18, fontWeight:"bold", color:accent }}>{s.value}</div>
-                  <div style={{ fontSize:9, color:textMuted, letterSpacing:1, textTransform:"uppercase" }}>{s.label}</div>
-                </div>
-              ))}
-            </div>
+            <button onClick={()=>setShowWorkoutPicker(!showWorkoutPicker)} style={todayLog.workout ? S.pillBtnOn : S.pillBtn}>
+              {todayLog.workout ? "CHANGE" : "LOG"}
+            </button>
           </div>
-
-          {/* TABS */}
-          <div style={{ position:"relative", background:"#ede8df", borderBottom:`1px solid ${border}` }}>
-            <div style={{ display:"flex", overflowX:"auto", scrollbarWidth:"none" }}>
-              {[{key:"today",label:"day"},{key:"workout",label:"workout"},{key:"progress",label:"progress"},{key:"year",label:"year"},{key:"history",label:"history"},{key:"settings",label:"settings"}].map(tab=>(
-                <button key={tab.key} onClick={()=>setActiveTab(tab.key)} style={T(activeTab===tab.key)}>{tab.label}</button>
-              ))}
-            </div>
-            <div style={{ position:"absolute", right:0, top:0, bottom:2, width:24, background:"linear-gradient(to right, rgba(237,232,223,0), #ede8df 60%)", pointerEvents:"none" }}/>
-          </div>
-
-          {/* TODAY */}
-          {activeTab==="today" && (
-            <div style={{ padding:"20px 16px" }}>
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, gap:10 }}>
-                <button onClick={()=>{
-                  const d = new Date(viewDate+"T12:00:00"); d.setDate(d.getDate()-1);
-                  setViewDate(localDateKey(d));
-                }} style={{ width:42, height:42, borderRadius:21, background:card, border:`1px solid ${border}`, color:text, fontSize:20, cursor:"pointer", fontFamily:"Georgia,serif", display:"flex", alignItems:"center", justifyContent:"center" }}>‹</button>
-                <div onClick={()=>setViewDate(today)} style={{ flex:1, textAlign:"center", cursor:viewDate!==today?"pointer":"default" }}>
-                  <div style={{ fontSize:11, letterSpacing:2, color:viewDate===today?accent:textMuted, textTransform:"uppercase" }}>
-                    {viewDate===today ? "Today" : (()=>{ const d=new Date(viewDate+"T12:00:00"); const t=new Date(today+"T12:00:00"); const diff=Math.round((t-d)/86400000); return diff===1?"Yesterday":`${diff} days ago`; })()}
-                  </div>
-                  <div style={{ fontSize:14, color:text, marginTop:2 }}>{new Date(viewDate+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}</div>
-                </div>
-                <button disabled={viewDate>=today} onClick={()=>{
-                  if (viewDate>=today) return;
-                  const d = new Date(viewDate+"T12:00:00"); d.setDate(d.getDate()+1);
-                  setViewDate(localDateKey(d));
-                }} style={{ width:42, height:42, borderRadius:21, background:viewDate>=today?bg:card, border:`1px solid ${border}`, color:viewDate>=today?"#c0b8a8":text, fontSize:20, cursor:viewDate>=today?"default":"pointer", fontFamily:"Georgia,serif", display:"flex", alignItems:"center", justifyContent:"center" }}>›</button>
-              </div>
-
-              {allActiveHabits.map(h => {
-                if (h.key === "workout") return (
-                  <div key="workout" style={{ ...CS, background:todayLog.workout?cardActive:card, border:`1px solid ${todayLog.workout?borderActive:border}` }}>
-                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-                        <span style={{ fontSize:26 }}>🏋️</span>
-                        <div>
-                          <div style={{ color:todayLog.workout?green:text, fontSize:15, fontWeight:"bold" }}>Workout</div>
-                          <div style={{ color:textMuted, fontSize:11, marginTop:2 }}>{selWorkout?`${selWorkout.emoji} ${selWorkout.label}`:"Tap to log"}</div>
-                        </div>
-                      </div>
-                      <button onClick={()=>setShowWorkoutPicker(!showWorkoutPicker)} style={{ background:todayLog.workout?green:bg, border:`1px solid ${todayLog.workout?green:border}`, borderRadius:8, color:todayLog.workout?"#fff":textMuted, fontSize:11, padding:"6px 14px", cursor:"pointer", fontFamily:"Georgia,serif" }}>
-                        {todayLog.workout?"CHANGE":"LOG"}
-                      </button>
-                    </div>
-                    {showWorkoutPicker && (
-                      <div style={{ marginTop:14, display:"flex", gap:8, flexWrap:"wrap" }}>
-                        {WORKOUT_TYPES.map(w=>(
-                          <button key={w.key} onClick={()=>selectWorkout(w.key)} style={{ flex:"1 1 calc(33% - 8px)", padding:"10px 6px", borderRadius:10, background:todayLog.workout===w.key?green:bg, border:`1px solid ${todayLog.workout===w.key?green:border}`, color:todayLog.workout===w.key?"#fff":text, fontSize:12, cursor:"pointer", fontFamily:"Georgia,serif", textAlign:"center" }}>
-                            <div style={{ fontSize:20 }}>{w.emoji}</div>
-                            <div style={{ marginTop:4, fontWeight:"bold" }}>{w.label}</div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+          {showWorkoutPicker && (
+            <div style={{ marginTop:14, display:"flex", gap:8, flexWrap:"wrap" }}>
+              {WORKOUT_TYPES.map(w => {
+                const active = todayLog.workout === w.key;
+                return (
+                  <button key={w.key} onClick={()=>selectWorkout(w.key)} style={{
+                    flex:"1 1 calc(33% - 8px)", padding:"10px 6px", borderRadius:10,
+                    background: active?C.green:C.bg,
+                    border: `1px solid ${active?C.green:C.border}`,
+                    color: active?"#fff":C.text,
+                    fontSize:12, cursor:"pointer", fontFamily:"Georgia,serif", textAlign:"center",
+                  }}>
+                    <div style={{ fontSize:20 }}>{w.emoji}</div>
+                    <div style={{ marginTop:4, fontWeight:"bold" }}>{w.label}</div>
+                  </button>
                 );
-                if (h.key === "eartest") {
-                  const compForViewDate = (data.comprehensionLog||[]).find(e=>e.date===viewDate);
-                  const isLogged = !!compForViewDate;
-                  return (
-                  <div key="eartest" style={{ ...CS, background:isLogged?cardActive:card, border:`1px solid ${isLogged?borderActive:border}` }}>
-                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                      <div>
-                        <div style={{ fontSize:15, fontWeight:"bold", color:isLogged?green:text }}>👂 Ear Test</div>
-                        <div style={{ color:textMuted, fontSize:11, marginTop:2 }}>Inner French audio-only %</div>
-                      </div>
-                      <button onClick={()=>{ if (isLogged) { clearComprehension(); } else { setShowCompForm(!showCompForm); } }} style={{ background:isLogged?green:bg, border:`1px solid ${isLogged?green:border}`, borderRadius:8, color:isLogged?"#fff":textMuted, fontSize:11, padding:"6px 14px", cursor:"pointer", fontFamily:"Georgia,serif" }}>LOG</button>
-                    </div>
-                    {showCompForm && (
-                      <div style={{ marginTop:12, display:"flex", gap:8 }}>
-                        <input type="number" min="0" max="100" value={todayLog.comprehension} onChange={e=>setTodayLog({...todayLog,comprehension:e.target.value})} placeholder="e.g. 65" style={{ flex:1, background:bg, border:`1px solid ${border}`, borderRadius:8, color:text, fontSize:16, padding:"8px 12px", fontFamily:"Georgia,serif" }} />
-                        <button onClick={logComprehension} style={{ background:accent, border:"none", borderRadius:8, color:"#fff", fontSize:13, fontWeight:"bold", padding:"8px 16px", cursor:"pointer", fontFamily:"Georgia,serif" }}>SAVE</button>
-                      </div>
-                    )}
-                    {!showCompForm && isLogged && (
-                      <div onClick={()=>setShowCompForm(true)} style={{ marginTop:8, fontSize:28, fontWeight:"bold", color:compForViewDate.value>=75?green:compForViewDate.value>=60?accent:red, cursor:"pointer" }}>{compForViewDate.value}%</div>
-                    )}
-                  </div>
-                  );
-                }
-                if (h.isBuiltin) return (
-                  <HabitRow key={h.key} habitKey={h.key} emoji={h.emoji} label={h.label}
-                    sublabel={h.sublabelFn(data)}
-                    countField={h.countField} countValue={h.countField ? (data[h.countField]||0) : undefined} />
-                );
-                return <HabitRow key={h.key} habitKey={h.key} emoji={h.emoji} label={h.label} sublabel="Custom habit" />;
               })}
-
-              {saved&&<div style={{ textAlign:"center", marginTop:16, color:green, fontSize:12, letterSpacing:2 }}>✓ SAVED</div>}
             </div>
           )}
+        </div>
+      );
 
-          {/* WORKOUT */}
-          {activeTab==="workout" && (
-            <div style={{ padding:"20px 16px" }}>
-              {!todaySession && (
-                <>
-                  <div style={LS}>Pick today's workout</div>
-                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:20 }}>
-                    {WORKOUT_TYPES.map(w => {
-                      const count = getExercisesForType(w.key).length;
-                      return (
-                      <button key={w.key} onClick={()=>startSession(w.key)}
-                        style={{ background:card, border:`1px solid ${border}`, borderRadius:14, padding:"18px 12px", textAlign:"center", boxShadow:"0 1px 3px rgba(0,0,0,0.06)", cursor:"pointer", fontFamily:"Georgia,serif" }}>
-                        <div style={{ fontSize:30, lineHeight:1, marginBottom:6 }}>{w.emoji}</div>
-                        <div style={{ fontSize:14, fontWeight:"bold", color:text }}>{w.label}</div>
-                        <div style={{ fontSize:10, color:textMuted, marginTop:2 }}>{count} exercises</div>
-                      </button>
-                    );})}
+      const renderEarTestCard = () => {
+        const compEntry = (data.comprehensionLog||[]).find(e => e.date===viewDate);
+        const isLogged = !!compEntry;
+        return (
+          <div key="eartest" style={ isLogged ? S.cardActive : S.card }>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <div>
+                <div style={{ fontSize:15, fontWeight:"bold", color: isLogged?C.green:C.text }}>👂 Ear Test</div>
+                <div style={{ color:C.textMuted, fontSize:11, marginTop:2 }}>Inner French audio-only %</div>
+              </div>
+              <button onClick={()=>{ if (isLogged) clearComprehension(); else setShowCompForm(!showCompForm); }}
+                style={ isLogged ? S.pillBtnOn : S.pillBtn }>LOG</button>
+            </div>
+            {showCompForm && (
+              <div style={{ marginTop:12, display:"flex", gap:8 }}>
+                <input type="number" min="0" max="100" value={todayLog.comprehension}
+                  onChange={e=>setTodayLog({ ...todayLog, comprehension: e.target.value })}
+                  placeholder="e.g. 65"
+                  style={{ ...S.input, flex:1, fontSize:16, padding:"8px 12px" }} />
+                <button onClick={logComprehension} style={{ ...S.primaryBtn, padding:"8px 16px" }}>SAVE</button>
+              </div>
+            )}
+            {!showCompForm && isLogged && (
+              <div onClick={()=>setShowCompForm(true)} style={{
+                marginTop:8, fontSize:28, fontWeight:"bold", cursor:"pointer",
+                color: compEntry.value>=75?C.green : compEntry.value>=60?C.accent : C.red,
+              }}>{compEntry.value}%</div>
+            )}
+          </div>
+        );
+      };
+
+      const renderDayTab = () => {
+        const arrowBtn = disabled => ({
+          width:42, height:42, borderRadius:21,
+          background: disabled?C.bg:C.card,
+          border:`1px solid ${C.border}`,
+          color: disabled?C.mutedGray:C.text,
+          fontSize:20, cursor: disabled?"default":"pointer",
+          fontFamily:"Georgia,serif",
+          display:"flex", alignItems:"center", justifyContent:"center",
+        });
+        const goRel = delta => {
+          const d = new Date(viewDate+"T12:00:00"); d.setDate(d.getDate()+delta);
+          setViewDate(localDateKey(d));
+        };
+        const dayDiff = (() => {
+          const d = new Date(viewDate+"T12:00:00");
+          const t = new Date(today+"T12:00:00");
+          return Math.round((t-d)/86400000);
+        })();
+
+        return (
+          <div style={S.bodyPad}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, gap:10 }}>
+              <button onClick={()=>goRel(-1)} style={arrowBtn(false)}>‹</button>
+              <div onClick={()=>setViewDate(today)} style={{ flex:1, textAlign:"center", cursor: viewDate!==today?"pointer":"default" }}>
+                <div style={{ fontSize:11, letterSpacing:2, color: viewDate===today?C.accent:C.textMuted, textTransform:"uppercase" }}>
+                  {viewDate===today ? "Today" : (dayDiff===1 ? "Yesterday" : `${dayDiff} days ago`)}
+                </div>
+                <div style={{ fontSize:14, color:C.text, marginTop:2 }}>{formatDate(viewDate, {weekday:"long",month:"long",day:"numeric"})}</div>
+              </div>
+              <button disabled={viewDate>=today} onClick={()=>{ if (viewDate<today) goRel(1); }} style={arrowBtn(viewDate>=today)}>›</button>
+            </div>
+
+            {allActiveHabits.map(h => {
+              if (h.key === "workout") return renderWorkoutHabitCard();
+              if (h.key === "eartest") return renderEarTestCard();
+              const stepper = h.countField
+                ? <NumberStepper value={data[h.countField]||0} onChange={v=>updateCount(h.countField, v)} />
+                : null;
+              return (
+                <HabitCard key={h.key}
+                  active={!!todayLog[h.key]}
+                  emoji={h.emoji}
+                  label={h.label}
+                  sublabel={h.isBuiltin ? h.sublabelFn(data) : "Custom habit"}
+                  onToggle={() => toggleHabit(h.key)}
+                  stepper={stepper} />
+              );
+            })}
+
+            <SavedToast show={saved} />
+          </div>
+        );
+      };
+
+
+      // ─── TAB: WORKOUT ───────────────────────────────────────────────────
+      const renderSetRow = (exId, st, idx) => {
+        const stepBtn = color => ({
+          width:26, height:32, background:"none", border:"none",
+          color, fontSize:16, fontFamily:"Georgia,serif", lineHeight:1, cursor:"pointer",
+        });
+        const wrap = { display:"flex", alignItems:"center", background:C.bg, border:`1px solid ${C.border}`, borderRadius:8, overflow:"hidden" };
+        const numStyle = { width:40, textAlign:"center", border:"none", background:"none", fontSize:12, fontWeight:"bold", fontFamily:"Georgia,serif", color:C.text, padding:0 };
+        const unitStyle = { fontSize:8, color:C.textMuted, letterSpacing:1, marginLeft:2, fontWeight:"normal" };
+
+        return (
+          <div key={idx} style={{ display:"grid", gridTemplateColumns:"22px 1fr 1fr 20px", gap:6, alignItems:"center" }}>
+            <div style={{ fontSize:10, color:C.textMuted, fontWeight:"bold", letterSpacing:1 }}>S{idx+1}</div>
+            <div style={wrap}>
+              <button onClick={()=>stepSet(exId,idx,"weight",-5)} style={stepBtn(C.textMuted)}>−</button>
+              <div style={{ flex:1, textAlign:"center", fontSize:12, fontWeight:"bold", color:C.text, fontFamily:"Georgia,serif" }}>
+                <input type="number" step="0.5" value={st.weight||0}
+                  onChange={e=>setSetValue(exId,idx,"weight",parseFloat(e.target.value)||0)}
+                  style={numStyle} />
+                <span style={unitStyle}>LB</span>
+              </div>
+              <button onClick={()=>stepSet(exId,idx,"weight",5)} style={stepBtn(C.accent)}>+</button>
+            </div>
+            <div style={wrap}>
+              <button onClick={()=>stepSet(exId,idx,"reps",-1)} style={stepBtn(C.textMuted)}>−</button>
+              <div style={{ flex:1, textAlign:"center", fontSize:12, fontWeight:"bold", color:C.text, fontFamily:"Georgia,serif" }}>
+                <input type="number" step="0.5" value={st.reps||0}
+                  onChange={e=>setSetValue(exId,idx,"reps",parseFloat(e.target.value)||0)}
+                  style={{ ...numStyle, width:32 }} />
+                <span style={unitStyle}>REPS</span>
+              </div>
+              <button onClick={()=>stepSet(exId,idx,"reps",1)} style={stepBtn(C.accent)}>+</button>
+            </div>
+            <button onClick={()=>removeSet(exId,idx)} style={{ width:20, height:20, background:"none", border:"none", color:C.textMuted, fontSize:14, cursor:"pointer", fontFamily:"Georgia,serif" }}>×</button>
+          </div>
+        );
+      };
+
+      const renderExerciseCard = (ex, exIdx) => {
+        const isRenaming = editingExercise && editingExercise.id === ex.id;
+        const total = todaySession.exercises.length;
+        const typeLabel = WORKOUT_TYPES.find(t=>t.key===todaySession.type)?.label || todaySession.type;
+
+        return (
+          <div key={ex.id} style={ ex.done ? S.cardActive : S.card }>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12, gap:10 }}>
+              <div style={{ flex:1, display:"flex", alignItems:"center", gap:8 }}>
+                <ReorderArrows
+                  onUp={()=>moveExercise(ex.id,-1)}
+                  onDown={()=>moveExercise(ex.id,1)}
+                  canUp={exIdx>0}
+                  canDown={exIdx<total-1} />
+                {isRenaming ? (
+                  <input type="text" defaultValue={ex.name} autoFocus
+                    onBlur={e=>{ renameExercise(todaySession.type, ex.name, e.target.value); setEditingExercise(null); }}
+                    onKeyDown={e=>{ if(e.key==="Enter") e.target.blur(); if(e.key==="Escape") setEditingExercise(null); }}
+                    style={{ flex:1, background:C.bg, border:`1px solid ${C.accent}`, borderRadius:6, padding:"6px 8px", fontSize:14, fontWeight:"bold", color:C.text, fontFamily:"Georgia,serif" }} />
+                ) : (
+                  <div onClick={()=>setEditingExercise({ id: ex.id })}
+                    style={{ fontSize:14, fontWeight:"bold", color: ex.done?C.green:C.text, cursor:"pointer", flex:1 }}>
+                    {ex.name}
                   </div>
+                )}
+              </div>
+              <button onClick={()=>{ if(window.confirm(`Remove "${ex.name}" from ${typeLabel}? Future sessions of this type won't include it.`)) deleteExercise(todaySession.type, ex.name); }}
+                style={{ width:24, height:24, borderRadius:6, background:"none", border:`1px solid ${C.border}`, color:C.textMuted, fontSize:14, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontFamily:"Georgia,serif", lineHeight:1, padding:0, marginRight:14 }}>×</button>
+              <Toggle on={ex.done} onClick={()=>toggleExerciseDone(ex.id)} />
+            </div>
 
+            {ex.sets.length > 0 && (
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {ex.sets.map((st, idx) => renderSetRow(ex.id, st, idx))}
+              </div>
+            )}
 
-                  {(() => {
-                    const recent = Object.entries(data.workoutSessions||{})
-                      .filter(([d])=>d!==today)
-                      .sort((a,b)=>b[0].localeCompare(a[0]))
-                      .slice(0,7);
-                    if (!recent.length) return null;
-                    return (
-                      <div style={CS}>
-                        <div style={{ fontSize:13, fontWeight:"bold", marginBottom:10 }}>Recent sessions</div>
-                        {recent.map(([d, s], i) => {
-                          const w = WORKOUT_TYPES.find(t=>t.key===s.type);
-                          const doneCount = (s.exercises||[]).filter(e=>e.done).length;
-                          const totalSets = (s.exercises||[]).reduce((acc,e)=>acc + (e.sets||[]).length, 0);
-                          const isExp = expandedSession===d;
-                          return (
-                            <div key={d} style={{ borderTop: i===0?"none":`1px solid ${border}` }}>
-                              <div onClick={()=>setExpandedSession(isExp?null:d)}
-                                style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", fontSize:12, cursor:"pointer" }}>
-                                <span style={{ color:isExp?accent:textMuted, fontWeight:isExp?"bold":"normal" }}>{new Date(d+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}</span>
-                                <span style={{ display:"flex", alignItems:"center", gap:8 }}>
-                                  <span style={{ fontWeight:"bold", color:text }}>{w?w.emoji:""} {w?w.label:s.type} · {doneCount}/{(s.exercises||[]).length}</span>
-                                  <span style={{ fontSize:10, color:textMuted }}>{isExp?"▲":"▼"}</span>
-                                </span>
+            <button onClick={()=>addSet(ex.id)}
+              style={{ marginTop: ex.sets.length?8:0, background:"none", border:`1px dashed ${C.border}`, borderRadius:8, width:"100%", padding:7, fontSize:11, color:C.textMuted, letterSpacing:1, fontFamily:"Georgia,serif", cursor:"pointer" }}>+ ADD SET</button>
+
+            <textarea value={ex.notes||""} onChange={e=>updateExerciseNotes(ex.id, e.target.value)} placeholder="Notes (optional)…" rows="1"
+              style={{ width:"100%", marginTop:8, fontSize:11, color:C.text, fontStyle:"italic", padding:"8px 10px", background:C.bg, borderRadius:6, border:`1px solid ${C.border}`, borderLeftWidth:2, borderLeftColor:C.accent, fontFamily:"Georgia,serif", resize:"vertical", minHeight:32 }} />
+          </div>
+        );
+      };
+
+      const renderWorkoutSession = () => {
+        const w = WORKOUT_TYPES.find(t => t.key===todaySession.type);
+        const doneCount = (todaySession.exercises||[]).filter(e => e.done).length;
+        const totalCount = (todaySession.exercises||[]).length;
+        const hiddenForType = (data.hiddenPresets||{})[todaySession.type] || [];
+
+        return (
+          <>
+            <div style={{ ...S.cardActive, display:"flex", alignItems:"center", gap:12 }}>
+              <div style={{ fontSize:32 }}>{w?w.emoji:"🏋️"}</div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:17, fontWeight:"bold", color:C.green }}>{w?w.label:"Workout"} Day</div>
+                <div style={{ fontSize:11, color:C.textMuted, marginTop:2 }}>{formatDate(today,{weekday:"long",month:"long",day:"numeric"})} · {doneCount} of {totalCount} done</div>
+              </div>
+              <button onClick={()=>{ if(window.confirm("Change workout type? Current sets and notes will be lost.")) clearSession(); }}
+                style={{ background:"none", border:`1px solid ${C.border}`, borderRadius:8, color:C.textMuted, fontSize:10, padding:"6px 10px", letterSpacing:1, fontFamily:"Georgia,serif", cursor:"pointer" }}>CHANGE</button>
+            </div>
+
+            {todaySession.exercises.map((ex, exIdx) => renderExerciseCard(ex, exIdx))}
+
+            <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+              <input type="text" value={newExerciseName} onChange={e=>setNewExerciseName(e.target.value)} placeholder="Add custom exercise…"
+                onKeyDown={e=>{ if(e.key==="Enter") { addCustomExercise(todaySession.type, newExerciseName); setNewExerciseName(""); } }}
+                style={{ flex:1, background:C.bg, border:`1px dashed ${C.accent}`, borderRadius:14, padding:"12px 14px", fontSize:12, color:C.text, fontFamily:"Georgia,serif", letterSpacing:1 }} />
+              <button onClick={()=>{ addCustomExercise(todaySession.type, newExerciseName); setNewExerciseName(""); }}
+                style={{ background:C.accent, border:"none", borderRadius:14, color:"#fff", fontSize:12, fontWeight:"bold", padding:"0 18px", cursor:"pointer", fontFamily:"Georgia,serif", letterSpacing:1 }}>ADD</button>
+            </div>
+
+            {hiddenForType.length > 0 && (
+              <div style={{ ...S.card, marginTop:4 }}>
+                <div style={S.smallLabel}>Deleted exercises</div>
+                {hiddenForType.map(h => (
+                  <div key={h} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 0", borderTop:`1px solid ${C.border}` }}>
+                    <span style={{ fontSize:11, color:C.textMuted, textDecoration:"line-through" }}>{h}</span>
+                    <button onClick={()=>restorePreset(todaySession.type, h)} style={{ background:"none", border:`1px solid ${C.accent}`, borderRadius:6, color:C.accent, fontSize:10, padding:"3px 8px", cursor:"pointer", fontFamily:"Georgia,serif" }}>RESTORE</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <SavedToast show={saved} />
+          </>
+        );
+      };
+
+      const renderWorkoutPicker = () => {
+        const recent = Object.entries(data.workoutSessions||{})
+          .filter(([d]) => d!==today)
+          .sort((a,b) => b[0].localeCompare(a[0]))
+          .slice(0,7);
+
+        return (
+          <>
+            <div style={S.sectionLabel}>Pick today's workout</div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:20 }}>
+              {WORKOUT_TYPES.map(w => {
+                const count = getExercisesForType(data, w.key).length;
+                return (
+                  <button key={w.key} onClick={()=>startSession(w.key)} style={{
+                    ...S.card, marginBottom:0, padding:"18px 12px", textAlign:"center", cursor:"pointer", fontFamily:"Georgia,serif",
+                  }}>
+                    <div style={{ fontSize:30, lineHeight:1, marginBottom:6 }}>{w.emoji}</div>
+                    <div style={{ fontSize:14, fontWeight:"bold", color:C.text }}>{w.label}</div>
+                    <div style={{ fontSize:10, color:C.textMuted, marginTop:2 }}>{count} exercises</div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {recent.length > 0 && (
+              <div style={S.card}>
+                <div style={{ fontSize:13, fontWeight:"bold", marginBottom:10 }}>Recent sessions</div>
+                {recent.map(([d, s], i) => {
+                  const w = WORKOUT_TYPES.find(t => t.key===s.type);
+                  const doneCount = (s.exercises||[]).filter(e => e.done).length;
+                  const totalSets = (s.exercises||[]).reduce((acc,e) => acc + (e.sets||[]).length, 0);
+                  const isExp = expandedSession === d;
+                  return (
+                    <div key={d} style={{ borderTop: i===0?"none":`1px solid ${C.border}` }}>
+                      <div onClick={()=>setExpandedSession(isExp?null:d)}
+                        style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", fontSize:12, cursor:"pointer" }}>
+                        <span style={{ color: isExp?C.accent:C.textMuted, fontWeight: isExp?"bold":"normal" }}>
+                          {formatDate(d, {weekday:"short",month:"short",day:"numeric"})}
+                        </span>
+                        <span style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          <span style={{ fontWeight:"bold", color:C.text }}>
+                            {w?w.emoji:""} {w?w.label:s.type} · {doneCount}/{(s.exercises||[]).length}
+                          </span>
+                          <span style={{ fontSize:10, color:C.textMuted }}>{isExp?"▲":"▼"}</span>
+                        </span>
+                      </div>
+                      {isExp && (
+                        <div style={{ padding:"4px 0 12px 0" }}>
+                          {(s.exercises||[]).filter(e => (e.sets||[]).length>0 || e.done).length === 0 && (
+                            <div style={{ fontSize:11, color:C.textMuted, fontStyle:"italic", padding:"4px 0" }}>No exercises logged for this session.</div>
+                          )}
+                          {(s.exercises||[]).filter(e => (e.sets||[]).length>0 || e.done).map(e => (
+                            <div key={e.id} style={{ padding:"6px 10px", marginBottom:4, background:C.bg, borderRadius:6, borderLeft:`2px solid ${e.done?C.green:C.border}` }}>
+                              <div style={{ fontSize:12, fontWeight:"bold", color: e.done?C.green:C.text, display:"flex", alignItems:"center", gap:6 }}>
+                                {e.done && <span style={{ color:C.green }}>✓</span>}
+                                <span>{e.name}</span>
                               </div>
-                              {isExp && (
-                                <div style={{ padding:"4px 0 12px 0" }}>
-                                  {(s.exercises||[]).filter(e=>(e.sets||[]).length>0 || e.done).length === 0 && (
-                                    <div style={{ fontSize:11, color:textMuted, fontStyle:"italic", padding:"4px 0" }}>No exercises logged for this session.</div>
-                                  )}
-                                  {(s.exercises||[]).filter(e=>(e.sets||[]).length>0 || e.done).map(e => (
-                                    <div key={e.id} style={{ padding:"6px 10px", marginBottom:4, background:bg, borderRadius:6, borderLeft:`2px solid ${e.done?green:border}` }}>
-                                      <div style={{ fontSize:12, fontWeight:"bold", color:e.done?green:text, display:"flex", alignItems:"center", gap:6 }}>
-                                        {e.done && <span style={{ color:green }}>✓</span>}
-                                        <span>{e.name}</span>
-                                      </div>
-                                      {(e.sets||[]).length > 0 && (
-                                        <div style={{ fontSize:10, color:textMuted, marginTop:3, lineHeight:1.4 }}>
-                                          {e.sets.map((st,si)=>`${st.weight||0}lb × ${st.reps||0}`).join("  ·  ")}
-                                        </div>
-                                      )}
-                                      {e.notes && (
-                                        <div style={{ fontSize:10, color:textMuted, marginTop:3, fontStyle:"italic" }}>{e.notes}</div>
-                                      )}
-                                    </div>
-                                  ))}
-                                  <div style={{ fontSize:10, color:textMuted, marginTop:6, textAlign:"right", letterSpacing:1 }}>{totalSets} total sets</div>
+                              {(e.sets||[]).length > 0 && (
+                                <div style={{ fontSize:10, color:C.textMuted, marginTop:3, lineHeight:1.4 }}>
+                                  {e.sets.map(st => `${st.weight||0}lb × ${st.reps||0}`).join("  ·  ")}
                                 </div>
                               )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
-                </>
-              )}
-
-              {todaySession && (() => {
-                const w = WORKOUT_TYPES.find(t=>t.key===todaySession.type);
-                const doneCount = (todaySession.exercises||[]).filter(e=>e.done).length;
-                const totalCount = (todaySession.exercises||[]).length;
-                return (
-                  <>
-                    {/* Session header */}
-                    <div style={{ background:cardActive, border:`1px solid ${borderActive}`, borderRadius:14, padding:16, marginBottom:16, display:"flex", alignItems:"center", gap:12, boxShadow:"0 1px 3px rgba(0,0,0,0.06)" }}>
-                      <div style={{ fontSize:32 }}>{w?w.emoji:"🏋️"}</div>
-                      <div style={{ flex:1 }}>
-                        <div style={{ fontSize:17, fontWeight:"bold", color:green }}>{w?w.label:"Workout"} Day</div>
-                        <div style={{ fontSize:11, color:textMuted, marginTop:2 }}>{new Date(today+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})} · {doneCount} of {totalCount} done</div>
-                      </div>
-                      <button onClick={()=>{ if(window.confirm("Change workout type? Current sets and notes will be lost.")) clearSession(); }}
-                        style={{ background:"none", border:`1px solid ${border}`, borderRadius:8, color:textMuted, fontSize:10, padding:"6px 10px", letterSpacing:1, fontFamily:"Georgia,serif", cursor:"pointer" }}>CHANGE</button>
-                    </div>
-
-                    {todaySession.exercises.map((ex, exIdx) => {
-                      const isRenaming = editingExercise && editingExercise.id === ex.id;
-                      return (
-                      <div key={ex.id} style={{ background:ex.done?cardActive:card, border:`1px solid ${ex.done?borderActive:border}`, borderRadius:14, padding:14, marginBottom:12, boxShadow:"0 1px 3px rgba(0,0,0,0.06)" }}>
-                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12, gap:10 }}>
-                          <div style={{ flex:1, display:"flex", alignItems:"center", gap:8 }}>
-                            <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
-                              <button onClick={()=>moveExercise(ex.id,-1)} disabled={exIdx===0}
-                                style={{ width:22, height:14, border:`1px solid ${border}`, borderRadius:4, background:bg, color:exIdx===0?"#c0b8a8":textMuted, fontSize:9, lineHeight:1, fontFamily:"Georgia,serif", cursor:exIdx===0?"default":"pointer", padding:0 }}>▲</button>
-                              <button onClick={()=>moveExercise(ex.id,1)} disabled={exIdx===todaySession.exercises.length-1}
-                                style={{ width:22, height:14, border:`1px solid ${border}`, borderRadius:4, background:bg, color:exIdx===todaySession.exercises.length-1?"#c0b8a8":textMuted, fontSize:9, lineHeight:1, fontFamily:"Georgia,serif", cursor:exIdx===todaySession.exercises.length-1?"default":"pointer", padding:0 }}>▼</button>
-                            </div>
-                            {isRenaming ? (
-                              <input type="text" defaultValue={ex.name} autoFocus
-                                onBlur={e=>{ renameExercise(todaySession.type, ex.name, e.target.value); setEditingExercise(null); }}
-                                onKeyDown={e=>{ if(e.key==="Enter") e.target.blur(); if(e.key==="Escape") setEditingExercise(null); }}
-                                style={{ flex:1, background:bg, border:`1px solid ${accent}`, borderRadius:6, padding:"6px 8px", fontSize:14, fontWeight:"bold", color:text, fontFamily:"Georgia,serif" }} />
-                            ) : (
-                              <div onClick={()=>setEditingExercise({id:ex.id})}
-                                style={{ fontSize:14, fontWeight:"bold", color:ex.done?green:text, cursor:"pointer", flex:1 }}>
-                                {ex.name}
-                              </div>
-                            )}
-                          </div>
-                          <button onClick={()=>{ if(window.confirm(`Remove "${ex.name}" from ${WORKOUT_TYPES.find(t=>t.key===todaySession.type)?.label||todaySession.type}? Future sessions of this type won't include it.`)) deleteExercise(todaySession.type, ex.name); }}
-                            style={{ width:24, height:24, borderRadius:6, background:"none", border:`1px solid ${border}`, color:textMuted, fontSize:14, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontFamily:"Georgia,serif", lineHeight:1, padding:0 }}>×</button>
-                          <button onClick={()=>toggleExerciseDone(ex.id)}
-                            style={{ width:26, height:26, borderRadius:"50%", border:`2px solid ${ex.done?green:border}`, background:ex.done?green:"transparent", color:"#fff", fontSize:13, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontFamily:"Georgia,serif" }}>{ex.done?"✓":""}</button>
-                        </div>
-
-                        {ex.sets.length > 0 && (
-                          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                            {ex.sets.map((st, idx) => (
-                              <div key={idx} style={{ display:"grid", gridTemplateColumns:"22px 1fr 1fr 20px", gap:6, alignItems:"center" }}>
-                                <div style={{ fontSize:10, color:textMuted, fontWeight:"bold", letterSpacing:1 }}>S{idx+1}</div>
-                                {/* Weight stepper ±5 lb */}
-                                <div style={{ display:"flex", alignItems:"center", background:bg, border:`1px solid ${border}`, borderRadius:8, overflow:"hidden" }}>
-                                  <button onClick={()=>updateSet(ex.id,idx,"weight",-5)} style={{ width:26, height:32, background:"none", border:"none", color:textMuted, fontSize:16, fontFamily:"Georgia,serif", lineHeight:1, cursor:"pointer" }}>−</button>
-                                  <div style={{ flex:1, textAlign:"center", fontSize:12, fontWeight:"bold", color:text, fontFamily:"Georgia,serif" }}>
-                                    <input type="number" value={st.weight||0} onChange={e=>setSetValue(ex.id,idx,"weight",parseInt(e.target.value)||0)}
-                                      style={{ width:40, textAlign:"center", border:"none", background:"none", fontSize:12, fontWeight:"bold", fontFamily:"Georgia,serif", color:text, padding:0 }} />
-                                    <span style={{ fontSize:8, color:textMuted, letterSpacing:1, marginLeft:2, fontWeight:"normal" }}>LB</span>
-                                  </div>
-                                  <button onClick={()=>updateSet(ex.id,idx,"weight",5)} style={{ width:26, height:32, background:"none", border:"none", color:accent, fontSize:16, fontFamily:"Georgia,serif", lineHeight:1, cursor:"pointer" }}>+</button>
-                                </div>
-                                {/* Reps stepper ±1 */}
-                                <div style={{ display:"flex", alignItems:"center", background:bg, border:`1px solid ${border}`, borderRadius:8, overflow:"hidden" }}>
-                                  <button onClick={()=>updateSet(ex.id,idx,"reps",-1)} style={{ width:26, height:32, background:"none", border:"none", color:textMuted, fontSize:16, fontFamily:"Georgia,serif", lineHeight:1, cursor:"pointer" }}>−</button>
-                                  <div style={{ flex:1, textAlign:"center", fontSize:12, fontWeight:"bold", color:text, fontFamily:"Georgia,serif" }}>
-                                    <input type="number" value={st.reps||0} onChange={e=>setSetValue(ex.id,idx,"reps",parseInt(e.target.value)||0)}
-                                      style={{ width:32, textAlign:"center", border:"none", background:"none", fontSize:12, fontWeight:"bold", fontFamily:"Georgia,serif", color:text, padding:0 }} />
-                                    <span style={{ fontSize:8, color:textMuted, letterSpacing:1, marginLeft:2, fontWeight:"normal" }}>REPS</span>
-                                  </div>
-                                  <button onClick={()=>updateSet(ex.id,idx,"reps",1)} style={{ width:26, height:32, background:"none", border:"none", color:accent, fontSize:16, fontFamily:"Georgia,serif", lineHeight:1, cursor:"pointer" }}>+</button>
-                                </div>
-                                <button onClick={()=>removeSet(ex.id,idx)} style={{ width:20, height:20, background:"none", border:"none", color:textMuted, fontSize:14, cursor:"pointer", fontFamily:"Georgia,serif" }}>×</button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        <button onClick={()=>addSet(ex.id)}
-                          style={{ marginTop:ex.sets.length?8:0, background:"none", border:`1px dashed ${border}`, borderRadius:8, width:"100%", padding:7, fontSize:11, color:textMuted, letterSpacing:1, fontFamily:"Georgia,serif", cursor:"pointer" }}>+ ADD SET</button>
-
-                        <textarea value={ex.notes||""} onChange={e=>updateExerciseNotes(ex.id, e.target.value)} placeholder="Notes (optional)…" rows="1"
-                          style={{ width:"100%", marginTop:8, fontSize:11, color:text, fontStyle:"italic", padding:"8px 10px", background:bg, borderRadius:6, borderLeft:`2px solid ${accent}`, border:`1px solid ${border}`, borderLeftWidth:2, borderLeftColor:accent, fontFamily:"Georgia,serif", resize:"vertical", minHeight:32 }} />
-                      </div>
-                      );
-                    })}
-
-                    {/* Add custom exercise */}
-                    <div style={{ display:"flex", gap:8, marginBottom:12 }}>
-                      <input type="text" value={newExerciseName} onChange={e=>setNewExerciseName(e.target.value)} placeholder="Add custom exercise…"
-                        onKeyDown={e=>{ if(e.key==="Enter") { addCustomExercise(todaySession.type, newExerciseName); setNewExerciseName(""); } }}
-                        style={{ flex:1, background:bg, border:`1px dashed ${accent}`, borderRadius:14, padding:"12px 14px", fontSize:12, color:text, fontFamily:"Georgia,serif", letterSpacing:1 }} />
-                      <button onClick={()=>{ addCustomExercise(todaySession.type, newExerciseName); setNewExerciseName(""); }}
-                        style={{ background:accent, border:"none", borderRadius:14, color:"#fff", fontSize:12, fontWeight:"bold", padding:"0 18px", cursor:"pointer", fontFamily:"Georgia,serif", letterSpacing:1 }}>ADD</button>
-                    </div>
-
-                    {/* Restore deleted presets */}
-                    {(() => {
-                      const hidden = (data.hiddenPresets||{})[todaySession.type] || [];
-                      if (!hidden.length) return null;
-                      return (
-                        <div style={{ ...CS, marginTop:4 }}>
-                          <div style={{ fontSize:10, color:textMuted, letterSpacing:1, textTransform:"uppercase", marginBottom:8 }}>Deleted exercises</div>
-                          {hidden.map(h => (
-                            <div key={h} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 0", borderTop:`1px solid ${border}` }}>
-                              <span style={{ fontSize:11, color:textMuted, textDecoration:"line-through" }}>{h}</span>
-                              <button onClick={()=>restorePreset(todaySession.type, h)} style={{ background:"none", border:`1px solid ${accent}`, borderRadius:6, color:accent, fontSize:10, padding:"3px 8px", cursor:"pointer", fontFamily:"Georgia,serif" }}>RESTORE</button>
+                              {e.notes && (
+                                <div style={{ fontSize:10, color:C.textMuted, marginTop:3, fontStyle:"italic" }}>{e.notes}</div>
+                              )}
                             </div>
                           ))}
+                          <div style={{ fontSize:10, color:C.textMuted, marginTop:6, textAlign:"right", letterSpacing:1 }}>{totalSets} total sets</div>
                         </div>
-                      );
-                    })()}
-
-                    {saved&&<div style={{ textAlign:"center", marginTop:8, color:green, fontSize:12, letterSpacing:2 }}>✓ SAVED</div>}
-                  </>
-                );
-              })()}
-            </div>
-          )}
-
-          {/* PROGRESS */}
-          {activeTab==="progress" && (
-            <div style={{ padding:"20px 16px" }}>
-              <div style={LS}>Next: {curMile.label}</div>
-              {[
-                { label:"Pimsleur Lessons", current:data.pimsleurTotal||0, target:curMile.pimsleur, unit:"lessons", emoji:"🎧" },
-                { label:"Inner French",     current:data.innerFrenchTotal||0, target:curMile.innerFrench, unit:"episodes", emoji:"🎙️" },
-                { label:"Ear Comprehension",current:lastComp||0, target:curMile.comprehension, unit:"%", emoji:"👂" },
-              ].map(item=>(
-                <div key={item.label} style={CS}>
-                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:10 }}>
-                    <div style={{ fontSize:14, color:text }}>{item.emoji} {item.label}</div>
-                    <div style={{ fontSize:14, color:accent, fontWeight:"bold" }}>{item.current}/{item.target} {item.unit}</div>
-                  </div>
-                  <div style={{ height:8, background:border, borderRadius:4, overflow:"hidden" }}>
-                    <div style={{ height:"100%", borderRadius:4, width:`${pct(item.current,item.target)}%`, background:pct(item.current,item.target)>=100?green:accent, transition:"width 0.6s ease" }} />
-                  </div>
-                  <div style={{ fontSize:11, color:textMuted, marginTop:6, textAlign:"right" }}>{pct(item.current,item.target)}% complete</div>
-                </div>
-              ))}
-
-              <div style={CS}>
-                <div style={{ fontSize:14, color:text, marginBottom:12 }}>🏋️ Workout Breakdown</div>
-                <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                  {WORKOUT_TYPES.map(w=>(
-                    <div key={w.key} style={{ flex:"1 1 calc(33% - 8px)", background:bg, borderRadius:10, padding:"10px 6px", border:`1px solid ${border}`, textAlign:"center" }}>
-                      <div style={{ fontSize:18 }}>{w.emoji}</div>
-                      <div style={{ fontSize:18, fontWeight:"bold", color:accent, marginTop:4 }}>{wCounts()[w.key]||0}</div>
-                      <div style={{ fontSize:9, color:textMuted, textTransform:"uppercase", letterSpacing:1 }}>{w.label}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ marginTop:20, borderTop:`1px solid ${border}`, paddingTop:20 }}>
-                <div style={LS}>6-month roadmap</div>
-                {milestones.map(m=>{
-                  const done=(data.pimsleurTotal||0)>=m.pimsleur;
-                  return (
-                    <div key={m.month} style={{ display:"flex", alignItems:"center", gap:14, marginBottom:14, opacity:done?1:0.6 }}>
-                      <div style={{ width:34, height:34, borderRadius:"50%", flexShrink:0, background:done?green:bg, border:`2px solid ${done?green:border}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, color:done?"#fff":textMuted, fontWeight:"bold" }}>{done?"✓":m.month}</div>
-                      <div>
-                        <div style={{ fontSize:14, color:done?green:text, fontWeight:"bold" }}>{m.label}</div>
-                        <div style={{ fontSize:11, color:textMuted }}>Pimsleur {m.pimsleur} · Ear {m.comprehension}% · Inner French {m.innerFrench} eps</div>
-                      </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
-            </div>
-          )}
+            )}
+          </>
+        );
+      };
 
-          {/* YEAR */}
-          {activeTab==="year" && (
-            <div style={{ padding:"20px 16px" }}>
-              <div style={LS}>{(()=>{ const t=new Date(); const end=new Date(t.getFullYear(),t.getMonth()+12,1); return `${t.getFullYear()} — ${monthLabels[end.getMonth()]} ${end.getFullYear()}`; })()}</div>
-              <div style={{ ...CS, display:"flex", justifyContent:"space-around", textAlign:"center" }}>
-                {(()=>{ const s=yearStats(); return [{label:"Active days",value:s.active},{label:"Full days",value:s.full},{label:"Workouts",value:s.workouts}].map(st=>(
-                  <div key={st.label}>
-                    <div style={{ fontSize:22, fontWeight:"bold", color:accent }}>{st.value}</div>
-                    <div style={{ fontSize:10, color:textMuted, letterSpacing:1, textTransform:"uppercase", marginTop:2 }}>{st.label}</div>
-                  </div>
-                ))})()}
-              </div>
+      const renderWorkoutTab = () => (
+        <div style={S.bodyPad}>
+          {todaySession ? renderWorkoutSession() : renderWorkoutPicker()}
+        </div>
+      );
 
-              <div ref={yearScrollRef} style={{ ...CS, overflowX:"auto" }}>
-                <div style={{ display:"flex", gap:3, minWidth:"fit-content" }}>
-                  <div style={{ display:"flex", flexDirection:"column", gap:3, marginRight:4, paddingTop:34, position:"sticky", left:0, background:card, zIndex:1, paddingRight:4 }}>
-                    {["","M","","W","","F",""].map((d,i)=>(
-                      <div key={i} style={{ height:16, fontSize:8, color:textMuted, display:"flex", alignItems:"center", width:14 }}>{d}</div>
-                    ))}
-                  </div>
-                  <div style={{ display:"flex", gap:3 }}>
-                    {(() => {
-                      const grid = buildYearGrid();
-                      // Find indices where we should show a week label
-                      return grid.map((week,wi)=>{
-                        const firstDay=week.days.find(d=>d.day===1);
-                        const mLabel=firstDay ? (firstDay.month===0 ? `Jan ${String(firstDay.year).slice(2)}` : monthLabels[firstDay.month]) : "";
-                        // Show week label every 4 weeks OR at very first/last
-                        const wn = week.weekNum;
-                        const showWeek = wn>0 && (wn%4===0 || wi===0 || wi===grid.length-1);
-                        const todayIdx = grid.findIndex(w => w.days.some(d=>d.isToday));
-                        const isTodayCol = wi===todayIdx;
-                        return (
-                          <div key={wi} data-today={isTodayCol?"1":undefined} style={{ display:"flex", flexDirection:"column", gap:3 }}>
-                            <div style={{ height:14, fontSize:8, color:accent, fontWeight:"bold", whiteSpace:"nowrap", textAlign:"center", width:16 }}>{showWeek ? `W${wn}` : ""}</div>
-                            <div style={{ height:14, fontSize:9, color:textMuted, fontWeight:"bold", whiteSpace:"nowrap", overflow:"visible" }}>{mLabel}</div>
-                            {week.days.map((cell,di)=>{
-                              const bgCol = getHeatColor(cell);
-                              // Choose a text color readable on each background
-                              const isDark = ["#c46d10","#7a3f08","#2d6a2d"].includes(bgCol);
-                              const numCol = isDark ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.45)";
-                              return (
-                                <div key={di} style={{ width:16, height:16, borderRadius:3, background:bgCol, outline:cell.isToday?`1.5px solid ${text}`:"none", outlineOffset:cell.isToday?"1px":"0", boxSizing:"border-box", display:"flex", alignItems:"center", justifyContent:"center", fontSize:7, fontWeight:"bold", color:numCol, lineHeight:1, fontFamily:"Georgia,serif" }}>
-                                  {cell.label||""}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      });
-                    })()}
-                  </div>
-                </div>
-              </div>
 
-              <div style={{ fontSize:10, color:textMuted, letterSpacing:1, textAlign:"center" }}>
-                <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6, marginBottom:6 }}>
-                  <span>COMBO</span>
-                  {[0,1,2,3,4].map(c=><div key={c} style={{ width:14, height:14, borderRadius:3, background:heatColors[c] }}/>)}
-                  <span>MORE</span>
+      // ─── TAB: PROGRESS ──────────────────────────────────────────────────
+      const renderProgressTab = () => {
+        const items = [
+          { label:"Pimsleur Lessons", current:data.pimsleurTotal||0, target:currentMilestone.pimsleur, unit:"lessons", emoji:"🎧" },
+          { label:"Inner French",     current:data.innerFrenchTotal||0, target:currentMilestone.innerFrench, unit:"episodes", emoji:"🎙️" },
+          { label:"Ear Comprehension",current:lastComp||0, target:currentMilestone.comprehension, unit:"%", emoji:"👂" },
+        ];
+        return (
+          <div style={S.bodyPad}>
+            <div style={S.sectionLabel}>Next: {currentMilestone.label}</div>
+            {items.map(item => {
+              const p = pct(item.current, item.target);
+              return (
+                <div key={item.label} style={S.card}>
+                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:10 }}>
+                    <div style={{ fontSize:14, color:C.text }}>{item.emoji} {item.label}</div>
+                    <div style={{ fontSize:14, color:C.accent, fontWeight:"bold" }}>{item.current}/{item.target} {item.unit}</div>
+                  </div>
+                  <div style={{ height:8, background:C.border, borderRadius:4, overflow:"hidden" }}>
+                    <div style={{ height:"100%", borderRadius:4, width:`${p}%`, background: p>=100?C.green:C.accent, transition:"width 0.6s ease" }} />
+                  </div>
+                  <div style={{ fontSize:11, color:C.textMuted, marginTop:6, textAlign:"right" }}>{p}% complete</div>
                 </div>
-                <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
-                  <div style={{ width:14, height:14, borderRadius:3, background:"#2d6a2d" }}/>
-                  <span>WORKOUT ONLY</span>
-                </div>
-              </div>
-              <div style={{ marginTop:16, fontSize:11, color:textMuted, textAlign:"center", lineHeight:1.6 }}>
-                Each square = one day. Fill every square before your exam.
+              );
+            })}
+
+            <div style={S.card}>
+              <div style={{ fontSize:14, color:C.text, marginBottom:12 }}>🏋️ Workout Breakdown</div>
+              <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                {WORKOUT_TYPES.map(w => (
+                  <div key={w.key} style={{ flex:"1 1 calc(33% - 8px)", background:C.bg, borderRadius:10, padding:"10px 6px", border:`1px solid ${C.border}`, textAlign:"center" }}>
+                    <div style={{ fontSize:18 }}>{w.emoji}</div>
+                    <div style={{ fontSize:18, fontWeight:"bold", color:C.accent, marginTop:4 }}>{workoutCounts[w.key]||0}</div>
+                    <div style={{ fontSize:9, color:C.textMuted, textTransform:"uppercase", letterSpacing:1 }}>{w.label}</div>
+                  </div>
+                ))}
               </div>
             </div>
-          )}
 
-          {/* HISTORY */}
-          {activeTab==="history" && (
-            <div style={{ padding:"20px 16px" }}>
-              <div style={LS}>Daily log</div>
-              <div style={{ fontSize:11, color:textMuted, marginBottom:10, fontStyle:"italic" }}>Tap a day to edit or delete it.</div>
-              {Object.entries(data.logs).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,30).map(([date,log])=>{
-                const w=WORKOUT_TYPES.find(w=>w.key===log.workout);
-                const isEditing = editingDate===date;
-                const isToday = date===today;
+            <div style={{ marginTop:20, borderTop:`1px solid ${C.border}`, paddingTop:20 }}>
+              <div style={S.sectionLabel}>6-month roadmap</div>
+              {MILESTONES.map(m => {
+                const done = (data.pimsleurTotal||0) >= m.pimsleur;
                 return (
-                  <div key={date} style={{ borderBottom:`1px solid ${border}` }}>
-                    <div onClick={()=>setEditingDate(isEditing?null:date)} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 0", cursor:"pointer" }}>
-                      <div style={{ fontSize:12, color:isEditing?accent:textMuted, fontWeight:isEditing?"bold":"normal" }}>
-                        {new Date(date+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}
-                        {isToday && <span style={{ marginLeft:6, fontSize:9, color:accent, letterSpacing:1 }}>TODAY</span>}
-                      </div>
-                      <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-                        {[{key:"pimsleur",emoji:"🎧"},{key:"anki",emoji:"🃏"},{key:"innerFrench",emoji:"🎙️"},...(data.customHabits||[])].map(h=>(
-                          <span key={h.key} style={{ fontSize:16, opacity:log[h.key]?1:0.15 }}>{h.emoji}</span>
-                        ))}
-                        <span style={{ fontSize:16, opacity:w?1:0.15 }}>{w?w.emoji:"🏋️"}</span>
-                        <span style={{ fontSize:11, color:textMuted, marginLeft:4 }}>{isEditing?"▲":"▼"}</span>
-                      </div>
+                  <div key={m.month} style={{ display:"flex", alignItems:"center", gap:14, marginBottom:14, opacity: done?1:0.6 }}>
+                    <div style={{ width:34, height:34, borderRadius:"50%", flexShrink:0, background: done?C.green:C.bg, border:`2px solid ${done?C.green:C.border}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, color: done?"#fff":C.textMuted, fontWeight:"bold" }}>{done?"✓":m.month}</div>
+                    <div>
+                      <div style={{ fontSize:14, color: done?C.green:C.text, fontWeight:"bold" }}>{m.label}</div>
+                      <div style={{ fontSize:11, color:C.textMuted }}>Pimsleur {m.pimsleur} · Ear {m.comprehension}% · Inner French {m.innerFrench} eps</div>
                     </div>
-                    {isEditing && (
-                      <div style={{ background:bg, borderRadius:10, padding:14, marginBottom:12, border:`1px solid ${border}` }}>
-                        {[{key:"pimsleur",emoji:"🎧",label:"Pimsleur"},{key:"anki",emoji:"🃏",label:"Flash cards"},{key:"innerFrench",emoji:"🎙️",label:"Inner French"},...(data.customHabits||[])].map(h=>(
-                          <div key={h.key} onClick={()=>toggleDayHabit(date,h.key)} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0", cursor:"pointer", borderBottom:`1px solid ${border}` }}>
-                            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                              <span style={{ fontSize:20 }}>{h.emoji}</span>
-                              <span style={{ fontSize:13, color:text }}>{h.label}</span>
-                            </div>
-                            <div style={CK(log[h.key])}>{log[h.key]?"✓":""}</div>
-                          </div>
-                        ))}
-                        <div style={{ padding:"12px 0 8px" }}>
-                          <div style={{ fontSize:11, color:textMuted, marginBottom:8, letterSpacing:1, textTransform:"uppercase" }}>Workout</div>
-                          <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-                            {WORKOUT_TYPES.map(wk=>(
-                              <button key={wk.key} onClick={()=>setDayWorkout(date,wk.key)} style={{ flex:"1 1 calc(33% - 6px)", padding:"8px 4px", borderRadius:8, background:log.workout===wk.key?green:card, border:`1px solid ${log.workout===wk.key?green:border}`, color:log.workout===wk.key?"#fff":text, fontSize:11, cursor:"pointer", fontFamily:"Georgia,serif", textAlign:"center" }}>
-                                <div style={{ fontSize:16 }}>{wk.emoji}</div>
-                                <div style={{ marginTop:2 }}>{wk.label}</div>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <button onClick={()=>{ if(window.confirm(`Delete ${new Date(date+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"})}?`)) deleteDay(date); }} style={{ width:"100%", padding:"10px", borderRadius:10, background:"none", border:`1px solid ${red}`, color:red, fontSize:12, cursor:"pointer", fontFamily:"Georgia,serif", marginTop:10 }}>
-                          Delete this day
-                        </button>
-                      </div>
-                    )}
                   </div>
                 );
               })}
-              {Object.keys(data.logs).length===0&&(
-                <div style={{ color:textMuted, fontSize:13, textAlign:"center", padding:"20px 0" }}>No days logged yet.</div>
-              )}
             </div>
-          )}
+          </div>
+        );
+      };
 
-          {/* SETTINGS */}
-          {activeTab==="settings" && (
-            <div style={{ padding:"20px 16px" }}>
-              <div style={LS}>Adjust current progress</div>
+      // ─── TAB: YEAR ──────────────────────────────────────────────────────
+      const renderYearTab = () => {
+        const yearRange = (() => {
+          const t = new Date();
+          const end = new Date(t.getFullYear(), t.getMonth()+12, 1);
+          return `${t.getFullYear()} — ${MONTH_LABELS[end.getMonth()]} ${end.getFullYear()}`;
+        })();
+        const todayColIdx = yearGrid.findIndex(w => w.days.some(d => d.isToday));
 
-              <div style={CS}>
-                <div style={{ fontSize:14, fontWeight:"bold", color:text, marginBottom:4 }}>🎧 Pimsleur</div>
-                <div style={{ fontSize:12, color:textMuted, marginBottom:16 }}>Set the lesson number you are currently on</div>
-                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                  <div style={{ color:textMuted, fontSize:13 }}>Current lesson</div>
-                  <Stepper value={data.pimsleurTotal||0} onChange={v=>updateCount("pimsleurTotal",v)} min={0} max={180} />
+        return (
+          <div style={S.bodyPad}>
+            <div style={S.sectionLabel}>{yearRange}</div>
+
+            <div style={{ ...S.card, display:"flex", justifyContent:"space-around", textAlign:"center" }}>
+              {[
+                { label:"Active days", value:yearStats.active },
+                { label:"Full days", value:yearStats.full },
+                { label:"Workouts", value:yearStats.workouts },
+              ].map(st => (
+                <div key={st.label}>
+                  <div style={{ fontSize:22, fontWeight:"bold", color:C.accent }}>{st.value}</div>
+                  <div style={{ fontSize:10, color:C.textMuted, letterSpacing:1, textTransform:"uppercase", marginTop:2 }}>{st.label}</div>
                 </div>
-              </div>
+              ))}
+            </div>
 
-              <div style={CS}>
-                <div style={{ fontSize:14, fontWeight:"bold", color:text, marginBottom:4 }}>🎙️ Inner French</div>
-                <div style={{ fontSize:12, color:textMuted, marginBottom:16 }}>Set the episode number you are currently on</div>
-                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                  <div style={{ color:textMuted, fontSize:13 }}>Current episode</div>
-                  <Stepper value={data.innerFrenchTotal||0} onChange={v=>updateCount("innerFrenchTotal",v)} min={0} max={200} />
+            <div ref={yearScrollRef} style={{ ...S.card, overflowX:"auto" }}>
+              <div style={{ display:"flex", gap:3, minWidth:"fit-content" }}>
+                <div style={{ display:"flex", flexDirection:"column", gap:3, marginRight:4, paddingTop:34, position:"sticky", left:0, background:C.card, zIndex:1, paddingRight:4 }}>
+                  {["","M","","W","","F",""].map((d,i) => (
+                    <div key={i} style={{ height:16, fontSize:8, color:C.textMuted, display:"flex", alignItems:"center", width:14 }}>{d}</div>
+                  ))}
                 </div>
-              </div>
-
-              {saved&&<div style={{ textAlign:"center", marginTop:4, marginBottom:16, color:green, fontSize:12, letterSpacing:2 }}>✓ SAVED</div>}
-
-              <div style={{ borderTop:`1px solid ${border}`, paddingTop:20, marginTop:8 }}>
-                <div style={LS}>Habits</div>
-                <div style={CS}>
-                  <div style={{ fontSize:11, color:textMuted, marginBottom:10, textTransform:"uppercase", letterSpacing:1 }}>Built-in</div>
-                  {BUILTIN_HABITS.map(h => {
-                    const hidden = hiddenBuiltins.includes(h.key);
+                <div style={{ display:"flex", gap:3 }}>
+                  {yearGrid.map((week, wi) => {
+                    const firstDay = week.days.find(d => d.day===1);
+                    const mLabel = firstDay
+                      ? (firstDay.month===0 ? `Jan ${String(firstDay.year).slice(2)}` : MONTH_LABELS[firstDay.month])
+                      : "";
+                    const wn = week.weekNum;
+                    const showWeek = wn>0 && (wn%4===0 || wi===0 || wi===yearGrid.length-1);
+                    const isTodayCol = wi === todayColIdx;
                     return (
-                      <div key={h.key} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0", borderTop:`1px solid ${border}`, opacity:hidden?0.5:1 }}>
-                        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                          <span style={{ fontSize:18 }}>{h.emoji}</span>
-                          <span style={{ fontSize:14, color:text, textDecoration:hidden?"line-through":"none" }}>{h.label}</span>
-                        </div>
-                        <button onClick={()=>toggleBuiltin(h.key)} style={{ background:hidden?accent:"none", border:`1px solid ${hidden?accent:border}`, borderRadius:8, color:hidden?"#fff":textMuted, fontSize:11, padding:"4px 12px", cursor:"pointer", fontFamily:"Georgia,serif" }}>
-                          {hidden ? "RESTORE" : "HIDE"}
-                        </button>
+                      <div key={wi} data-today={isTodayCol?"1":undefined} style={{ display:"flex", flexDirection:"column", gap:3 }}>
+                        <div style={{ height:14, fontSize:8, color:C.accent, fontWeight:"bold", whiteSpace:"nowrap", textAlign:"center", width:16 }}>{showWeek ? `W${wn}` : ""}</div>
+                        <div style={{ height:14, fontSize:9, color:C.textMuted, fontWeight:"bold", whiteSpace:"nowrap", overflow:"visible" }}>{mLabel}</div>
+                        {week.days.map((cell, di) => {
+                          const bgCol = heatColor(cell);
+                          const isDark = [HEAT[3], HEAT[4], C.workoutOnly].includes(bgCol);
+                          const numCol = isDark ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.45)";
+                          return (
+                            <div key={di} style={{
+                              width:16, height:16, borderRadius:3,
+                              background: bgCol,
+                              outline: cell.isToday?`1.5px solid ${C.text}`:"none",
+                              outlineOffset: cell.isToday?"1px":"0",
+                              boxSizing:"border-box",
+                              display:"flex", alignItems:"center", justifyContent:"center",
+                              fontSize:7, fontWeight:"bold", color:numCol, lineHeight:1,
+                              fontFamily:"Georgia,serif",
+                            }}>{cell.label||""}</div>
+                          );
+                        })}
                       </div>
                     );
                   })}
-                  <div style={{ fontSize:10, color:textMuted, marginTop:10, fontStyle:"italic", lineHeight:1.5 }}>Hiding a built-in habit removes it from new days. Days where you already logged it keep their data.</div>
                 </div>
-
-                <div style={CS}>
-                  <div style={{ fontSize:11, color:textMuted, marginBottom:10, textTransform:"uppercase", letterSpacing:1 }}>Custom</div>
-
-                  <div style={{ display:"flex", gap:8, marginBottom:10 }}>
-                    <input type="text" value={newHabitEmoji} onChange={e=>setNewHabitEmoji(e.target.value || "📌")} maxLength="4"
-                      style={{ width:54, textAlign:"center", background:bg, border:`1px solid ${border}`, borderRadius:8, fontSize:20, padding:"8px 0", fontFamily:"Georgia,serif" }} />
-                    <input type="text" value={newHabitName} onChange={e=>setNewHabitName(e.target.value)} placeholder="New habit name…"
-                      onKeyDown={e=>{ if(e.key==="Enter") addHabit(); }}
-                      style={{ flex:1, background:bg, border:`1px solid ${border}`, borderRadius:8, color:text, fontSize:14, padding:"10px 12px", fontFamily:"Georgia,serif" }} />
-                    <button onClick={addHabit} style={{ background:accent, border:"none", borderRadius:8, color:"#fff", fontSize:13, fontWeight:"bold", padding:"10px 16px", cursor:"pointer", fontFamily:"Georgia,serif" }}>ADD</button>
-                  </div>
-                  <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:14 }}>
-                    {EMOJI_PRESETS.map(e=>(
-                      <button key={e} onClick={()=>setNewHabitEmoji(e)} style={{ width:34, height:34, fontSize:18, borderRadius:8, background:newHabitEmoji===e?accent:bg, border:`1px solid ${newHabitEmoji===e?accent:border}`, cursor:"pointer", fontFamily:"Georgia,serif" }}>{e}</button>
-                    ))}
-                  </div>
-                  <div style={{ fontSize:10, color:textMuted, marginBottom:14, fontStyle:"italic", lineHeight:1.5 }}>Pick from above or type any emoji in the box. Tap an existing habit's emoji to change it.</div>
-
-                  {(data.customHabits||[]).length===0 && (
-                    <div style={{ color:textMuted, fontSize:12, textAlign:"center", padding:"8px 0" }}>No custom habits yet. Type a name above to add one.</div>
-                  )}
-                  {(data.customHabits||[]).map(h=>(
-                    <div key={h.key} style={{ borderTop:`1px solid ${border}` }}>
-                      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0" }}>
-                        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                          <span onClick={()=>setEditingEmojiFor(editingEmojiFor===h.key?null:h.key)} style={{ fontSize:22, cursor:"pointer", padding:"2px 8px", borderRadius:8, background:editingEmojiFor===h.key?bg:"none", border:`1px solid ${editingEmojiFor===h.key?border:"transparent"}` }}>{h.emoji}</span>
-                          <span style={{ fontSize:14, color:text }}>{h.label}</span>
-                        </div>
-                        <button onClick={()=>deleteHabit(h.key)} style={{ background:"none", border:`1px solid ${red}`, borderRadius:8, color:red, fontSize:11, padding:"4px 12px", cursor:"pointer", fontFamily:"Georgia,serif" }}>DELETE</button>
-                      </div>
-                      {editingEmojiFor===h.key && (
-                        <div style={{ display:"flex", flexWrap:"wrap", gap:6, padding:"8px 0 12px" }}>
-                          <input type="text" defaultValue={h.emoji} onBlur={e=>{ updateHabitEmoji(h.key, e.target.value || "📌"); setEditingEmojiFor(null); }} maxLength="4"
-                            style={{ width:54, textAlign:"center", background:bg, border:`1px solid ${border}`, borderRadius:8, fontSize:18, padding:"6px 0", fontFamily:"Georgia,serif" }} />
-                          {EMOJI_PRESETS.map(e=>(
-                            <button key={e} onClick={()=>{ updateHabitEmoji(h.key, e); setEditingEmojiFor(null); }} style={{ width:34, height:34, fontSize:18, borderRadius:8, background:h.emoji===e?accent:bg, border:`1px solid ${h.emoji===e?accent:border}`, cursor:"pointer", fontFamily:"Georgia,serif" }}>{e}</button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ borderTop:`1px solid ${border}`, paddingTop:20, marginTop:8 }}>
-                <div style={LS}>Habit order</div>
-                <div style={CS}>
-                  <div style={{ fontSize:12, color:textMuted, marginBottom:12, lineHeight:1.5 }}>Tap ▲▼ to reorder how habits appear on the Day tab.</div>
-                  {allActiveHabits.map((h, i) => (
-                    <div key={h.key} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0", borderTop: i===0?"none":`1px solid ${border}` }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                        <span style={{ fontSize:18 }}>{h.emoji}</span>
-                        <span style={{ fontSize:14, color:text }}>{h.label}</span>
-                      </div>
-                      <div style={{ display:"flex", gap:6 }}>
-                        <button onClick={()=>moveHabit(h.key,-1)} disabled={i===0}
-                          style={{ width:32, height:32, borderRadius:8, background:i===0?bg:card, border:`1px solid ${border}`, color:i===0?"#c0b8a8":text, fontSize:14, cursor:i===0?"default":"pointer", fontFamily:"Georgia,serif" }}>▲</button>
-                        <button onClick={()=>moveHabit(h.key,1)} disabled={i===allActiveHabits.length-1}
-                          style={{ width:32, height:32, borderRadius:8, background:i===allActiveHabits.length-1?bg:card, border:`1px solid ${border}`, color:i===allActiveHabits.length-1?"#c0b8a8":text, fontSize:14, cursor:i===allActiveHabits.length-1?"default":"pointer", fontFamily:"Georgia,serif" }}>▼</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ borderTop:`1px solid ${border}`, paddingTop:20, marginTop:8 }}>
-                <div style={LS}>Export</div>
-                <div style={CS}>
-                  <div style={{ fontSize:13, color:textMuted, marginBottom:12, lineHeight:1.5 }}>
-                    Download all logged days as a spreadsheet. Opens in Excel, Numbers, or Google Sheets.
-                  </div>
-                  <button onClick={exportCSV} style={{ width:"100%", padding:"12px", borderRadius:10, background:accent, border:"none", color:"#fff", fontSize:13, fontWeight:"bold", cursor:"pointer", fontFamily:"Georgia,serif", letterSpacing:1 }}>
-                    📊 EXPORT TO CSV
-                  </button>
-                </div>
-              </div>
-
-              <div style={{ borderTop:`1px solid ${border}`, paddingTop:20, marginTop:8 }}>
-                <div style={LS}>Danger zone</div>
-                <button onClick={()=>{
-                  if(window.confirm("Reset ALL data? This cannot be undone.")) {
-                    const fresh = { startDate: localDateKey(new Date()), logs:{}, comprehensionLog:[], pimsleurTotal:0, innerFrenchTotal:0, customHabits:[], hiddenBuiltins:[], habitOrder:[], workoutSessions:{}, customExercises:{}, exerciseOrder:{}, hiddenPresets:{}, renamedPresets:{} };
-                    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh)); } catch(e) {}
-                    if (user && window.__firebase) window.__firebase.saveData(user.uid, fresh);
-                    setData(fresh);
-                    setTodayLog({pimsleur:false,anki:false,innerFrench:false,workout:null,comprehension:""});
-                    setShowCompForm(false);
-                    setShowWorkoutPicker(false);
-                    setSaved(true); setTimeout(()=>setSaved(false),1500);
-                  }
-                }} style={{ width:"100%", padding:"14px", borderRadius:14, background:"none", border:`1px solid ${red}`, color:red, fontSize:14, cursor:"pointer", fontFamily:"Georgia,serif" }}>
-                  Reset all data
-                </button>
               </div>
             </div>
-          )}
 
+            <div style={{ fontSize:10, color:C.textMuted, letterSpacing:1, textAlign:"center" }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6, marginBottom:6 }}>
+                <span>COMBO</span>
+                {[0,1,2,3,4].map(c => <div key={c} style={{ width:14, height:14, borderRadius:3, background:HEAT[c] }}/>)}
+                <span>MORE</span>
+              </div>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                <div style={{ width:14, height:14, borderRadius:3, background:C.workoutOnly }}/>
+                <span>WORKOUT ONLY</span>
+              </div>
+            </div>
+            <div style={{ marginTop:16, fontSize:11, color:C.textMuted, textAlign:"center", lineHeight:1.6 }}>
+              Each square = one day. Fill every square before your exam.
+            </div>
+          </div>
+        );
+      };
+
+
+      // ─── TAB: HISTORY ───────────────────────────────────────────────────
+      const renderHistoryEditor = (date, log) => (
+        <div style={{ background:C.bg, borderRadius:10, padding:14, marginBottom:12, border:`1px solid ${C.border}` }}>
+          {[{key:"pimsleur",emoji:"🎧",label:"Pimsleur"},{key:"anki",emoji:"🃏",label:"Flash cards"},{key:"innerFrench",emoji:"🎙️",label:"Inner French"},...(data.customHabits||[])].map(h => (
+            <div key={h.key} onClick={()=>toggleDayHabit(date,h.key)} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0", cursor:"pointer", borderBottom:`1px solid ${C.border}` }}>
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <span style={{ fontSize:20 }}>{h.emoji}</span>
+                <span style={{ fontSize:13, color:C.text }}>{h.label}</span>
+              </div>
+              <Toggle on={log[h.key]} onClick={()=>toggleDayHabit(date,h.key)} />
+            </div>
+          ))}
+          <div style={{ padding:"12px 0 8px" }}>
+            <div style={{ fontSize:11, color:C.textMuted, marginBottom:8, letterSpacing:1, textTransform:"uppercase" }}>Workout</div>
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+              {WORKOUT_TYPES.map(wk => {
+                const active = log.workout === wk.key;
+                return (
+                  <button key={wk.key} onClick={()=>setDayWorkout(date,wk.key)} style={{
+                    flex:"1 1 calc(33% - 6px)", padding:"8px 4px", borderRadius:8,
+                    background: active?C.green:C.card,
+                    border: `1px solid ${active?C.green:C.border}`,
+                    color: active?"#fff":C.text,
+                    fontSize:11, cursor:"pointer", fontFamily:"Georgia,serif", textAlign:"center",
+                  }}>
+                    <div style={{ fontSize:16 }}>{wk.emoji}</div>
+                    <div style={{ marginTop:2 }}>{wk.label}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <button onClick={()=>{ if(window.confirm(`Delete ${formatDate(date,{weekday:"long",month:"short",day:"numeric"})}?`)) deleteDay(date); }}
+            style={{ width:"100%", padding:"10px", borderRadius:10, background:"none", border:`1px solid ${C.red}`, color:C.red, fontSize:12, cursor:"pointer", fontFamily:"Georgia,serif", marginTop:10 }}>
+            Delete this day
+          </button>
+        </div>
+      );
+
+      const renderHistoryTab = () => (
+        <div style={S.bodyPad}>
+          <div style={S.sectionLabel}>Daily log</div>
+          <div style={{ fontSize:11, color:C.textMuted, marginBottom:10, fontStyle:"italic" }}>Tap a day to edit or delete it.</div>
+          {Object.entries(data.logs).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,30).map(([date, log]) => {
+            const w = WORKOUT_TYPES.find(w => w.key===log.workout);
+            const isEditing = editingDate === date;
+            const isToday = date === today;
+            return (
+              <div key={date} style={{ borderBottom:`1px solid ${C.border}` }}>
+                <div onClick={()=>setEditingDate(isEditing?null:date)} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 0", cursor:"pointer" }}>
+                  <div style={{ fontSize:12, color: isEditing?C.accent:C.textMuted, fontWeight: isEditing?"bold":"normal" }}>
+                    {formatDate(date,{weekday:"short",month:"short",day:"numeric"})}
+                    {isToday && <span style={{ marginLeft:6, fontSize:9, color:C.accent, letterSpacing:1 }}>TODAY</span>}
+                  </div>
+                  <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                    {[{key:"pimsleur",emoji:"🎧"},{key:"anki",emoji:"🃏"},{key:"innerFrench",emoji:"🎙️"},...(data.customHabits||[])].map(h => (
+                      <span key={h.key} style={{ fontSize:16, opacity: log[h.key]?1:0.15 }}>{h.emoji}</span>
+                    ))}
+                    <span style={{ fontSize:16, opacity: w?1:0.15 }}>{w?w.emoji:"🏋️"}</span>
+                    <span style={{ fontSize:11, color:C.textMuted, marginLeft:4 }}>{isEditing?"▲":"▼"}</span>
+                  </div>
+                </div>
+                {isEditing && renderHistoryEditor(date, log)}
+              </div>
+            );
+          })}
+          {Object.keys(data.logs).length === 0 && (
+            <div style={{ color:C.textMuted, fontSize:13, textAlign:"center", padding:"20px 0" }}>No days logged yet.</div>
+          )}
+        </div>
+      );
+
+
+      // ─── TAB: SETTINGS ──────────────────────────────────────────────────
+      const renderSettingsHabits = () => (
+        <SectionDivider>
+          <div style={S.sectionLabel}>Habits</div>
+
+          <div style={S.card}>
+            <div style={S.smallLabel}>Built-in</div>
+            {BUILTIN_HABITS.map(h => {
+              const hidden = hiddenBuiltins.includes(h.key);
+              return (
+                <div key={h.key} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0", borderTop:`1px solid ${C.border}`, opacity: hidden?0.5:1 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                    <span style={{ fontSize:18 }}>{h.emoji}</span>
+                    <span style={{ fontSize:14, color:C.text, textDecoration: hidden?"line-through":"none" }}>{h.label}</span>
+                  </div>
+                  <button onClick={()=>toggleBuiltin(h.key)} style={{
+                    background: hidden?C.accent:"none",
+                    border: `1px solid ${hidden?C.accent:C.border}`,
+                    borderRadius:8, color: hidden?"#fff":C.textMuted,
+                    fontSize:11, padding:"4px 12px", cursor:"pointer", fontFamily:"Georgia,serif",
+                  }}>{hidden ? "RESTORE" : "HIDE"}</button>
+                </div>
+              );
+            })}
+            <div style={{ fontSize:10, color:C.textMuted, marginTop:10, fontStyle:"italic", lineHeight:1.5 }}>Hiding a built-in habit removes it from new days. Days where you already logged it keep their data.</div>
+          </div>
+
+          <div style={S.card}>
+            <div style={S.smallLabel}>Custom</div>
+            <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+              <input type="text" value={newHabitEmoji} onChange={e=>setNewHabitEmoji(e.target.value || "📌")} maxLength="4"
+                style={{ width:54, textAlign:"center", background:C.bg, border:`1px solid ${C.border}`, borderRadius:8, fontSize:20, padding:"8px 0", fontFamily:"Georgia,serif" }} />
+              <input type="text" value={newHabitName} onChange={e=>setNewHabitName(e.target.value)} placeholder="New habit name…"
+                onKeyDown={e=>{ if(e.key==="Enter") addCustomHabit(); }}
+                style={{ ...S.input, flex:1 }} />
+              <button onClick={addCustomHabit} style={S.primaryBtn}>ADD</button>
+            </div>
+            <EmojiPalette selected={newHabitEmoji} onSelect={setNewHabitEmoji} />
+            <div style={{ fontSize:10, color:C.textMuted, marginBottom:14, fontStyle:"italic", lineHeight:1.5 }}>Pick from above or type any emoji in the box. Tap an existing habit's emoji to change it.</div>
+
+            {(data.customHabits||[]).length === 0 && (
+              <div style={{ color:C.textMuted, fontSize:12, textAlign:"center", padding:"8px 0" }}>No custom habits yet. Type a name above to add one.</div>
+            )}
+            {(data.customHabits||[]).map(h => {
+              const isEditing = editingEmojiFor === h.key;
+              return (
+                <div key={h.key} style={{ borderTop:`1px solid ${C.border}` }}>
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                      <span onClick={()=>setEditingEmojiFor(isEditing?null:h.key)} style={{
+                        fontSize:22, cursor:"pointer", padding:"2px 8px", borderRadius:8,
+                        background: isEditing?C.bg:"none",
+                        border: `1px solid ${isEditing?C.border:"transparent"}`,
+                      }}>{h.emoji}</span>
+                      <span style={{ fontSize:14, color:C.text }}>{h.label}</span>
+                    </div>
+                    <button onClick={()=>deleteCustomHabit(h.key)} style={{ background:"none", border:`1px solid ${C.red}`, borderRadius:8, color:C.red, fontSize:11, padding:"4px 12px", cursor:"pointer", fontFamily:"Georgia,serif" }}>DELETE</button>
+                  </div>
+                  {isEditing && (
+                    <div style={{ display:"flex", flexWrap:"wrap", gap:6, padding:"8px 0 12px" }}>
+                      <input type="text" defaultValue={h.emoji}
+                        onBlur={e=>{ updateHabitEmoji(h.key, e.target.value || "📌"); setEditingEmojiFor(null); }}
+                        maxLength="4"
+                        style={{ width:54, textAlign:"center", background:C.bg, border:`1px solid ${C.border}`, borderRadius:8, fontSize:18, padding:"6px 0", fontFamily:"Georgia,serif" }} />
+                      {EMOJI_PRESETS.map(e => (
+                        <button key={e} onClick={()=>{ updateHabitEmoji(h.key, e); setEditingEmojiFor(null); }} style={{
+                          width:34, height:34, fontSize:18, borderRadius:8,
+                          background: h.emoji===e?C.accent:C.bg,
+                          border: `1px solid ${h.emoji===e?C.accent:C.border}`,
+                          cursor:"pointer", fontFamily:"Georgia,serif",
+                        }}>{e}</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </SectionDivider>
+      );
+
+      const renderSettingsHabitOrder = () => (
+        <SectionDivider>
+          <div style={S.sectionLabel}>Habit order</div>
+          <div style={S.card}>
+            <div style={{ fontSize:12, color:C.textMuted, marginBottom:12, lineHeight:1.5 }}>Tap ▲▼ to reorder how habits appear on the Day tab.</div>
+            {allActiveHabits.map((h, i) => {
+              const btnStyle = disabled => ({
+                width:32, height:32, borderRadius:8,
+                background: disabled?C.bg:C.card,
+                border: `1px solid ${C.border}`,
+                color: disabled?C.mutedGray:C.text,
+                fontSize:14, cursor: disabled?"default":"pointer",
+                fontFamily:"Georgia,serif",
+              });
+              return (
+                <div key={h.key} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0", borderTop: i===0?"none":`1px solid ${C.border}` }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                    <span style={{ fontSize:18 }}>{h.emoji}</span>
+                    <span style={{ fontSize:14, color:C.text }}>{h.label}</span>
+                  </div>
+                  <div style={{ display:"flex", gap:6 }}>
+                    <button onClick={()=>moveHabit(h.key,-1)} disabled={i===0} style={btnStyle(i===0)}>▲</button>
+                    <button onClick={()=>moveHabit(h.key,1)} disabled={i===allActiveHabits.length-1} style={btnStyle(i===allActiveHabits.length-1)}>▼</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </SectionDivider>
+      );
+
+      const renderSettingsTab = () => (
+        <div style={S.bodyPad}>
+          <div style={S.sectionLabel}>Adjust current progress</div>
+
+          <div style={S.card}>
+            <div style={{ fontSize:14, fontWeight:"bold", color:C.text, marginBottom:4 }}>🎧 Pimsleur</div>
+            <div style={{ fontSize:12, color:C.textMuted, marginBottom:16 }}>Set the lesson number you are currently on</div>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <div style={{ color:C.textMuted, fontSize:13 }}>Current lesson</div>
+              <NumberStepper value={data.pimsleurTotal||0} onChange={v=>updateCount("pimsleurTotal",v)} min={0} max={180} />
+            </div>
+          </div>
+
+          <div style={S.card}>
+            <div style={{ fontSize:14, fontWeight:"bold", color:C.text, marginBottom:4 }}>🎙️ Inner French</div>
+            <div style={{ fontSize:12, color:C.textMuted, marginBottom:16 }}>Set the episode number you are currently on</div>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <div style={{ color:C.textMuted, fontSize:13 }}>Current episode</div>
+              <NumberStepper value={data.innerFrenchTotal||0} onChange={v=>updateCount("innerFrenchTotal",v)} min={0} max={200} />
+            </div>
+          </div>
+
+          <SavedToast show={saved} />
+
+          {renderSettingsHabits()}
+          {renderSettingsHabitOrder()}
+
+          <SectionDivider>
+            <div style={S.sectionLabel}>Export</div>
+            <div style={S.card}>
+              <div style={{ fontSize:13, color:C.textMuted, marginBottom:12, lineHeight:1.5 }}>Download all logged days as a spreadsheet. Opens in Excel, Numbers, or Google Sheets.</div>
+              <button onClick={exportCSV} style={{ width:"100%", padding:"12px", borderRadius:10, background:C.accent, border:"none", color:"#fff", fontSize:13, fontWeight:"bold", cursor:"pointer", fontFamily:"Georgia,serif", letterSpacing:1 }}>
+                📊 EXPORT TO CSV
+              </button>
+            </div>
+          </SectionDivider>
+
+          <SectionDivider>
+            <div style={S.sectionLabel}>Danger zone</div>
+            <button onClick={resetAllData} style={S.dangerBtn}>Reset all data</button>
+          </SectionDivider>
+        </div>
+      );
+
+      // ─── Root render ────────────────────────────────────────────────────
+      return (
+        <div style={{ fontFamily:"Georgia,serif", background:C.bg, minHeight:"100vh", color:C.text, maxWidth:430, margin:"0 auto", paddingBottom:80 }}>
+          {renderHeader()}
+          {renderTabs()}
+          {activeTab === "day"      && renderDayTab()}
+          {activeTab === "workout"  && renderWorkoutTab()}
+          {activeTab === "progress" && renderProgressTab()}
+          {activeTab === "year"     && renderYearTab()}
+          {activeTab === "history"  && renderHistoryTab()}
+          {activeTab === "settings" && renderSettingsTab()}
         </div>
       );
     }
