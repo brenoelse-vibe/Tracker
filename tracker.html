@@ -584,14 +584,17 @@
                     )}
                   </div>
                 );
-                if (h.key === "eartest") return (
-                  <div key="eartest" style={CS}>
+                if (h.key === "eartest") {
+                  const compForViewDate = (data.comprehensionLog||[]).find(e=>e.date===viewDate);
+                  const isLogged = !!compForViewDate;
+                  return (
+                  <div key="eartest" style={{ ...CS, background:isLogged?cardActive:card, border:`1px solid ${isLogged?borderActive:border}` }}>
                     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                       <div>
-                        <div style={{ fontSize:15, fontWeight:"bold", color:text }}>👂 Ear Test</div>
+                        <div style={{ fontSize:15, fontWeight:"bold", color:isLogged?green:text }}>👂 Ear Test</div>
                         <div style={{ color:textMuted, fontSize:11, marginTop:2 }}>Inner French audio-only %</div>
                       </div>
-                      <button onClick={()=>setShowCompForm(!showCompForm)} style={{ background:bg, border:`1px solid ${border}`, borderRadius:8, color:textMuted, fontSize:11, padding:"6px 14px", cursor:"pointer", fontFamily:"Georgia,serif" }}>LOG</button>
+                      <button onClick={()=>setShowCompForm(!showCompForm)} style={{ background:isLogged?green:bg, border:`1px solid ${isLogged?green:border}`, borderRadius:8, color:isLogged?"#fff":textMuted, fontSize:11, padding:"6px 14px", cursor:"pointer", fontFamily:"Georgia,serif" }}>{isLogged?"CHANGE":"LOG"}</button>
                     </div>
                     {showCompForm && (
                       <div style={{ marginTop:12, display:"flex", gap:8 }}>
@@ -599,14 +602,12 @@
                         <button onClick={logComprehension} style={{ background:accent, border:"none", borderRadius:8, color:"#fff", fontSize:13, fontWeight:"bold", padding:"8px 16px", cursor:"pointer", fontFamily:"Georgia,serif" }}>SAVE</button>
                       </div>
                     )}
-                    {(() => {
-                      const compForViewDate = (data.comprehensionLog||[]).find(e=>e.date===viewDate);
-                      if (showCompForm || !compForViewDate) return null;
-                      const v = compForViewDate.value;
-                      return <div style={{ marginTop:8, fontSize:28, fontWeight:"bold", color:v>=75?green:v>=60?accent:red }}>{v}%</div>;
-                    })()}
+                    {!showCompForm && isLogged && (
+                      <div style={{ marginTop:8, fontSize:28, fontWeight:"bold", color:compForViewDate.value>=75?green:compForViewDate.value>=60?accent:red }}>{compForViewDate.value}%</div>
+                    )}
                   </div>
-                );
+                  );
+                }
                 if (h.isBuiltin) return (
                   <HabitRow key={h.key} habitKey={h.key} emoji={h.emoji} label={h.label}
                     sublabel={h.sublabelFn(data)}
