@@ -247,6 +247,13 @@
         setShowCompForm(false);
       };
 
+      const clearComprehension = () => {
+        const newCompLog = (data.comprehensionLog||[]).filter(e=>e.date!==viewDate);
+        save({ ...data, comprehensionLog:newCompLog });
+        setTodayLog({ ...todayLog, comprehension:"" });
+        setShowCompForm(false);
+      };
+
       const updateCount = (field, val) => save({ ...data, [field]: val });
 
       const addHabit = () => {
@@ -594,7 +601,7 @@
                         <div style={{ fontSize:15, fontWeight:"bold", color:isLogged?green:text }}>👂 Ear Test</div>
                         <div style={{ color:textMuted, fontSize:11, marginTop:2 }}>Inner French audio-only %</div>
                       </div>
-                      <button onClick={()=>setShowCompForm(!showCompForm)} style={{ background:isLogged?green:bg, border:`1px solid ${isLogged?green:border}`, borderRadius:8, color:isLogged?"#fff":textMuted, fontSize:11, padding:"6px 14px", cursor:"pointer", fontFamily:"Georgia,serif" }}>{isLogged?"CHANGE":"LOG"}</button>
+                      <button onClick={()=>{ if (isLogged) { clearComprehension(); } else { setShowCompForm(!showCompForm); } }} style={{ background:isLogged?green:bg, border:`1px solid ${isLogged?green:border}`, borderRadius:8, color:isLogged?"#fff":textMuted, fontSize:11, padding:"6px 14px", cursor:"pointer", fontFamily:"Georgia,serif" }}>LOG</button>
                     </div>
                     {showCompForm && (
                       <div style={{ marginTop:12, display:"flex", gap:8 }}>
@@ -603,7 +610,7 @@
                       </div>
                     )}
                     {!showCompForm && isLogged && (
-                      <div style={{ marginTop:8, fontSize:28, fontWeight:"bold", color:compForViewDate.value>=75?green:compForViewDate.value>=60?accent:red }}>{compForViewDate.value}%</div>
+                      <div onClick={()=>setShowCompForm(true)} style={{ marginTop:8, fontSize:28, fontWeight:"bold", color:compForViewDate.value>=75?green:compForViewDate.value>=60?accent:red, cursor:"pointer" }}>{compForViewDate.value}%</div>
                     )}
                   </div>
                   );
