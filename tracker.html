@@ -378,7 +378,10 @@
         const now = new Date(); now.setHours(0,0,0,0);
         return Math.max(1, Math.floor((now-start)/86400000) + 1);
       })();
-      const lastComp = (data.comprehensionLog||[]).slice(-1)[0]?.value ?? null;
+      const lastComp = (() => {
+        const log = (data.comprehensionLog||[]).slice().sort((a,b)=>a.date.localeCompare(b.date));
+        return log.length ? log[log.length-1].value : null;
+      })();
       const streak   = getStreak();
       const curMile  = milestones.find(m=>(data.pimsleurTotal||0)<m.pimsleur)||milestones[milestones.length-1];
       const pct      = (c,t) => Math.min(100,Math.round((c/t)*100));
