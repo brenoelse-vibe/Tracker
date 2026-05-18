@@ -188,17 +188,18 @@
 
     function getExercisesForType(data, typeKey) {
       if (typeKey === "mix") {
-        // Mix = union of all exercises across all other types (excluding hidden/preserving renames)
+        // Mix = union of all exercises across all other types
+        const mixHidden = new Set((data.hiddenPresets||{}).mix || []);
         const seen = new Set();
         const all = [];
         ["push","pull","legs","upper","lower","cardio","recovery"].forEach(t => {
           getExercisesForType(data, t).forEach(name => {
-            if (!seen.has(name)) { seen.add(name); all.push(name); }
+            if (!seen.has(name) && !mixHidden.has(name)) { seen.add(name); all.push(name); }
           });
         });
         // include any mix-specific custom exercises too
         const mixCustoms = (data.customExercises||{}).mix || [];
-        mixCustoms.forEach(name => { if (!seen.has(name)) { seen.add(name); all.push(name); } });
+        mixCustoms.forEach(name => { if (!seen.has(name) && !mixHidden.has(name)) { seen.add(name); all.push(name); } });
         // apply mix-specific reorder if present
         const order = (data.exerciseOrder||{}).mix || [];
         if (!order.length) return all;
@@ -689,6 +690,29 @@
       };
 
       const deleteExercise = (typeKey, name) => {
+        // Mix is a union view, not an owner — deleting from Mix only hides it from Mix.
+        if (typeKey === "mix") {
+          const mixHidden = (data.hiddenPresets||{}).mix || [];
+          if (mixHidden.includes(name)) return; // already hidden
+          const patch = {
+            hiddenPresets: { ...(data.hiddenPresets||{}), mix: [...mixHidden, name] },
+          };
+          // also remove any mix-specific custom entry with same name
+          const mixCustoms = (data.customExercises||{}).mix || [];
+          if (mixCustoms.includes(name)) {
+            patch.customExercises = { ...(data.customExercises||{}), mix: mixCustoms.filter(c => c!==name) };
+          }
+          // remove from any in-progress mix session today
+          const sess = (data.workoutSessions||{})[today];
+          if (sess && sess.type === "mix") {
+            patch.workoutSessions = {
+              ...(data.workoutSessions||{}),
+              [today]: { ...sess, exercises: sess.exercises.filter(e => e.name!==name) },
+            };
+          }
+          update(patch);
+          return;
+        }
         const presets = EXERCISE_PRESETS[typeKey] || [];
         const renames = (data.renamedPresets||{})[typeKey] || {};
         const customs = (data.customExercises||{})[typeKey] || [];
@@ -1205,7 +1229,12 @@
                   </div>
                 )}
               </div>
-              <button onClick={()=>{ if(window.confirm(`Remove "${ex.name}" from ${typeLabel}? Future sessions of this type won't include it.`)) deleteExercise(todaySession.type, ex.name); }}
+              <button onClick={()=>{
+                  const msg = todaySession.type === "mix"
+                    ? `Hide "${ex.name}" from Mix? It will stay in its original workout type.`
+                    : `Remove "${ex.name}" from ${typeLabel}? Future sessions of this type won't include it.`;
+                  if(window.confirm(msg)) deleteExercise(todaySession.type, ex.name);
+                }}
                 style={{ width:24, height:24, borderRadius:7, background:"rgba(255,255,255,0.65)", border:`1px solid ${C.border}`, color:C.textMuted, fontSize:14, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontFamily:"Inter,sans-serif", lineHeight:1, padding:0, marginRight:14 }}>×</button>
               <Toggle on={ex.done} onClick={()=>toggleExerciseDone(ex.id)} />
             </div>
