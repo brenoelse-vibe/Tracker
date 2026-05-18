@@ -841,8 +841,8 @@
         const newTodo = {
           id: newTodoId(),
           title,
-          dueDate: todoDraft.dueDate || null,   // "YYYY-MM-DD" or null
-          priority: todoDraft.priority || null, // "high"|"med"|"low" or null
+          dueDate: todoDraft.dueDate || today,  // default to today if not specified
+          priority: todoDraft.priority || null,
           notes: "",
           done: false,
           doneAt: null,
@@ -1634,9 +1634,11 @@
       // ─── TAB: TODO ──────────────────────────────────────────────────────
       const renderTodoCard = (t, opts={}) => {
         const isOverdue = todoBucket(t.dueDate) === "overdue" && !t.done;
-        const isSwiped = todoSwipedId === t.id;
         const isExpanded = todoExpandedId === t.id;
-        const isEditingTitle = todoEditing && todoEditing.id === t.id && todoEditing.field === "title";
+
+        if (isExpanded) {
+          return renderTodoExpanded(t, isOverdue);
+        }
 
         const baseCard = {
           background:"rgba(255,255,255,0.7)",
@@ -1647,82 +1649,48 @@
         const overdueShadow = "0 1px 0 rgba(255,255,255,0.95) inset, inset 5px 0 0 #d4621a, 0 1px 2px rgba(212,98,26,0.08), 0 6px 16px -10px rgba(212,98,26,0.15)";
         const doneShadow = "0 1px 0 rgba(255,255,255,1) inset, inset 5px 0 0 #5fa85f, 0 1px 2px rgba(74,140,74,0.08), 0 8px 20px -12px rgba(74,140,74,0.18)";
 
-        if (isExpanded) {
-          return renderTodoExpanded(t, isOverdue);
-        }
-
         const dateLabel = formatTodoDate(t.dueDate);
-        const isDoneStyle = t.done;
         const cardStyle = {
           ...baseCard,
-          background: isDoneStyle ? "rgba(255,255,255,0.85)" : baseCard.background,
-          boxShadow: isDoneStyle ? doneShadow : (isOverdue ? overdueShadow : baseCard.boxShadow),
+          background: t.done ? "rgba(255,255,255,0.85)" : baseCard.background,
+          boxShadow: t.done ? doneShadow : (isOverdue ? overdueShadow : baseCard.boxShadow),
           display:"flex", alignItems:"center", gap:14,
-          transform: isSwiped ? "translateX(-90px)" : "translateX(0)",
-          transition:"transform 0.2s ease",
           cursor:"pointer",
-          position:"relative",
         };
 
         return (
-          <div key={t.id} style={{ position:"relative", borderRadius:18, overflow:"hidden" }}>
-            <div onClick={()=>deleteTodo(t.id)} style={{
-              position:"absolute", top:0, right:0, bottom:0, width:90,
-              background:"linear-gradient(135deg, #d44 0%, #b33 100%)",
-              display:"flex", alignItems:"center", justifyContent:"center", gap:6,
-              color:"#fff", fontSize:11, fontWeight:700, letterSpacing:0.8,
-              cursor:"pointer", fontFamily:"Inter,sans-serif",
-            }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-              DELETE
+          <div key={t.id} onClick={()=>setTodoExpandedId(t.id)} style={cardStyle}>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{
+                fontSize:15, fontWeight:600, letterSpacing:-0.2,
+                color: t.done?C.greenText:C.text,
+                textDecoration: t.done?"line-through":"none",
+                textDecorationColor: t.done?"rgba(45,110,45,0.5)":"none",
+              }}>{t.title}</div>
+              {(t.priority || dateLabel) && (
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:4 }}>
+                  {t.priority && (
+                    <span style={{
+                      width:6, height:6, borderRadius:"50%",
+                      background: PRIORITY_COLORS[t.priority],
+                    }}/>
+                  )}
+                  {dateLabel && !t.done && (
+                    <span style={{
+                      fontSize:11, fontWeight: isOverdue?700:500,
+                      color: isOverdue?C.accent:C.textMuted,
+                    }}>{dateLabel}</span>
+                  )}
+                  {t.done && t.doneAt && (
+                    <span style={{ fontSize:11, fontWeight:600, color:C.green }}>
+                      Done · {t.doneAt === today ? "today" : formatDate(t.doneAt,{month:"short",day:"numeric"})}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
-            <div onClick={()=>{
-              if (isSwiped) { setTodoSwipedId(null); return; }
-              if (todoSwipedId) { setTodoSwipedId(null); return; }
-              setTodoExpandedId(t.id);
-            }}
-            onTouchStart={e=>{ e.currentTarget.dataset.sx = e.touches[0].clientX; }}
-            onTouchEnd={e=>{
-              const sx = parseFloat(e.currentTarget.dataset.sx || 0);
-              const dx = e.changedTouches[0].clientX - sx;
-              if (dx < -40) setTodoSwipedId(t.id);
-              else if (dx > 40) setTodoSwipedId(null);
-            }}
-            style={cardStyle}>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{
-                  fontSize:15, fontWeight:600, letterSpacing:-0.2,
-                  color: t.done?C.greenText:C.text,
-                  textDecoration: t.done?"line-through":"none",
-                  textDecorationColor: t.done?"rgba(45,110,45,0.5)":"none",
-                }}>{t.title}</div>
-                {(t.priority || dateLabel) && (
-                  <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:4 }}>
-                    {t.priority && (
-                      <span style={{
-                        width:6, height:6, borderRadius:"50%",
-                        background: PRIORITY_COLORS[t.priority],
-                      }}/>
-                    )}
-                    {dateLabel && !t.done && (
-                      <span style={{
-                        fontSize:11, fontWeight: isOverdue?700:500,
-                        color: isOverdue?C.accent:C.textMuted,
-                      }}>{dateLabel}</span>
-                    )}
-                    {t.done && t.doneAt && (
-                      <span style={{ fontSize:11, fontWeight:600, color:C.green }}>
-                        Done · {t.doneAt === today ? "today" : formatDate(t.doneAt,{month:"short",day:"numeric"})}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-              <div onClick={e=>{ e.stopPropagation(); toggleTodo(t.id); }}>
-                <Toggle on={t.done} onClick={()=>toggleTodo(t.id)} />
-              </div>
+            <div onClick={e=>{ e.stopPropagation(); toggleTodo(t.id); }}>
+              <Toggle on={t.done} onClick={()=>toggleTodo(t.id)} />
             </div>
           </div>
         );
