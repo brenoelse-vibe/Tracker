@@ -135,78 +135,65 @@
     };
 
     // ─── ICONS ───────────────────────────────────────────────────────────
-    // Two-state icons: outlined when inactive, filled when active.
-    // 22x22 viewbox, 1.6px stroke for outlined; filled is solid version.
+    // Geometric minimal set. Pure shapes, no literal pictographs.
+    // 24x24 viewBox. Color (green when active, muted gray when not) passed in.
     const TabIcon = ({ name, active, color }) => {
-      const stroke = color;
-      const fill = active ? color : "none";
-      const sw = 1.7;
-      const common = { width:22, height:22, viewBox:"0 0 22 22", fill:"none", xmlns:"http://www.w3.org/2000/svg" };
+      const c = color;
+      const common = { width:22, height:22, viewBox:"0 0 24 24", fill:"none", xmlns:"http://www.w3.org/2000/svg" };
 
       if (name === "day") {
-        // Calendar with current-day dot
+        // Concentric: outer ring + filled center dot
         return (
           <svg {...common}>
-            <rect x="3" y="4.5" width="16" height="14" rx="2.5" stroke={stroke} strokeWidth={sw} fill={active?color:"none"} fillOpacity={active?0.15:0}/>
-            <path d="M3 8.5h16" stroke={stroke} strokeWidth={sw} strokeLinecap="round"/>
-            <path d="M7 2.5v3M15 2.5v3" stroke={stroke} strokeWidth={sw} strokeLinecap="round"/>
-            <circle cx="11" cy="13.5" r={active?2.5:2} fill={color}/>
+            <circle cx="12" cy="12" r="9" stroke={c} strokeWidth="1.8"/>
+            <circle cx="12" cy="12" r="3" fill={c}/>
           </svg>
         );
       }
       if (name === "workout") {
-        // Dumbbell
+        // Three horizontal blocks (like dumbbell weights from above)
         return (
           <svg {...common}>
-            <path d="M11 5v12" stroke={stroke} strokeWidth={sw} strokeLinecap="round"/>
-            <rect x="2.5" y="7" width="3.5" height="8" rx="1" stroke={stroke} strokeWidth={sw} fill={fill} fillOpacity={active?1:0}/>
-            <rect x="16" y="7" width="3.5" height="8" rx="1" stroke={stroke} strokeWidth={sw} fill={fill} fillOpacity={active?1:0}/>
-            <rect x="6" y="9" width="2" height="4" rx="0.6" stroke={stroke} strokeWidth={sw} fill={fill} fillOpacity={active?1:0}/>
-            <rect x="14" y="9" width="2" height="4" rx="0.6" stroke={stroke} strokeWidth={sw} fill={fill} fillOpacity={active?1:0}/>
+            <rect x="3" y="9.5" width="5" height="5" rx="0.8" fill={c}/>
+            <rect x="9.5" y="9.5" width="5" height="5" rx="0.8" fill={c}/>
+            <rect x="16" y="9.5" width="5" height="5" rx="0.8" fill={c}/>
           </svg>
         );
       }
       if (name === "progress") {
-        // Line chart trending up
+        // Ascending bar chart - 4 bars rising left to right
         return (
           <svg {...common}>
-            <path d="M3 17V4" stroke={stroke} strokeWidth={sw} strokeLinecap="round"/>
-            <path d="M3 17h16" stroke={stroke} strokeWidth={sw} strokeLinecap="round"/>
-            <path d="M6 14l3.5-3.5L13 13l5-5" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
-            <circle cx="18" cy="8" r={active?2:1.6} fill={color}/>
+            <rect x="3" y="15" width="3.5" height="6" rx="0.6" fill={c}/>
+            <rect x="8.5" y="11" width="3.5" height="10" rx="0.6" fill={c}/>
+            <rect x="14" y="7" width="3.5" height="14" rx="0.6" fill={c}/>
+            <rect x="19.5" y="3" width="1.5" height="18" rx="0.6" fill={c}/>
           </svg>
         );
       }
       if (name === "year") {
-        // 4x4 grid (heatmap style)
-        const cells = [];
-        for (let r=0; r<4; r++) for (let c=0; c<4; c++) {
-          const x = 3 + c*4;
-          const y = 3 + r*4;
-          // a few "filled" cells in the active state for personality
-          const isFilled = active && ((r===0 && c<2) || (r===1 && c===0) || (r===1 && c===3) || (r===2 && c<3) || (r===3 && c===1));
-          cells.push(<rect key={`${r}-${c}`} x={x} y={y} width="3" height="3" rx="0.6"
-            fill={isFilled?color:(active?color:"none")} fillOpacity={isFilled?1:(active?0.18:0)}
-            stroke={stroke} strokeWidth={1}/>);
+        // 3x3 dot grid
+        const dots = [];
+        for (let r=0; r<3; r++) for (let cc=0; cc<3; cc++) {
+          dots.push(<circle key={`${r}-${cc}`} cx={5 + cc*7} cy={5 + r*7} r="1.6" fill={c}/>);
         }
-        return <svg {...common}>{cells}</svg>;
+        return <svg {...common}>{dots}</svg>;
       }
       if (name === "history") {
-        // Clock with counter-clockwise arrow
+        // Circle with clock-hand pointing back
         return (
           <svg {...common}>
-            <circle cx="11" cy="11.5" r="7" stroke={stroke} strokeWidth={sw} fill={fill} fillOpacity={active?0.15:0}/>
-            <path d="M11 7.5v4l2.5 2" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
-            <path d="M4 5.5V2.8M4 5.5h2.5" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+            <circle cx="12" cy="12" r="9" stroke={c} strokeWidth="1.8"/>
+            <path d="M12 12L8 9" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>
           </svg>
         );
       }
       if (name === "settings") {
-        // Gear
+        // Two concentric outlined rings (gear suggestion, but minimal)
         return (
           <svg {...common}>
-            <circle cx="11" cy="11.5" r="3" stroke={stroke} strokeWidth={sw} fill={fill} fillOpacity={active?1:0}/>
-            <path d="M11 2.5v2.5M11 18v2.5M19.5 11.5H17M5 11.5H2.5M17 5.5l-1.8 1.8M6.8 16.2L5 18M17 17.5l-1.8-1.8M6.8 6.8L5 5" stroke={stroke} strokeWidth={sw} strokeLinecap="round"/>
+            <circle cx="12" cy="12" r="9" stroke={c} strokeWidth="1.8"/>
+            <circle cx="12" cy="12" r="3" stroke={c} strokeWidth="1.8"/>
           </svg>
         );
       }
@@ -975,7 +962,7 @@
 
       const tabStyle = active => ({
         flex:1, padding:"6px 4px 4px", background:"none", border:"none",
-        color: active?C.accent:C.textMuted,
+        color: active?C.greenDark:C.textMuted,
         cursor:"pointer", fontFamily:"Inter,sans-serif",
         display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2,
         position:"relative",
@@ -999,7 +986,7 @@
             <div style={{ display:"flex", padding:"6px 4px 8px" }}>
               {TABS.map(t => {
                 const active = activeTab === t.key;
-                const color = active ? C.accent : C.textMuted;
+                const color = active ? C.greenDark : C.textMuted;
                 return (
                   <button key={t.key} onClick={()=>setActiveTab(t.key)} style={tabStyle(active)}>
                     <div style={{ height:22, display:"flex", alignItems:"center", justifyContent:"center", opacity: active?1:0.7, transition:"opacity 0.2s" }}>
