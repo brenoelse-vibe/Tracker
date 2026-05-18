@@ -507,12 +507,11 @@
       }, [data.logs, data.customHabits]);
 
       const dayCount = useMemo(() => {
-        const keys = Object.keys(data.logs).filter(k => hasAnyHabit(data.logs[k], data.customHabits));
-        const earliest = keys.length ? keys.sort()[0] : data.startDate;
-        const start = new Date(earliest + "T00:00:00");
-        const now = new Date(); now.setHours(0,0,0,0);
-        return Math.max(1, Math.floor((now-start)/86400000) + 1);
-      }, [data.logs, data.customHabits, data.startDate]);
+        // Day of year: Jan 1 = 1, Dec 31 = 365 (or 366 in leap year)
+        const now = new Date();
+        const start = new Date(now.getFullYear(), 0, 1);
+        return Math.floor((now - start) / 86400000) + 1;
+      }, []);
 
       const lastComp = useMemo(() => {
         const log = (data.comprehensionLog||[]).slice().sort((a,b) => a.date.localeCompare(b.date));
@@ -973,17 +972,19 @@
           position:"fixed", bottom:0, left:0, right:0, zIndex:100,
           display:"flex", justifyContent:"center",
           pointerEvents:"none",
-          paddingBottom:"env(safe-area-inset-bottom, 0px)",
+          padding:"0 10px",
+          paddingBottom:"calc(10px + env(safe-area-inset-bottom, 0px))",
         }}>
           <div style={{
-            width:"100%", maxWidth:430,
-            background:"rgba(255, 252, 246, 0.85)",
+            width:"100%", maxWidth:410,
+            background:"rgba(255, 252, 246, 0.88)",
             backdropFilter:"blur(20px)",
             WebkitBackdropFilter:"blur(20px)",
-            boxShadow:"0 -1px 0 rgba(140,126,106,0.15), 0 -8px 24px -8px rgba(80,60,30,0.08)",
+            borderRadius:24,
+            boxShadow:"0 1px 0 rgba(255,255,255,1) inset, 0 -1px 0 rgba(140,126,106,0.12) inset, 0 8px 28px -8px rgba(80,60,30,0.18), 0 2px 8px -2px rgba(80,60,30,0.08)",
             pointerEvents:"auto",
           }}>
-            <div style={{ display:"flex", padding:"6px 4px 8px" }}>
+            <div style={{ display:"flex", padding:"8px 4px 10px" }}>
               {TABS.map(t => {
                 const active = activeTab === t.key;
                 const color = active ? C.greenDark : C.textMuted;
