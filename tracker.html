@@ -11,6 +11,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700;0,9..144,800;1,9..144,500;1,9..144,600&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -906,36 +907,173 @@
 
       // ─── Export & Reset ─────────────────────────────────────────────────
       const exportCSV = () => {
+        // Export full data as multi-sheet XLSX workbook.
+        // Fallback to CSV if SheetJS didn't load.
+        if (typeof XLSX === "undefined") {
+          window.alert("Export library didn't load. Try refreshing the page and exporting again.");
+          return;
+        }
+
         const customs = data.customHabits || [];
-        const headers = ["Date","Pimsleur","Anki","Inner French","Workout", ...customs.map(h=>h.label), "Ear%"];
-        const esc = v => {
-          const s = String(v??"");
-          return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
-        };
         const compByDate = {};
         (data.comprehensionLog||[]).forEach(e => { compByDate[e.date] = e.value; });
-        const rows = [headers.map(esc).join(",")];
+
+        const dateFmt = (key) => {
+          const d = new Date(key+"T12:00:00");
+          return formatDate(key,{weekday:"short", year:"numeric", month:"short", day:"numeric"});
+        };
+
+        // ─── SHEET 1: Daily Logs ─────────────────────────────────────
+        const dailyRows = [];
+        const builtinCols = [
+          { key: "pimsleur",    label: "Pimsleur" },
+          { key: "anki",        label: "Anki" },
+          { key: "innerFrench", label: "Inner French" },
+        ];
+        const dailyHeader = [
+          "Date", "Day of Week", "ISO Week",
+          ...builtinCols.map(c => c.label),
+          "Workout Type",
+          ...customs.map(h => h.label),
+          "Ear Test %",
+          "Habits Logged", "Total Habits",
+        ];
+        dailyRows.push(dailyHeader);
+
+        const allActiveCount = (() => {
+          // count of habits that are "active" for any given day in the past
+          // simplified: use current built-ins + customs minus hidden
+          const hb = (data.hiddenBuiltins||[]);
+          const builtinActive = builtinCols.filter(c => !hb.includes(c.key)).length;
+          const workoutActive = hb.includes("workout") ? 0 : 1;
+          const eartestActive = hb.includes("eartest") ? 0 : 1;
+          return builtinActive + customs.length + workoutActive + eartestActive;
+        })();
+
         Object.keys(data.logs).sort().forEach(d => {
           const l = data.logs[d] || {};
-          rows.push([
-            d,
-            l.pimsleur ? "TRUE" : "FALSE",
-            l.anki ? "TRUE" : "FALSE",
-            l.innerFrench ? "TRUE" : "FALSE",
+          const date = new Date(d+"T12:00:00");
+          const dow = date.toLocaleDateString("en-US",{weekday:"long"});
+          const wk = getISOWeek(date);
+          const logged =
+            (l.pimsleur?1:0) + (l.anki?1:0) + (l.innerFrench?1:0) +
+            (l.workout?1:0) +
+            (compByDate[d] !== undefined ? 1 : 0) +
+            customs.reduce((sum,h)=>sum+(l[h.key]?1:0), 0);
+          dailyRows.push([
+            d, dow, wk,
+            l.pimsleur ? "Yes" : "",
+            l.anki ? "Yes" : "",
+            l.innerFrench ? "Yes" : "",
             l.workout || "",
-            ...customs.map(h => l[h.key] ? "TRUE" : "FALSE"),
-            compByDate[d] ?? "",
-          ].map(esc).join(","));
+            ...customs.map(h => l[h.key] ? "Yes" : ""),
+            compByDate[d] !== undefined ? compByDate[d] : "",
+            logged, allActiveCount,
+          ]);
         });
-        const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `tracker-export-${today}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+
+        // ─── SHEET 2: Workout Sets (exploded) ─────────────────────────
+        const setsHeader = ["Date", "Day of Week", "Workout Type", "Exercise", "Order", "Set #", "Weight (lb)", "Reps", "Exercise Done", "Notes"];
+        const setsRows = [setsHeader];
+        const sessions = data.workoutSessions || {};
+        Object.keys(sessions).sort().forEach(d => {
+          const s = sessions[d];
+          if (!s || !s.exercises) return;
+          const dow = new Date(d+"T12:00:00").toLocaleDateString("en-US",{weekday:"short"});
+          const typeLabel = (WORKOUT_TYPES.find(t => t.key===s.type)||{}).label || s.type;
+          s.exercises.forEach((ex, exIdx) => {
+            if (!ex.sets || ex.sets.length === 0) {
+              // include exercises even if no sets logged, so they show up
+              if (ex.done || ex.notes) {
+                setsRows.push([d, dow, typeLabel, ex.name, exIdx+1, "", "", "", ex.done?"Yes":"", ex.notes||""]);
+              }
+            } else {
+              ex.sets.forEach((set, setIdx) => {
+                setsRows.push([
+                  d, dow, typeLabel, ex.name, exIdx+1, setIdx+1,
+                  set.weight || 0, set.reps || 0,
+                  ex.done ? "Yes" : "",
+                  setIdx === 0 ? (ex.notes||"") : "",
+                ]);
+              });
+            }
+          });
+        });
+
+        // ─── SHEET 3: Workout Sessions Summary ───────────────────────
+        const sessSummaryHeader = ["Date", "Day of Week", "Workout Type", "# Exercises", "# Exercises Done", "Total Sets", "Total Volume (lb)"];
+        const sessSummaryRows = [sessSummaryHeader];
+        Object.keys(sessions).sort().forEach(d => {
+          const s = sessions[d];
+          if (!s || !s.exercises) return;
+          const dow = new Date(d+"T12:00:00").toLocaleDateString("en-US",{weekday:"short"});
+          const typeLabel = (WORKOUT_TYPES.find(t => t.key===s.type)||{}).label || s.type;
+          const doneCount = s.exercises.filter(e => e.done).length;
+          const totalSets = s.exercises.reduce((acc,e) => acc + (e.sets||[]).length, 0);
+          const volume = s.exercises.reduce((acc,e) =>
+            acc + (e.sets||[]).reduce((sum,st) => sum + (st.weight||0)*(st.reps||0), 0), 0);
+          sessSummaryRows.push([d, dow, typeLabel, s.exercises.length, doneCount, totalSets, Math.round(volume)]);
+        });
+
+        // ─── SHEET 4: Todos ──────────────────────────────────────────
+        const todoHeader = ["ID", "Title", "Due Date", "Priority", "Status", "Completed Date", "Created Date", "Notes"];
+        const todoRows = [todoHeader];
+        const allTodos = (data.todos||[]).slice().sort((a,b) => (a.createdAt||"").localeCompare(b.createdAt||""));
+        allTodos.forEach(t => {
+          todoRows.push([
+            t.id, t.title,
+            t.dueDate || "",
+            t.priority || "",
+            t.done ? "Completed" : "Active",
+            t.doneAt || "",
+            t.createdAt || "",
+            t.notes || "",
+          ]);
+        });
+
+        // ─── SHEET 5: Summary ────────────────────────────────────────
+        const summaryRows = [
+          ["Export generated", new Date().toLocaleString()],
+          ["User", user?.email || ""],
+          [],
+          ["Current streak (days)", streak],
+          ["Day of year", dayCount],
+          ["ISO week", getISOWeek(new Date())],
+          [],
+          ["Pimsleur lesson", data.pimsleurTotal || 0],
+          ["Inner French episode", data.innerFrenchTotal || 0],
+          ["Latest Ear Test %", lastComp ?? ""],
+          [],
+          ["Days logged", Object.keys(data.logs||{}).length],
+          ["Workout sessions logged", Object.keys(data.workoutSessions||{}).length],
+          ["Active todos", (data.todos||[]).filter(t=>!t.done).length],
+          ["Completed todos", (data.todos||[]).filter(t=>t.done).length],
+          ["Custom habits", customs.length],
+        ];
+
+        // Build workbook
+        const wb = XLSX.utils.book_new();
+        const addSheet = (name, rows) => {
+          const ws = XLSX.utils.aoa_to_sheet(rows);
+          // auto-size columns based on the longest cell per column
+          const colWidths = [];
+          rows.forEach(r => {
+            r.forEach((cell, i) => {
+              const len = String(cell ?? "").length;
+              if (!colWidths[i] || len > colWidths[i]) colWidths[i] = len;
+            });
+          });
+          ws["!cols"] = colWidths.map(w => ({ wch: Math.min(Math.max(w+2, 10), 40) }));
+          XLSX.utils.book_append_sheet(wb, ws, name);
+        };
+
+        addSheet("Summary", summaryRows);
+        addSheet("Daily Logs", dailyRows);
+        addSheet("Workout Sets", setsRows);
+        addSheet("Workout Sessions", sessSummaryRows);
+        addSheet("Todos", todoRows);
+
+        XLSX.writeFile(wb, `tracker-export-${today}.xlsx`);
       };
 
       const resetAllData = () => {
@@ -2433,9 +2571,9 @@
           <SectionDivider>
             <div style={S.sectionLabel}>Export</div>
             <div style={S.card}>
-              <div style={{ fontSize:13, color:C.textMuted, marginBottom:12, lineHeight:1.5, fontWeight:500 }}>Download all logged days as a spreadsheet. Opens in Excel, Numbers, or Google Sheets.</div>
+              <div style={{ fontSize:13, color:C.textMuted, marginBottom:12, lineHeight:1.5, fontWeight:500 }}>Download everything as an Excel workbook with 5 sheets: Summary, Daily Logs, Workout Sets, Workout Sessions, and Todos.</div>
               <button onClick={exportCSV} style={{ width:"100%", padding:"14px", borderRadius:12, background:`linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)`, border:"none", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:1, boxShadow:`0 4px 12px -2px rgba(212,98,26,0.4)` }}>
-                📊 EXPORT TO CSV
+                📊 EXPORT TO EXCEL
               </button>
             </div>
           </SectionDivider>
