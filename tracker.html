@@ -150,6 +150,16 @@
           </svg>
         );
       }
+      if (name === "todo") {
+        // Notepad with check + line — distinct from Day's concentric circle
+        return (
+          <svg {...common}>
+            <rect x="3.5" y="5" width="17" height="14" rx="2.5" stroke={c} strokeWidth="1.8" fill="none"/>
+            <path d="M7.5 9.5l2 2 4-4" stroke={c} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M7.5 14.5h9" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>
+          </svg>
+        );
+      }
       if (name === "workout") {
         // Three horizontal blocks (like dumbbell weights from above)
         return (
@@ -202,6 +212,7 @@
 
     const TABS = [
       { key:"day",      label:"Day" },
+      { key:"todo",     label:"Todo" },
       { key:"workout",  label:"Workout" },
       { key:"progress", label:"Progress" },
       { key:"year",     label:"Year" },
@@ -215,6 +226,7 @@
       customHabits: [], hiddenBuiltins: [], habitOrder: [],
       workoutSessions: {}, customExercises: {}, exerciseOrder: {},
       hiddenPresets: {}, renamedPresets: {},
+      todos: [],
     };
 
     // ═══ SHARED STYLES ═══════════════════════════════════════════════════════
@@ -408,6 +420,15 @@
       const [editingExercise, setEditingExercise] = useState(null);
       const [libraryExpanded, setLibraryExpanded] = useState(false);
       const [libraryNewByType, setLibraryNewByType] = useState({});
+
+      // Todo tab state
+      const [todoSheetOpen, setTodoSheetOpen] = useState(false);
+      const [todoDraft, setTodoDraft] = useState({ title: "", dueDate: "", priority: "" });
+      const [todoDateOpen, setTodoDateOpen] = useState(false);
+      const [todoPriorityOpen, setTodoPriorityOpen] = useState(false);
+      const [todoSwipedId, setTodoSwipedId] = useState(null);
+      const [todoExpandedId, setTodoExpandedId] = useState(null);
+      const [todoEditing, setTodoEditing] = useState(null); // {id, field: 'title'|'date'|'priority'|'notes'}
 
       const yearScrollRef = useRef(null);
       const today = localDateKey(new Date());
@@ -807,6 +828,81 @@
         const hidden = (data.hiddenPresets||{})[typeKey] || [];
         update({ hiddenPresets: { ...(data.hiddenPresets||{}), [typeKey]: hidden.filter(h => h!==originalName) } });
       };
+
+      // ─── Action: todos ──────────────────────────────────────────────────
+      const PRIORITY_LABELS = { high: "High", med: "Medium", low: "Low" };
+      const PRIORITY_COLORS = { high: C.accent, med: "#e8b86a", low: "#a8b894" };
+
+      const newTodoId = () => `t_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+
+      const addTodo = () => {
+        const title = (todoDraft.title||"").trim();
+        if (!title) return;
+        const newTodo = {
+          id: newTodoId(),
+          title,
+          dueDate: todoDraft.dueDate || null,   // "YYYY-MM-DD" or null
+          priority: todoDraft.priority || null, // "high"|"med"|"low" or null
+          notes: "",
+          done: false,
+          doneAt: null,
+          createdAt: today,
+        };
+        update({ todos: [...(data.todos||[]), newTodo] });
+        setTodoDraft({ title: "", dueDate: "", priority: "" });
+        setTodoSheetOpen(false);
+        setTodoDateOpen(false);
+        setTodoPriorityOpen(false);
+      };
+
+      const updateTodo = (id, patch) => {
+        const todos = (data.todos||[]).map(t => t.id===id ? { ...t, ...patch } : t);
+        update({ todos });
+      };
+
+      const toggleTodo = id => {
+        const todos = (data.todos||[]).map(t => {
+          if (t.id !== id) return t;
+          const willBeDone = !t.done;
+          return { ...t, done: willBeDone, doneAt: willBeDone ? today : null };
+        });
+        update({ todos });
+      };
+
+      const deleteTodo = id => {
+        const todos = (data.todos||[]).filter(t => t.id !== id);
+        update({ todos });
+        setTodoSwipedId(null);
+        setTodoExpandedId(null);
+      };
+
+      // Date helpers for grouping
+      const todoBucket = (dueDate) => {
+        if (!dueDate) return "nodate";
+        if (dueDate < today) return "overdue";   // shown inside "today"
+        if (dueDate === today) return "today";
+        // tomorrow
+        const t = new Date(today + "T12:00:00");
+        const tomorrow = new Date(t); tomorrow.setDate(t.getDate()+1);
+        const tomorrowKey = localDateKey(tomorrow);
+        if (dueDate === tomorrowKey) return "tomorrow";
+        return "later";
+      };
+
+      const formatTodoDate = (dueDate) => {
+        if (!dueDate) return null;
+        const bucket = todoBucket(dueDate);
+        if (bucket === "today") return "Due today";
+        if (bucket === "tomorrow") return "Tomorrow";
+        if (bucket === "overdue") {
+          const d = new Date(dueDate+"T12:00:00");
+          const t = new Date(today+"T12:00:00");
+          const days = Math.round((t-d)/86400000);
+          return days === 1 ? "Overdue · 1 day" : `Overdue · ${days} days`;
+        }
+        return formatDate(dueDate, {weekday:"short", month:"short", day:"numeric"});
+      };
+
 
       // ─── Export & Reset ─────────────────────────────────────────────────
       const exportCSV = () => {
@@ -1535,6 +1631,464 @@
         );
       };
 
+      // ─── TAB: TODO ──────────────────────────────────────────────────────
+      const renderTodoCard = (t, opts={}) => {
+        const isOverdue = todoBucket(t.dueDate) === "overdue" && !t.done;
+        const isSwiped = todoSwipedId === t.id;
+        const isExpanded = todoExpandedId === t.id;
+        const isEditingTitle = todoEditing && todoEditing.id === t.id && todoEditing.field === "title";
+
+        const baseCard = {
+          background:"rgba(255,255,255,0.7)",
+          borderRadius:18,
+          padding:"14px 16px",
+          boxShadow:"0 1px 0 rgba(255,255,255,0.95) inset, 0 1px 2px rgba(80,60,30,0.04), 0 6px 16px -10px rgba(80,60,30,0.08)",
+        };
+        const overdueShadow = "0 1px 0 rgba(255,255,255,0.95) inset, inset 5px 0 0 #d4621a, 0 1px 2px rgba(212,98,26,0.08), 0 6px 16px -10px rgba(212,98,26,0.15)";
+        const doneShadow = "0 1px 0 rgba(255,255,255,1) inset, inset 5px 0 0 #5fa85f, 0 1px 2px rgba(74,140,74,0.08), 0 8px 20px -12px rgba(74,140,74,0.18)";
+
+        if (isExpanded) {
+          return renderTodoExpanded(t, isOverdue);
+        }
+
+        const dateLabel = formatTodoDate(t.dueDate);
+        const isDoneStyle = t.done;
+        const cardStyle = {
+          ...baseCard,
+          background: isDoneStyle ? "rgba(255,255,255,0.85)" : baseCard.background,
+          boxShadow: isDoneStyle ? doneShadow : (isOverdue ? overdueShadow : baseCard.boxShadow),
+          display:"flex", alignItems:"center", gap:14,
+          transform: isSwiped ? "translateX(-90px)" : "translateX(0)",
+          transition:"transform 0.2s ease",
+          cursor:"pointer",
+          position:"relative",
+        };
+
+        return (
+          <div key={t.id} style={{ position:"relative", borderRadius:18, overflow:"hidden" }}>
+            <div onClick={()=>deleteTodo(t.id)} style={{
+              position:"absolute", top:0, right:0, bottom:0, width:90,
+              background:"linear-gradient(135deg, #d44 0%, #b33 100%)",
+              display:"flex", alignItems:"center", justifyContent:"center", gap:6,
+              color:"#fff", fontSize:11, fontWeight:700, letterSpacing:0.8,
+              cursor:"pointer", fontFamily:"Inter,sans-serif",
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              DELETE
+            </div>
+            <div onClick={()=>{
+              if (isSwiped) { setTodoSwipedId(null); return; }
+              if (todoSwipedId) { setTodoSwipedId(null); return; }
+              setTodoExpandedId(t.id);
+            }}
+            onTouchStart={e=>{ e.currentTarget.dataset.sx = e.touches[0].clientX; }}
+            onTouchEnd={e=>{
+              const sx = parseFloat(e.currentTarget.dataset.sx || 0);
+              const dx = e.changedTouches[0].clientX - sx;
+              if (dx < -40) setTodoSwipedId(t.id);
+              else if (dx > 40) setTodoSwipedId(null);
+            }}
+            style={cardStyle}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{
+                  fontSize:15, fontWeight:600, letterSpacing:-0.2,
+                  color: t.done?C.greenText:C.text,
+                  textDecoration: t.done?"line-through":"none",
+                  textDecorationColor: t.done?"rgba(45,110,45,0.5)":"none",
+                }}>{t.title}</div>
+                {(t.priority || dateLabel) && (
+                  <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:4 }}>
+                    {t.priority && (
+                      <span style={{
+                        width:6, height:6, borderRadius:"50%",
+                        background: PRIORITY_COLORS[t.priority],
+                      }}/>
+                    )}
+                    {dateLabel && !t.done && (
+                      <span style={{
+                        fontSize:11, fontWeight: isOverdue?700:500,
+                        color: isOverdue?C.accent:C.textMuted,
+                      }}>{dateLabel}</span>
+                    )}
+                    {t.done && t.doneAt && (
+                      <span style={{ fontSize:11, fontWeight:600, color:C.green }}>
+                        Done · {t.doneAt === today ? "today" : formatDate(t.doneAt,{month:"short",day:"numeric"})}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div onClick={e=>{ e.stopPropagation(); toggleTodo(t.id); }}>
+                <Toggle on={t.done} onClick={()=>toggleTodo(t.id)} />
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      const renderTodoExpanded = (t, isOverdue) => {
+        const isEditingTitle = todoEditing && todoEditing.id === t.id && todoEditing.field === "title";
+        const isEditingDate = todoEditing && todoEditing.id === t.id && todoEditing.field === "date";
+        const isEditingPriority = todoEditing && todoEditing.id === t.id && todoEditing.field === "priority";
+        const isEditingNotes = todoEditing && todoEditing.id === t.id && todoEditing.field === "notes";
+
+        return (
+          <div key={t.id} style={{
+            background:"rgba(255,255,255,0.92)",
+            borderRadius:18,
+            padding:16,
+            boxShadow: t.done
+              ? "0 1px 0 rgba(255,255,255,1) inset, inset 5px 0 0 #5fa85f, 0 2px 4px rgba(74,140,74,0.08), 0 12px 28px -8px rgba(74,140,74,0.18)"
+              : isOverdue
+              ? "0 1px 0 rgba(255,255,255,1) inset, inset 5px 0 0 #d4621a, 0 2px 4px rgba(212,98,26,0.08), 0 12px 28px -8px rgba(212,98,26,0.18)"
+              : "0 1px 0 rgba(255,255,255,1) inset, 0 2px 4px rgba(80,60,30,0.05), 0 12px 28px -8px rgba(80,60,30,0.18)",
+          }}>
+            <div style={{ display:"flex", alignItems:"flex-start", gap:14, marginBottom:14 }}>
+              <div style={{ flex:1 }}>
+                {isEditingTitle ? (
+                  <input type="text" defaultValue={t.title} autoFocus
+                    onBlur={e=>{ const v = e.target.value.trim(); if (v) updateTodo(t.id,{title:v}); setTodoEditing(null); }}
+                    onKeyDown={e=>{ if (e.key==="Enter") e.target.blur(); if (e.key==="Escape") setTodoEditing(null); }}
+                    style={{ width:"100%", background:"rgba(255,255,255,0.7)", border:`1px solid ${C.accent}`, borderRadius:10, padding:"8px 10px", fontSize:16, fontWeight:600, color:C.text, fontFamily:"Inter,sans-serif", letterSpacing:-0.2 }} />
+                ) : (
+                  <div onClick={()=>setTodoEditing({id:t.id, field:"title"})} style={{
+                    fontSize:16, fontWeight:600, letterSpacing:-0.2, lineHeight:1.35,
+                    color: t.done?C.greenText:C.text,
+                    cursor:"pointer",
+                  }}>{t.title}</div>
+                )}
+              </div>
+              <Toggle on={t.done} onClick={()=>toggleTodo(t.id)} />
+            </div>
+
+            {/* DATE ROW */}
+            <div style={{ borderTop:`1px solid rgba(140,126,106,0.12)`, padding:"10px 0" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <span style={{ fontSize:10, letterSpacing:1, textTransform:"uppercase", color:C.mutedGray, fontWeight:700, minWidth:70 }}>Due</span>
+                {isEditingDate ? (
+                  <input type="date" defaultValue={t.dueDate || ""} autoFocus
+                    onBlur={e=>{ updateTodo(t.id,{dueDate: e.target.value || null}); setTodoEditing(null); }}
+                    onChange={e=>{ updateTodo(t.id,{dueDate: e.target.value || null}); setTodoEditing(null); }}
+                    style={{ flex:1, background:"rgba(255,255,255,0.7)", border:`1px solid ${C.accent}`, borderRadius:8, padding:"6px 10px", fontSize:13, color:C.text, fontFamily:"Inter,sans-serif" }} />
+                ) : (
+                  <div onClick={()=>setTodoEditing({id:t.id, field:"date"})} style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"space-between", cursor:"pointer" }}>
+                    <span style={{ fontSize:13, fontWeight:600, color: isOverdue?C.accent:C.text }}>
+                      {t.dueDate ? formatTodoDate(t.dueDate) : <span style={{color:"#b8aa92", fontWeight:500, fontStyle:"italic"}}>No due date</span>}
+                    </span>
+                    <span style={{ color:"#b8aa92", fontSize:14 }}>›</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* PRIORITY ROW */}
+            <div style={{ borderTop:`1px solid rgba(140,126,106,0.12)`, padding:"10px 0" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <span style={{ fontSize:10, letterSpacing:1, textTransform:"uppercase", color:C.mutedGray, fontWeight:700, minWidth:70 }}>Priority</span>
+                {isEditingPriority ? (
+                  <div style={{ flex:1, display:"flex", gap:6 }}>
+                    {["high","med","low"].map(p => (
+                      <button key={p} onClick={()=>{ updateTodo(t.id,{priority:p}); setTodoEditing(null); }} style={{
+                        flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:5,
+                        background: t.priority===p ? "rgba(212,98,26,0.10)" : "rgba(255,255,255,0.7)",
+                        border:`1px solid ${t.priority===p?"rgba(212,98,26,0.3)":"rgba(140,126,106,0.18)"}`,
+                        borderRadius:8, padding:"6px 8px", fontSize:11, fontWeight:600,
+                        color: t.priority===p?C.accent:C.textMuted,
+                        cursor:"pointer", fontFamily:"Inter,sans-serif",
+                      }}>
+                        <span style={{ width:6, height:6, borderRadius:"50%", background:PRIORITY_COLORS[p] }}/>
+                        {PRIORITY_LABELS[p]}
+                      </button>
+                    ))}
+                    {t.priority && (
+                      <button onClick={()=>{ updateTodo(t.id,{priority:null}); setTodoEditing(null); }} style={{ background:"none", border:"none", color:C.textMuted, fontSize:11, cursor:"pointer", padding:"0 4px" }}>×</button>
+                    )}
+                  </div>
+                ) : (
+                  <div onClick={()=>setTodoEditing({id:t.id, field:"priority"})} style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"space-between", cursor:"pointer" }}>
+                    <span style={{ fontSize:13, fontWeight:600, color:C.text, display:"flex", alignItems:"center", gap:6 }}>
+                      {t.priority ? (
+                        <>
+                          <span style={{ width:6, height:6, borderRadius:"50%", background:PRIORITY_COLORS[t.priority] }}/>
+                          {PRIORITY_LABELS[t.priority]}
+                        </>
+                      ) : <span style={{color:"#b8aa92", fontWeight:500, fontStyle:"italic"}}>None</span>}
+                    </span>
+                    <span style={{ color:"#b8aa92", fontSize:14 }}>›</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* NOTES ROW */}
+            <div style={{ borderTop:`1px solid rgba(140,126,106,0.12)`, padding:"10px 0" }}>
+              <div style={{ display:"flex", alignItems:"flex-start", gap:10 }}>
+                <span style={{ fontSize:10, letterSpacing:1, textTransform:"uppercase", color:C.mutedGray, fontWeight:700, minWidth:70, paddingTop:2 }}>Notes</span>
+                {isEditingNotes ? (
+                  <textarea defaultValue={t.notes||""} autoFocus rows="2"
+                    onBlur={e=>{ updateTodo(t.id,{notes: e.target.value}); setTodoEditing(null); }}
+                    style={{ flex:1, background:"rgba(255,255,255,0.7)", border:`1px solid ${C.accent}`, borderRadius:8, padding:"6px 10px", fontSize:13, color:C.text, fontFamily:"Inter,sans-serif", resize:"vertical", minHeight:42 }} />
+                ) : (
+                  <div onClick={()=>setTodoEditing({id:t.id, field:"notes"})} style={{ flex:1, display:"flex", alignItems:"flex-start", justifyContent:"space-between", cursor:"pointer", gap:8 }}>
+                    <span style={{ fontSize:13, fontWeight:t.notes?500:500, color: t.notes?C.text:"#b8aa92", fontStyle: t.notes?"normal":"italic", lineHeight:1.4, flex:1 }}>
+                      {t.notes || "Add a note…"}
+                    </span>
+                    <span style={{ color:"#b8aa92", fontSize:14 }}>›</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ACTIONS */}
+            <div style={{ display:"flex", gap:8, marginTop:6, paddingTop:12, borderTop:`1px solid rgba(140,126,106,0.12)` }}>
+              <button onClick={()=>setTodoExpandedId(null)} style={{
+                flex:1, background:"rgba(255,255,255,0.7)", border:`1px solid rgba(140,126,106,0.18)`,
+                borderRadius:10, padding:10, fontSize:12, fontWeight:600, color:C.textMuted,
+                cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.3,
+              }}>CLOSE</button>
+              <button onClick={()=>{ if (window.confirm(`Delete "${t.title}"?`)) deleteTodo(t.id); }} style={{
+                flex:1, background:"rgba(204,68,68,0.05)", border:`1px solid rgba(204,68,68,0.3)`,
+                borderRadius:10, padding:10, fontSize:12, fontWeight:600, color:C.red,
+                cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.3,
+                display:"flex", alignItems:"center", justifyContent:"center", gap:6,
+              }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                DELETE
+              </button>
+            </div>
+          </div>
+        );
+      };
+
+      const renderTodoGroup = (label, todos, options={}) => {
+        if (todos.length === 0) return null;
+        const isToday = options.isToday;
+        const dateSubtitle = options.dateSubtitle;
+        return (
+          <div key={label} style={{ marginBottom:18 }}>
+            <div style={{ display:"flex", alignItems:"baseline", gap:10, padding:"0 6px", marginBottom:10 }}>
+              <span style={{ fontSize:11, fontWeight: isToday?600:500, letterSpacing:0.2, color: isToday?C.greenDark:C.mutedGray }}>{label}</span>
+              <span style={{ fontSize:11, fontWeight:500, color:C.mutedGray, letterSpacing:0.2 }}>{todos.length}</span>
+              {dateSubtitle && (
+                <span style={{ fontSize:11, fontWeight:500, color:C.mutedGray, letterSpacing:0.2, marginLeft:"auto" }}>{dateSubtitle}</span>
+              )}
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {todos.map(t => renderTodoCard(t))}
+            </div>
+          </div>
+        );
+      };
+
+      const renderAddSheet = () => {
+        if (!todoSheetOpen) return null;
+        const hasTitle = (todoDraft.title||"").trim().length > 0;
+        const dueLabel = todoDraft.dueDate ? formatTodoDate(todoDraft.dueDate) : null;
+        return (
+          <>
+            <div onClick={()=>{ setTodoSheetOpen(false); setTodoDateOpen(false); setTodoPriorityOpen(false); }}
+              style={{ position:"fixed", inset:0, background:"rgba(80,60,30,0.18)", backdropFilter:"blur(2px)", zIndex:99, pointerEvents:"auto" }}/>
+            <div style={{
+              position:"fixed",
+              bottom: "calc(84px + env(safe-area-inset-bottom, 0px))",
+              left:12, right:12, maxWidth: 406, margin:"0 auto",
+              zIndex:101,
+              background:"rgba(255, 252, 246, 0.97)",
+              backdropFilter:"blur(24px)",
+              WebkitBackdropFilter:"blur(24px)",
+              borderRadius:22,
+              padding:"18px 18px 14px",
+              boxShadow:"0 1px 0 rgba(255,255,255,1) inset, 0 -1px 0 rgba(140,126,106,0.1) inset, 0 12px 36px -8px rgba(80,60,30,0.22), 0 4px 12px -2px rgba(80,60,30,0.1)",
+            }}>
+              <input type="text" value={todoDraft.title} autoFocus
+                onChange={e=>setTodoDraft({...todoDraft, title: e.target.value})}
+                onKeyDown={e=>{ if (e.key==="Enter") addTodo(); if (e.key==="Escape") setTodoSheetOpen(false); }}
+                placeholder="What needs doing?"
+                style={{ width:"100%", background:"transparent", border:"none", outline:"none", fontSize:17, color:C.text, fontFamily:"Inter,sans-serif", fontWeight:600, letterSpacing:-0.2, padding:"4px 0 12px" }} />
+
+              <div style={{ height:1, background:"rgba(140,126,106,0.15)", margin:"0 -4px 12px" }}/>
+
+              {/* Date sub-picker */}
+              {todoDateOpen && (
+                <div style={{ marginBottom:10, padding:"10px", background:"rgba(255,255,255,0.7)", borderRadius:12, border:`1px solid rgba(140,126,106,0.18)` }}>
+                  <div style={{ display:"flex", gap:6, marginBottom:8, flexWrap:"wrap" }}>
+                    <button onClick={()=>{ setTodoDraft({...todoDraft, dueDate: today}); setTodoDateOpen(false); }} style={chipStyle(todoDraft.dueDate===today)}>Today</button>
+                    {(() => {
+                      const tm = new Date(today+"T12:00:00"); tm.setDate(tm.getDate()+1);
+                      const k = localDateKey(tm);
+                      return <button onClick={()=>{ setTodoDraft({...todoDraft, dueDate: k}); setTodoDateOpen(false); }} style={chipStyle(todoDraft.dueDate===k)}>Tomorrow</button>;
+                    })()}
+                    {(() => {
+                      const w = new Date(today+"T12:00:00"); w.setDate(w.getDate()+7);
+                      const k = localDateKey(w);
+                      return <button onClick={()=>{ setTodoDraft({...todoDraft, dueDate: k}); setTodoDateOpen(false); }} style={chipStyle(todoDraft.dueDate===k)}>In a week</button>;
+                    })()}
+                  </div>
+                  <input type="date" value={todoDraft.dueDate||""}
+                    onChange={e=>{ setTodoDraft({...todoDraft, dueDate: e.target.value || ""}); }}
+                    style={{ width:"100%", background:"rgba(255,255,255,0.85)", border:`1px solid rgba(140,126,106,0.22)`, borderRadius:8, padding:"7px 10px", fontSize:13, color:C.text, fontFamily:"Inter,sans-serif" }} />
+                  {todoDraft.dueDate && (
+                    <button onClick={()=>setTodoDraft({...todoDraft, dueDate:""})} style={{ marginTop:6, background:"none", border:"none", color:C.textMuted, fontSize:11, cursor:"pointer", fontFamily:"Inter,sans-serif" }}>Clear</button>
+                  )}
+                </div>
+              )}
+
+              {/* Priority sub-picker */}
+              {todoPriorityOpen && (
+                <div style={{ marginBottom:10, padding:"10px", background:"rgba(255,255,255,0.7)", borderRadius:12, border:`1px solid rgba(140,126,106,0.18)` }}>
+                  <div style={{ display:"flex", gap:6 }}>
+                    {["high","med","low"].map(p => (
+                      <button key={p} onClick={()=>{ setTodoDraft({...todoDraft, priority:p}); setTodoPriorityOpen(false); }} style={{
+                        flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:5,
+                        background: todoDraft.priority===p ? "rgba(212,98,26,0.10)" : "rgba(255,255,255,0.85)",
+                        border:`1px solid ${todoDraft.priority===p?"rgba(212,98,26,0.3)":"rgba(140,126,106,0.22)"}`,
+                        borderRadius:8, padding:"7px 8px", fontSize:11, fontWeight:600,
+                        color: todoDraft.priority===p?C.accent:C.textMuted,
+                        cursor:"pointer", fontFamily:"Inter,sans-serif",
+                      }}>
+                        <span style={{ width:6, height:6, borderRadius:"50%", background:PRIORITY_COLORS[p] }}/>
+                        {PRIORITY_LABELS[p]}
+                      </button>
+                    ))}
+                  </div>
+                  {todoDraft.priority && (
+                    <button onClick={()=>setTodoDraft({...todoDraft, priority:""})} style={{ marginTop:6, background:"none", border:"none", color:C.textMuted, fontSize:11, cursor:"pointer", fontFamily:"Inter,sans-serif" }}>Clear</button>
+                  )}
+                </div>
+              )}
+
+              {/* TOOLS ROW */}
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8 }}>
+                <div style={{ display:"flex", gap:6 }}>
+                  <button onClick={()=>{ setTodoDateOpen(!todoDateOpen); setTodoPriorityOpen(false); }} style={chipStyle(!!todoDraft.dueDate)}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                      <rect x="3" y="5" width="18" height="16" rx="2.5" stroke="currentColor" strokeWidth="1.8" fill="none"/>
+                      <path d="M3 10h18" stroke="currentColor" strokeWidth="1.8"/>
+                      <path d="M8 2v4M16 2v4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                    </svg>
+                    {dueLabel || "Due date"}
+                  </button>
+                  <button onClick={()=>{ setTodoPriorityOpen(!todoPriorityOpen); setTodoDateOpen(false); }} style={chipStyle(!!todoDraft.priority)}>
+                    <span style={{ width:6, height:6, borderRadius:"50%", background: todoDraft.priority ? PRIORITY_COLORS[todoDraft.priority] : PRIORITY_COLORS.low }}/>
+                    {todoDraft.priority ? PRIORITY_LABELS[todoDraft.priority] : "Priority"}
+                  </button>
+                </div>
+                <div style={{ display:"flex", gap:6 }}>
+                  <button onClick={()=>{ setTodoSheetOpen(false); setTodoDraft({title:"",dueDate:"",priority:""}); setTodoDateOpen(false); setTodoPriorityOpen(false); }}
+                    style={{ background:"none", border:"none", color:C.textMuted, fontSize:12, fontWeight:600, padding:"7px 10px", cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.2 }}>Cancel</button>
+                  <button onClick={addTodo} disabled={!hasTitle} style={{
+                    width:34, height:34, borderRadius:"50%",
+                    background: hasTitle ? `linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)` : "rgba(140,126,106,0.25)",
+                    border:"none", color:"#fff", cursor: hasTitle?"pointer":"not-allowed",
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                    boxShadow: hasTitle ? "0 1px 0 rgba(255,255,255,0.3) inset, 0 2px 8px -1px rgba(212,98,26,0.5)" : "none",
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        );
+      };
+
+      const chipStyle = active => ({
+        display:"inline-flex", alignItems:"center", gap:5,
+        background: active?"rgba(212,98,26,0.10)":"rgba(255,255,255,0.7)",
+        border:`1px solid ${active?"rgba(212,98,26,0.3)":"rgba(140,126,106,0.22)"}`,
+        borderRadius:100, padding:"6px 11px 6px 9px",
+        fontSize:11, fontWeight:600,
+        color: active?C.accent:C.textMuted,
+        cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.1,
+      });
+
+      const renderTodoTab = () => {
+        const allTodos = data.todos || [];
+        const active = allTodos.filter(t => !t.done);
+        const completed = allTodos.filter(t => t.done).sort((a,b) => (b.doneAt||"").localeCompare(a.doneAt||""));
+
+        // Bucket active
+        const tomorrowKey = (() => { const t = new Date(today+"T12:00:00"); t.setDate(t.getDate()+1); return localDateKey(t); })();
+        const todayList = active.filter(t => {
+          const b = todoBucket(t.dueDate);
+          return b === "today" || b === "overdue";
+        }).sort((a,b) => {
+          // overdue first, then by priority, then by date
+          const aB = todoBucket(a.dueDate), bB = todoBucket(b.dueDate);
+          if (aB !== bB) return aB === "overdue" ? -1 : 1;
+          return (a.dueDate||"").localeCompare(b.dueDate||"");
+        });
+        const tomorrowList = active.filter(t => todoBucket(t.dueDate) === "tomorrow");
+        const laterList = active.filter(t => todoBucket(t.dueDate) === "later")
+          .sort((a,b) => (a.dueDate||"").localeCompare(b.dueDate||""));
+        const noDateList = active.filter(t => !t.dueDate);
+
+        const todayFormatted = formatDate(today,{weekday:"short", month:"short", day:"numeric"});
+        const tomorrowFormatted = formatDate(tomorrowKey,{weekday:"short", month:"short", day:"numeric"});
+
+        return (
+          <div style={S.bodyPad}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", fontSize:11, fontWeight:600, color:C.textMuted, textTransform:"uppercase", letterSpacing:1.5, margin:"6px 4px 18px" }}>
+              <span>Todo</span>
+              <span style={{ fontFamily:"'Fraunces',serif", fontSize:13, color:C.accent, fontWeight:700, letterSpacing:0, textTransform:"none" }}>{active.length} active</span>
+            </div>
+
+            {active.length === 0 && completed.length === 0 && (
+              <div style={{ ...S.card, textAlign:"center", padding:"40px 20px" }}>
+                <div style={{ fontSize:28, marginBottom:10, opacity:0.4 }}>✓</div>
+                <div style={{ fontFamily:"'Fraunces',serif", fontSize:18, fontWeight:600, letterSpacing:-0.3, marginBottom:4 }}>Nothing to do</div>
+                <div style={{ fontSize:12, color:C.textMuted, fontWeight:500 }}>Tap "Add task" below to get started.</div>
+              </div>
+            )}
+
+            {renderTodoGroup("Today", todayList, { isToday:true, dateSubtitle: todayFormatted })}
+            {renderTodoGroup("Tomorrow", tomorrowList, { dateSubtitle: tomorrowFormatted })}
+            {renderTodoGroup("Later", laterList)}
+            {renderTodoGroup("No date", noDateList)}
+
+            {completed.length > 0 && (
+              <div style={{ marginTop:18 }}>
+                <div style={{ display:"flex", alignItems:"baseline", gap:10, padding:"0 6px", marginBottom:10 }}>
+                  <span style={{ fontSize:11, fontWeight:500, color:C.mutedGray, letterSpacing:0.2 }}>Completed</span>
+                  <span style={{ fontSize:11, fontWeight:500, color:C.mutedGray, letterSpacing:0.2 }}>{completed.length}</span>
+                </div>
+                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                  {completed.slice(0,20).map(t => renderTodoCard(t))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      };
+
+      const renderTodoFAB = () => {
+        if (activeTab !== "todo") return null;
+        if (todoSheetOpen) return null;
+        return (
+          <div style={{
+            position:"fixed", left:0, right:0,
+            bottom: "calc(86px + env(safe-area-inset-bottom, 0px))",
+            display:"flex", justifyContent:"center",
+            pointerEvents:"none", zIndex:50,
+          }}>
+            <button onClick={()=>setTodoSheetOpen(true)} style={{
+              pointerEvents:"auto",
+              display:"inline-flex", alignItems:"center", gap:8,
+              background:`linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)`,
+              color:"#fff", padding:"13px 22px", borderRadius:100,
+              fontSize:14, fontWeight:700, letterSpacing:0.3,
+              border:"none", cursor:"pointer", fontFamily:"Inter,sans-serif",
+              boxShadow:"0 1px 0 rgba(255,255,255,0.3) inset, 0 4px 16px -2px rgba(212,98,26,0.5), 0 12px 32px -8px rgba(212,98,26,0.4)",
+            }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></svg>
+              Add task
+            </button>
+          </div>
+        );
+      };
+
       const renderWorkoutTab = () => (
         <div style={S.bodyPad}>
           {todaySession ? renderWorkoutSession() : renderWorkoutPicker()}
@@ -1931,11 +2485,14 @@
           {renderHeader()}
           {activeTab === "day" && renderDayHero()}
           {activeTab === "day"      && renderDayTab()}
+          {activeTab === "todo"     && renderTodoTab()}
           {activeTab === "workout"  && renderWorkoutTab()}
           {activeTab === "progress" && renderProgressTab()}
           {activeTab === "year"     && renderYearTab()}
           {activeTab === "history"  && renderHistoryTab()}
           {activeTab === "settings" && renderSettingsTab()}
+          {renderTodoFAB()}
+          {renderAddSheet()}
           {renderTabs()}
         </div>
       );
