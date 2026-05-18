@@ -134,13 +134,92 @@
       mix:     [],
     };
 
+    // ─── ICONS ───────────────────────────────────────────────────────────
+    // Two-state icons: outlined when inactive, filled when active.
+    // 22x22 viewbox, 1.6px stroke for outlined; filled is solid version.
+    const TabIcon = ({ name, active, color }) => {
+      const stroke = color;
+      const fill = active ? color : "none";
+      const sw = 1.7;
+      const common = { width:22, height:22, viewBox:"0 0 22 22", fill:"none", xmlns:"http://www.w3.org/2000/svg" };
+
+      if (name === "day") {
+        // Calendar with current-day dot
+        return (
+          <svg {...common}>
+            <rect x="3" y="4.5" width="16" height="14" rx="2.5" stroke={stroke} strokeWidth={sw} fill={active?color:"none"} fillOpacity={active?0.15:0}/>
+            <path d="M3 8.5h16" stroke={stroke} strokeWidth={sw} strokeLinecap="round"/>
+            <path d="M7 2.5v3M15 2.5v3" stroke={stroke} strokeWidth={sw} strokeLinecap="round"/>
+            <circle cx="11" cy="13.5" r={active?2.5:2} fill={color}/>
+          </svg>
+        );
+      }
+      if (name === "workout") {
+        // Dumbbell
+        return (
+          <svg {...common}>
+            <path d="M11 5v12" stroke={stroke} strokeWidth={sw} strokeLinecap="round"/>
+            <rect x="2.5" y="7" width="3.5" height="8" rx="1" stroke={stroke} strokeWidth={sw} fill={fill} fillOpacity={active?1:0}/>
+            <rect x="16" y="7" width="3.5" height="8" rx="1" stroke={stroke} strokeWidth={sw} fill={fill} fillOpacity={active?1:0}/>
+            <rect x="6" y="9" width="2" height="4" rx="0.6" stroke={stroke} strokeWidth={sw} fill={fill} fillOpacity={active?1:0}/>
+            <rect x="14" y="9" width="2" height="4" rx="0.6" stroke={stroke} strokeWidth={sw} fill={fill} fillOpacity={active?1:0}/>
+          </svg>
+        );
+      }
+      if (name === "progress") {
+        // Line chart trending up
+        return (
+          <svg {...common}>
+            <path d="M3 17V4" stroke={stroke} strokeWidth={sw} strokeLinecap="round"/>
+            <path d="M3 17h16" stroke={stroke} strokeWidth={sw} strokeLinecap="round"/>
+            <path d="M6 14l3.5-3.5L13 13l5-5" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+            <circle cx="18" cy="8" r={active?2:1.6} fill={color}/>
+          </svg>
+        );
+      }
+      if (name === "year") {
+        // 4x4 grid (heatmap style)
+        const cells = [];
+        for (let r=0; r<4; r++) for (let c=0; c<4; c++) {
+          const x = 3 + c*4;
+          const y = 3 + r*4;
+          // a few "filled" cells in the active state for personality
+          const isFilled = active && ((r===0 && c<2) || (r===1 && c===0) || (r===1 && c===3) || (r===2 && c<3) || (r===3 && c===1));
+          cells.push(<rect key={`${r}-${c}`} x={x} y={y} width="3" height="3" rx="0.6"
+            fill={isFilled?color:(active?color:"none")} fillOpacity={isFilled?1:(active?0.18:0)}
+            stroke={stroke} strokeWidth={1}/>);
+        }
+        return <svg {...common}>{cells}</svg>;
+      }
+      if (name === "history") {
+        // Clock with counter-clockwise arrow
+        return (
+          <svg {...common}>
+            <circle cx="11" cy="11.5" r="7" stroke={stroke} strokeWidth={sw} fill={fill} fillOpacity={active?0.15:0}/>
+            <path d="M11 7.5v4l2.5 2" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M4 5.5V2.8M4 5.5h2.5" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        );
+      }
+      if (name === "settings") {
+        // Gear
+        return (
+          <svg {...common}>
+            <circle cx="11" cy="11.5" r="3" stroke={stroke} strokeWidth={sw} fill={fill} fillOpacity={active?1:0}/>
+            <path d="M11 2.5v2.5M11 18v2.5M19.5 11.5H17M5 11.5H2.5M17 5.5l-1.8 1.8M6.8 16.2L5 18M17 17.5l-1.8-1.8M6.8 6.8L5 5" stroke={stroke} strokeWidth={sw} strokeLinecap="round"/>
+          </svg>
+        );
+      }
+      return null;
+    };
+
     const TABS = [
-      { key:"day",      label:"Day",      icon:"📅" },
-      { key:"workout",  label:"Workout",  icon:"🏋️" },
-      { key:"progress", label:"Progress", icon:"📈" },
-      { key:"year",     label:"Year",     icon:"📊" },
-      { key:"history",  label:"History",  icon:"🗓️" },
-      { key:"settings", label:"Settings", icon:"⚙️" },
+      { key:"day",      label:"Day" },
+      { key:"workout",  label:"Workout" },
+      { key:"progress", label:"Progress" },
+      { key:"year",     label:"Year" },
+      { key:"history",  label:"History" },
+      { key:"settings", label:"Settings" },
     ];
 
     const DEFAULT_DATA = {
@@ -920,10 +999,13 @@
             <div style={{ display:"flex", padding:"6px 4px 8px" }}>
               {TABS.map(t => {
                 const active = activeTab === t.key;
+                const color = active ? C.accent : C.textMuted;
                 return (
                   <button key={t.key} onClick={()=>setActiveTab(t.key)} style={tabStyle(active)}>
-                    <div style={{ fontSize:20, lineHeight:1, opacity: active?1:0.55, transition:"opacity 0.2s" }}>{t.icon}</div>
-                    <div style={{ fontSize:9.5, fontWeight: active?700:500, letterSpacing:0.2, lineHeight:1 }}>{t.label}</div>
+                    <div style={{ height:22, display:"flex", alignItems:"center", justifyContent:"center", opacity: active?1:0.7, transition:"opacity 0.2s" }}>
+                      <TabIcon name={t.key} active={active} color={color} />
+                    </div>
+                    <div style={{ fontSize:9.5, fontWeight: active?700:500, letterSpacing:0.2, lineHeight:1, marginTop:2 }}>{t.label}</div>
                   </button>
                 );
               })}
