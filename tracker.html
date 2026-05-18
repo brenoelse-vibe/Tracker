@@ -941,28 +941,7 @@
         );
       };
 
-      const renderDayTab = () => {
-        const arrowBtn = disabled => ({
-          width:40, height:40, borderRadius:14,
-          background:"rgba(255,255,255,0.65)",
-          border:"none",
-          color: disabled?C.mutedGray:C.text,
-          fontSize:18, cursor: disabled?"default":"pointer",
-          fontFamily:"Inter,sans-serif",
-          display:"flex", alignItems:"center", justifyContent:"center",
-          boxShadow:"0 1px 0 rgba(255,255,255,0.95) inset, 0 2px 6px -2px rgba(80,60,30,0.08)",
-          opacity: disabled?0.4:1,
-        });
-        const goRel = delta => {
-          const d = new Date(viewDate+"T12:00:00"); d.setDate(d.getDate()+delta);
-          setViewDate(localDateKey(d));
-        };
-        const dayDiff = (() => {
-          const d = new Date(viewDate+"T12:00:00");
-          const t = new Date(today+"T12:00:00");
-          return Math.round((t-d)/86400000);
-        })();
-
+      const renderDayHero = () => {
         // Today completion ring
         const totalToday = allActiveHabits.length;
         const doneToday = allActiveHabits.filter(h => {
@@ -995,38 +974,36 @@
         const todayWeek = getISOWeek(new Date());
 
         return (
-          <div style={S.bodyPad}>
-
-            {/* HERO */}
-            <div style={{ background:"rgba(255,255,255,0.7)", backdropFilter:"blur(24px)", WebkitBackdropFilter:"blur(24px)", borderRadius:28, padding:22, marginBottom:14, boxShadow:"0 1px 0 rgba(255,255,255,1) inset, 0 1px 3px rgba(80,60,30,0.04), 0 16px 40px -12px rgba(80,60,30,0.14)" }}>
+          <div style={{ padding:"4px 16px 14px" }}>
+            <div style={{ background:"rgba(255,255,255,0.7)", backdropFilter:"blur(24px)", WebkitBackdropFilter:"blur(24px)", borderRadius:28, padding:22, boxShadow:"0 1px 0 rgba(255,255,255,1) inset, 0 1px 3px rgba(80,60,30,0.04), 0 16px 40px -12px rgba(80,60,30,0.14)" }}>
               <div style={{ display:"flex", alignItems:"center", gap:18 }}>
                 <div style={{ position:"relative", width:110, height:110, flexShrink:0 }}>
                   <svg width="110" height="110" viewBox="0 0 124 124">
                     <defs>
                       <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor={C.accentLight}/>
-                        <stop offset="100%" stopColor={C.accent}/>
+                        <stop offset="0%" stopColor={C.green}/>
+                        <stop offset="100%" stopColor={C.greenDark}/>
                       </linearGradient>
                     </defs>
-                    <circle cx="62" cy="62" r="54" stroke="#f0e8d8" strokeWidth="9" fill="none"/>
+                    <circle cx="62" cy="62" r="54" stroke="#e8eee0" strokeWidth="9" fill="none"/>
                     <circle cx="62" cy="62" r="54" stroke="url(#ringGrad)" strokeWidth="9" fill="none"
                       strokeDasharray={ringCircumference} strokeDashoffset={ringDashOffset} strokeLinecap="round"
                       transform="rotate(-90 62 62)" style={{ transition:"stroke-dashoffset 0.6s ease" }}/>
                   </svg>
                   <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center" }}>
-                    <div style={{ fontFamily:"'Fraunces',serif", fontWeight:700, fontSize:40, lineHeight:1, letterSpacing:-1.5, color:C.accent }}>{streak}</div>
+                    <div style={{ fontFamily:"'Fraunces',serif", fontWeight:700, fontSize:40, lineHeight:1, letterSpacing:-1.5, color:C.greenText }}>{streak}</div>
                     <div style={{ fontSize:8, letterSpacing:1.5, textTransform:"uppercase", color:C.textMuted, fontWeight:700, marginTop:3 }}>Day Streak</div>
                   </div>
                 </div>
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:11, color:C.textMuted, fontWeight:500, marginBottom:1 }}>Good morning,</div>
                   <div style={{ fontSize:22, fontWeight:800, letterSpacing:-0.8, lineHeight:1.05, color:C.text, marginBottom:12 }}>
-                    <span style={{ fontFamily:"'Fraunces',serif", fontStyle:"italic", fontWeight:600, color:C.accent }}>Breno.</span>
+                    <span style={{ fontFamily:"'Fraunces',serif", fontStyle:"italic", fontWeight:600, color:C.greenText }}>Breno.</span>
                   </div>
                   <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
                     <div style={{ display:"flex", justifyContent:"space-between", fontSize:10.5, color:C.textMuted, fontWeight:500 }}>
                       <span>Today</span>
-                      <span><strong style={{color:C.text, fontWeight:700}}>{doneToday}</strong> of <strong style={{color:C.text, fontWeight:700}}>{totalToday}</strong> · <strong style={{color:C.accent, fontWeight:700}}>{pctToday}%</strong></span>
+                      <span><strong style={{color:C.text, fontWeight:700}}>{doneToday}</strong> of <strong style={{color:C.text, fontWeight:700}}>{totalToday}</strong> · <strong style={{color:C.greenText, fontWeight:700}}>{pctToday}%</strong></span>
                     </div>
                     <div style={{ display:"flex", justifyContent:"space-between", fontSize:10.5, color:C.textMuted, fontWeight:500 }}>
                       <span>Year Time</span>
@@ -1034,13 +1011,40 @@
                     </div>
                     <div style={{ display:"flex", justifyContent:"space-between", fontSize:10.5, color:C.textMuted, fontWeight:500 }}>
                       <span>Last workout</span>
-                      <span style={{ color:C.accent, fontWeight:700 }}>{lastWorkout ? `${lastWorkoutType?.emoji||""} ${lastWorkoutType?.label||lastWorkout.type} · ${lastWorkoutLabel}` : "—"}</span>
+                      <span style={{ color:C.greenText, fontWeight:700 }}>{lastWorkout ? `${lastWorkoutType?.emoji||""} ${lastWorkoutType?.label||lastWorkout.type} · ${lastWorkoutLabel}` : "—"}</span>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
+          </div>
+        );
+      };
 
+      const renderDayTab = () => {
+        const arrowBtn = disabled => ({
+          width:40, height:40, borderRadius:14,
+          background:"rgba(255,255,255,0.65)",
+          border:"none",
+          color: disabled?C.mutedGray:C.text,
+          fontSize:18, cursor: disabled?"default":"pointer",
+          fontFamily:"Inter,sans-serif",
+          display:"flex", alignItems:"center", justifyContent:"center",
+          boxShadow:"0 1px 0 rgba(255,255,255,0.95) inset, 0 2px 6px -2px rgba(80,60,30,0.08)",
+          opacity: disabled?0.4:1,
+        });
+        const goRel = delta => {
+          const d = new Date(viewDate+"T12:00:00"); d.setDate(d.getDate()+delta);
+          setViewDate(localDateKey(d));
+        };
+        const dayDiff = (() => {
+          const d = new Date(viewDate+"T12:00:00");
+          const t = new Date(today+"T12:00:00");
+          return Math.round((t-d)/86400000);
+        })();
+
+        return (
+          <div style={S.bodyPad}>
             {/* DAY NAV */}
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, gap:10 }}>
               <button onClick={()=>goRel(-1)} style={arrowBtn(false)}>‹</button>
@@ -1684,6 +1688,7 @@
       return (
         <div style={{ fontFamily:"Inter,sans-serif", minHeight:"100vh", color:C.text, maxWidth:430, margin:"0 auto", paddingBottom:80 }}>
           {renderHeader()}
+          {activeTab === "day" && renderDayHero()}
           {renderTabs()}
           {activeTab === "day"      && renderDayTab()}
           {activeTab === "workout"  && renderWorkoutTab()}
