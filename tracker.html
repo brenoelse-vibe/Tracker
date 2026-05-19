@@ -37,8 +37,12 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
-      from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+    import {
+      getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+      createUserWithEmailAndPassword, signInWithEmailAndPassword,
+      EmailAuthProvider, linkWithCredential, linkWithPopup, unlink,
+      sendPasswordResetEmail, reauthenticateWithCredential, reauthenticateWithPopup,
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
     import { getFirestore, doc, getDoc, setDoc }
       from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -55,8 +59,90 @@
     const db = getFirestore(app);
     const provider = new GoogleAuthProvider();
 
+    const friendlyError = (e) => {
+      const code = e?.code || "";
+      if (code === "auth/email-already-in-use") return "An account already exists for that email. Try signing in instead.";
+      if (code === "auth/invalid-email")        return "That doesn't look like a valid email.";
+      if (code === "auth/weak-password")        return "Password is too weak. Use at least 6 characters.";
+      if (code === "auth/user-not-found")       return "No account exists for that email. Tap 'Create account' to sign up.";
+      if (code === "auth/wrong-password")       return "Wrong password. Try again or reset your password.";
+      if (code === "auth/invalid-credential")   return "Wrong email or password. Try again or reset your password.";
+      if (code === "auth/too-many-requests")    return "Too many attempts. Wait a moment and try again.";
+      if (code === "auth/popup-closed-by-user") return null; // user cancelled, silent
+      if (code === "auth/credential-already-in-use") return "That account is already linked to a different user.";
+      if (code === "auth/provider-already-linked") return "That sign-in method is already linked to your account.";
+      if (code === "auth/requires-recent-login") return "For security, please sign out and sign back in before doing this.";
+      return e?.message || "Something went wrong. Please try again.";
+    };
+
     window.__firebase = {
-      signIn: () => signInWithPopup(auth, provider).catch(e => alert("Sign-in error: " + e.message)),
+      signIn: () => signInWithPopup(auth, provider).catch(e => {
+        const msg = friendlyError(e);
+        if (msg) alert(msg);
+      }),
+      signInWithEmail: async (email, password) => {
+        try {
+          await signInWithEmailAndPassword(auth, email, password);
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: friendlyError(e) };
+        }
+      },
+      createWithEmail: async (email, password) => {
+        try {
+          await createUserWithEmailAndPassword(auth, email, password);
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: friendlyError(e) };
+        }
+      },
+      sendPasswordReset: async (email) => {
+        try {
+          await sendPasswordResetEmail(auth, email);
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: friendlyError(e) };
+        }
+      },
+      linkEmailToCurrentUser: async (email, password) => {
+        try {
+          const u = auth.currentUser;
+          if (!u) return { ok: false, error: "Not signed in." };
+          const cred = EmailAuthProvider.credential(email, password);
+          await linkWithCredential(u, cred);
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: friendlyError(e) };
+        }
+      },
+      linkGoogleToCurrentUser: async () => {
+        try {
+          const u = auth.currentUser;
+          if (!u) return { ok: false, error: "Not signed in." };
+          await linkWithPopup(u, provider);
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: friendlyError(e) };
+        }
+      },
+      unlinkProvider: async (providerId) => {
+        try {
+          const u = auth.currentUser;
+          if (!u) return { ok: false, error: "Not signed in." };
+          if ((u.providerData || []).length <= 1) {
+            return { ok: false, error: "You need at least one sign-in method. Link another method before removing this one." };
+          }
+          await unlink(u, providerId);
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: friendlyError(e) };
+        }
+      },
+      getLinkedProviders: () => {
+        const u = auth.currentUser;
+        if (!u) return [];
+        return (u.providerData || []).map(p => p.providerId);
+      },
       signOut: () => signOut(auth),
       onAuthStateChanged: (cb) => onAuthStateChanged(auth, cb),
       saveData: async (uid, data) => {
@@ -401,6 +487,19 @@
       const [user, setUser] = useState(null);
       const [authLoading, setAuthLoading] = useState(true);
       const [syncing, setSyncing] = useState(false);
+      const [loginMode, setLoginMode] = useState("choose"); // "choose" | "signin" | "create" | "reset"
+      const [loginEmail, setLoginEmail] = useState("");
+      const [loginPassword, setLoginPassword] = useState("");
+      const [loginError, setLoginError] = useState("");
+      const [loginBusy, setLoginBusy] = useState(false);
+      const [loginInfo, setLoginInfo] = useState("");
+      const [linkPanelOpen, setLinkPanelOpen] = useState(false);
+      const [linkEmail, setLinkEmail] = useState("");
+      const [linkPassword, setLinkPassword] = useState("");
+      const [linkBusy, setLinkBusy] = useState(false);
+      const [linkError, setLinkError] = useState("");
+      const [linkSuccess, setLinkSuccess] = useState("");
+      const [linkedRefresh, setLinkedRefresh] = useState(0);
 
       // Core
       const [data, setData] = useState({ ...DEFAULT_DATA, startDate: localDateKey(new Date()) });
@@ -1160,19 +1259,149 @@
         </div>
       );
 
-      if (!user) return (
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", minHeight:"100vh", flexDirection:"column", gap:24, padding:32 }}>
-          <div style={{ textAlign:"center" }}>
-            <div style={{ width:42, height:42, background:`linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)`, borderRadius:12, color:"#fff", display:"inline-flex", alignItems:"center", justifyContent:"center", fontFamily:"'Fraunces',serif", fontWeight:700, fontSize:22, boxShadow:`0 4px 12px -2px rgba(212,98,26,0.4)`, marginBottom:14 }}>B</div>
-            <div style={{ fontFamily:"'Fraunces',serif", fontSize:30, fontWeight:600, color:C.text, letterSpacing:-1 }}>Tracker</div>
-            <div style={{ fontSize:13, color:C.textMuted, marginTop:8, fontWeight:500 }}>Sign in to sync your data across devices</div>
+      if (!user) {
+        const inputStyle = {
+          width: "100%",
+          background: "rgba(255,255,255,0.85)",
+          border: `1px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 14px",
+          fontSize: 15,
+          color: C.text,
+          fontFamily: "Inter,sans-serif",
+          fontWeight: 500,
+          outline: "none",
+          boxShadow: "0 1px 0 rgba(255,255,255,1) inset",
+          marginBottom: 10,
+        };
+        const primaryBtn = {
+          width: "100%",
+          background: `linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)`,
+          border: "none", borderRadius: 12, padding: "13px 20px",
+          color: "#fff", fontSize: 14, fontWeight: 700, letterSpacing: 0.4,
+          cursor: "pointer", fontFamily: "Inter,sans-serif",
+          boxShadow: "0 1px 0 rgba(255,255,255,0.3) inset, 0 4px 12px -2px rgba(212,98,26,0.4)",
+        };
+        const ghostBtn = {
+          background: "none", border: "none", color: C.textMuted,
+          fontSize: 12, fontWeight: 600, padding: "8px 4px", cursor: "pointer",
+          fontFamily: "Inter,sans-serif", letterSpacing: 0.2,
+        };
+
+        const handleEmailSignIn = async () => {
+          setLoginError(""); setLoginBusy(true);
+          const r = await window.__firebase.signInWithEmail(loginEmail.trim(), loginPassword);
+          setLoginBusy(false);
+          if (!r.ok) setLoginError(r.error);
+        };
+        const handleCreate = async () => {
+          setLoginError(""); setLoginBusy(true);
+          const r = await window.__firebase.createWithEmail(loginEmail.trim(), loginPassword);
+          setLoginBusy(false);
+          if (!r.ok) setLoginError(r.error);
+        };
+        const handleReset = async () => {
+          setLoginError(""); setLoginInfo(""); setLoginBusy(true);
+          const r = await window.__firebase.sendPasswordReset(loginEmail.trim());
+          setLoginBusy(false);
+          if (!r.ok) setLoginError(r.error);
+          else setLoginInfo("Check your inbox for a reset link.");
+        };
+
+        return (
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"center", minHeight:"100vh", flexDirection:"column", gap:20, padding:32, maxWidth:380, margin:"0 auto" }}>
+            <div style={{ textAlign:"center" }}>
+              <div style={{ width:42, height:42, background:`linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)`, borderRadius:12, color:"#fff", display:"inline-flex", alignItems:"center", justifyContent:"center", fontFamily:"'Fraunces',serif", fontWeight:700, fontSize:22, boxShadow:`0 4px 12px -2px rgba(212,98,26,0.4)`, marginBottom:14 }}>B</div>
+              <div style={{ fontFamily:"'Fraunces',serif", fontSize:30, fontWeight:600, color:C.text, letterSpacing:-1 }}>Tracker</div>
+              <div style={{ fontSize:13, color:C.textMuted, marginTop:8, fontWeight:500 }}>
+                {loginMode === "choose" && "Sign in to sync your data across devices"}
+                {loginMode === "signin" && "Sign in with your email"}
+                {loginMode === "create" && "Create a new email account"}
+                {loginMode === "reset"  && "Reset your password"}
+              </div>
+            </div>
+
+            {/* CHOOSE: Google + email entry point */}
+            {loginMode === "choose" && (
+              <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:10 }}>
+                <button onClick={()=>window.__firebase.signIn()} style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:12, background:"rgba(255,255,255,0.85)", border:"none", borderRadius:12, padding:"14px 24px", fontSize:15, color:C.text, fontWeight:600, cursor:"pointer", fontFamily:"Inter,sans-serif", boxShadow:"0 1px 0 rgba(255,255,255,1) inset, 0 4px 16px -4px rgba(80,60,30,0.15)" }}>
+                  <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+                  Continue with Google
+                </button>
+                <div style={{ display:"flex", alignItems:"center", gap:10, margin:"4px 0", color:C.mutedGray, fontSize:10, letterSpacing:2, textTransform:"uppercase", fontWeight:600 }}>
+                  <div style={{ flex:1, height:1, background:"rgba(140,126,106,0.2)" }}/>
+                  or
+                  <div style={{ flex:1, height:1, background:"rgba(140,126,106,0.2)" }}/>
+                </div>
+                <button onClick={()=>{ setLoginMode("signin"); setLoginError(""); setLoginInfo(""); }} style={{ background:"rgba(255,255,255,0.55)", border:`1px solid ${C.border}`, borderRadius:12, padding:"13px 20px", color:C.text, fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"Inter,sans-serif", boxShadow:"0 1px 0 rgba(255,255,255,0.85) inset" }}>
+                  Sign in with email
+                </button>
+              </div>
+            )}
+
+            {/* EMAIL SIGN-IN form */}
+            {loginMode === "signin" && (
+              <div style={{ width:"100%" }}>
+                <input type="email" placeholder="Email" autoComplete="email" autoCapitalize="off"
+                  value={loginEmail} onChange={e=>setLoginEmail(e.target.value)} style={inputStyle}/>
+                <input type="password" placeholder="Password" autoComplete="current-password"
+                  value={loginPassword} onChange={e=>setLoginPassword(e.target.value)}
+                  onKeyDown={e=>{ if (e.key==="Enter") handleEmailSignIn(); }} style={inputStyle}/>
+                {loginError && <div style={{ fontSize:11, color:C.red, marginBottom:10, fontWeight:500 }}>{loginError}</div>}
+                <button onClick={handleEmailSignIn} disabled={loginBusy || !loginEmail || !loginPassword} style={{ ...primaryBtn, opacity: (loginBusy || !loginEmail || !loginPassword) ? 0.5 : 1, cursor: loginBusy ? "wait" : "pointer" }}>
+                  {loginBusy ? "SIGNING IN…" : "SIGN IN"}
+                </button>
+                <div style={{ display:"flex", justifyContent:"space-between", marginTop:8 }}>
+                  <button onClick={()=>{ setLoginMode("choose"); setLoginError(""); setLoginInfo(""); }} style={ghostBtn}>← Back</button>
+                  <button onClick={()=>{ setLoginMode("reset"); setLoginError(""); setLoginInfo(""); }} style={ghostBtn}>Forgot password?</button>
+                </div>
+                <div style={{ textAlign:"center", marginTop:18, fontSize:11, color:C.textMuted }}>
+                  Don't have an email account yet?{" "}
+                  <span onClick={()=>{ setLoginMode("create"); setLoginError(""); setLoginInfo(""); }} style={{ color:C.accent, fontWeight:700, cursor:"pointer" }}>Create one</span>
+                </div>
+              </div>
+            )}
+
+            {/* CREATE form */}
+            {loginMode === "create" && (
+              <div style={{ width:"100%" }}>
+                <div style={{ background:"rgba(255,156,74,0.12)", border:`1px solid rgba(212,98,26,0.25)`, borderRadius:10, padding:"10px 12px", marginBottom:14, fontSize:11, color:C.text, fontWeight:500, lineHeight:1.5 }}>
+                  <strong style={{color:C.accent}}>Note:</strong> This creates a brand-new, empty account. If you want to add email login to your existing Google account, sign in with Google first and link email from Settings.
+                </div>
+                <input type="email" placeholder="Email" autoComplete="email" autoCapitalize="off"
+                  value={loginEmail} onChange={e=>setLoginEmail(e.target.value)} style={inputStyle}/>
+                <input type="password" placeholder="Password (min 6 characters)" autoComplete="new-password"
+                  value={loginPassword} onChange={e=>setLoginPassword(e.target.value)}
+                  onKeyDown={e=>{ if (e.key==="Enter") handleCreate(); }} style={inputStyle}/>
+                {loginError && <div style={{ fontSize:11, color:C.red, marginBottom:10, fontWeight:500 }}>{loginError}</div>}
+                <button onClick={handleCreate} disabled={loginBusy || !loginEmail || !loginPassword || loginPassword.length < 6} style={{ ...primaryBtn, opacity: (loginBusy || !loginEmail || !loginPassword || loginPassword.length<6) ? 0.5 : 1, cursor: loginBusy ? "wait" : "pointer" }}>
+                  {loginBusy ? "CREATING…" : "CREATE ACCOUNT"}
+                </button>
+                <div style={{ marginTop:8 }}>
+                  <button onClick={()=>{ setLoginMode("choose"); setLoginError(""); setLoginInfo(""); }} style={ghostBtn}>← Back</button>
+                </div>
+              </div>
+            )}
+
+            {/* RESET form */}
+            {loginMode === "reset" && (
+              <div style={{ width:"100%" }}>
+                <div style={{ fontSize:12, color:C.textMuted, marginBottom:12, lineHeight:1.5 }}>Enter your email and we'll send you a link to reset your password.</div>
+                <input type="email" placeholder="Email" autoComplete="email" autoCapitalize="off"
+                  value={loginEmail} onChange={e=>setLoginEmail(e.target.value)} style={inputStyle}/>
+                {loginError && <div style={{ fontSize:11, color:C.red, marginBottom:10, fontWeight:500 }}>{loginError}</div>}
+                {loginInfo && <div style={{ fontSize:11, color:C.greenText, marginBottom:10, fontWeight:600 }}>{loginInfo}</div>}
+                <button onClick={handleReset} disabled={loginBusy || !loginEmail} style={{ ...primaryBtn, opacity: (loginBusy || !loginEmail) ? 0.5 : 1, cursor: loginBusy ? "wait" : "pointer" }}>
+                  {loginBusy ? "SENDING…" : "SEND RESET LINK"}
+                </button>
+                <div style={{ marginTop:8 }}>
+                  <button onClick={()=>{ setLoginMode("signin"); setLoginError(""); setLoginInfo(""); }} style={ghostBtn}>← Back to sign in</button>
+                </div>
+              </div>
+            )}
           </div>
-          <button onClick={()=>window.__firebase.signIn()} style={{ display:"flex", alignItems:"center", gap:12, background:"rgba(255,255,255,0.85)", border:"none", borderRadius:14, padding:"14px 24px", fontSize:15, color:C.text, fontWeight:600, cursor:"pointer", fontFamily:"Inter,sans-serif", boxShadow:"0 1px 0 rgba(255,255,255,1) inset, 0 4px 16px -4px rgba(80,60,30,0.15)" }}>
-            <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-            Continue with Google
-          </button>
-        </div>
-      );
+        );
+      }
 
       // ─── Header + Tabs ──────────────────────────────────────────────────
       const renderHeader = () => (
@@ -2567,6 +2796,124 @@
 
           {renderSettingsHabits()}
           {renderSettingsHabitOrder()}
+
+          {(() => {
+            // Linked accounts section
+            const providers = window.__firebase ? window.__firebase.getLinkedProviders() : [];
+            const hasGoogle = providers.includes("google.com");
+            const hasEmail = providers.includes("password");
+            const _ = linkedRefresh; // force re-read on changes
+
+            const linkEmailAccount = async () => {
+              setLinkError(""); setLinkSuccess(""); setLinkBusy(true);
+              const r = await window.__firebase.linkEmailToCurrentUser(linkEmail.trim(), linkPassword);
+              setLinkBusy(false);
+              if (r.ok) {
+                setLinkSuccess(`Email login linked! You can now sign in with ${linkEmail.trim()} or with Google.`);
+                setLinkEmail(""); setLinkPassword("");
+                setLinkPanelOpen(false);
+                setLinkedRefresh(x => x+1);
+              } else {
+                setLinkError(r.error);
+              }
+            };
+
+            const linkGoogleAccount = async () => {
+              setLinkError(""); setLinkSuccess(""); setLinkBusy(true);
+              const r = await window.__firebase.linkGoogleToCurrentUser();
+              setLinkBusy(false);
+              if (r.ok) {
+                setLinkSuccess("Google login linked! You can now sign in either way.");
+                setLinkedRefresh(x => x+1);
+              } else {
+                setLinkError(r.error);
+              }
+            };
+
+            const unlinkProvider = async (pid, label) => {
+              if (!window.confirm(`Remove ${label} login? You'll only be able to sign in with your other method.`)) return;
+              setLinkError(""); setLinkSuccess("");
+              const r = await window.__firebase.unlinkProvider(pid);
+              if (r.ok) {
+                setLinkSuccess(`${label} login removed.`);
+                setLinkedRefresh(x => x+1);
+              } else {
+                setLinkError(r.error);
+              }
+            };
+
+            return (
+              <SectionDivider>
+                <div style={S.sectionLabel}>Sign-in methods</div>
+                <div style={S.card}>
+                  <div style={{ fontSize:12, color:C.textMuted, marginBottom:14, lineHeight:1.5, fontWeight:500 }}>
+                    Add a second way to sign in so you can access this same data even if one login stops working. Methods you link here all open this same account.
+                  </div>
+
+                  {/* Current account email */}
+                  <div style={{ fontSize:11, color:C.mutedGray, marginBottom:10, fontWeight:600, letterSpacing:0.3 }}>
+                    Signed in as <span style={{color:C.text, fontWeight:700}}>{user?.email || "(no email)"}</span>
+                  </div>
+
+                  {/* Google row */}
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderTop:`1px solid ${C.border}` }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+                      <div>
+                        <div style={{ fontSize:14, color:C.text, fontWeight:600 }}>Google</div>
+                        <div style={{ fontSize:10, color:C.textMuted, fontWeight:500 }}>{hasGoogle ? "Linked" : "Not linked"}</div>
+                      </div>
+                    </div>
+                    {hasGoogle ? (
+                      <button onClick={()=>unlinkProvider("google.com","Google")} disabled={linkBusy} style={{ background:"rgba(255,255,255,0.5)", border:`1px solid ${C.border}`, borderRadius:8, color:C.textMuted, fontSize:11, fontWeight:700, letterSpacing:0.3, padding:"5px 12px", cursor:"pointer", fontFamily:"Inter,sans-serif" }}>UNLINK</button>
+                    ) : (
+                      <button onClick={linkGoogleAccount} disabled={linkBusy} style={{ background:`linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)`, border:"none", borderRadius:8, color:"#fff", fontSize:11, fontWeight:700, letterSpacing:0.3, padding:"5px 12px", cursor:"pointer", fontFamily:"Inter,sans-serif", boxShadow:`0 2px 6px -1px rgba(212,98,26,0.4)` }}>LINK</button>
+                    )}
+                  </div>
+
+                  {/* Email row */}
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderTop:`1px solid ${C.border}` }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                      <div style={{ width:18, height:18, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="2" y="5" width="20" height="14" rx="2.5" stroke={C.textMuted} strokeWidth="1.8" fill="none"/><path d="M2.5 6L12 13L21.5 6" stroke={C.textMuted} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      </div>
+                      <div>
+                        <div style={{ fontSize:14, color:C.text, fontWeight:600 }}>Email & Password</div>
+                        <div style={{ fontSize:10, color:C.textMuted, fontWeight:500 }}>{hasEmail ? "Linked" : "Not linked"}</div>
+                      </div>
+                    </div>
+                    {hasEmail ? (
+                      <button onClick={()=>unlinkProvider("password","Email")} disabled={linkBusy} style={{ background:"rgba(255,255,255,0.5)", border:`1px solid ${C.border}`, borderRadius:8, color:C.textMuted, fontSize:11, fontWeight:700, letterSpacing:0.3, padding:"5px 12px", cursor:"pointer", fontFamily:"Inter,sans-serif" }}>UNLINK</button>
+                    ) : (
+                      <button onClick={()=>{ setLinkPanelOpen(!linkPanelOpen); setLinkError(""); setLinkSuccess(""); }} disabled={linkBusy} style={{ background:`linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)`, border:"none", borderRadius:8, color:"#fff", fontSize:11, fontWeight:700, letterSpacing:0.3, padding:"5px 12px", cursor:"pointer", fontFamily:"Inter,sans-serif", boxShadow:`0 2px 6px -1px rgba(212,98,26,0.4)` }}>{linkPanelOpen ? "CANCEL" : "LINK"}</button>
+                    )}
+                  </div>
+
+                  {/* Email link panel */}
+                  {linkPanelOpen && !hasEmail && (
+                    <div style={{ marginTop:12, padding:12, background:"rgba(255,255,255,0.6)", borderRadius:12, border:`1px solid ${C.border}` }}>
+                      <div style={{ fontSize:11, color:C.textMuted, marginBottom:10, lineHeight:1.5, fontWeight:500 }}>
+                        Pick an email + password for this account. Use the same email as your Google account if you want, or a different one — either works. You'll be able to sign in with either method.
+                      </div>
+                      <input type="email" placeholder="Email" autoComplete="email" autoCapitalize="off"
+                        value={linkEmail} onChange={e=>setLinkEmail(e.target.value)}
+                        style={{ width:"100%", background:"rgba(255,255,255,0.85)", border:`1px solid ${C.border}`, borderRadius:10, padding:"10px 12px", fontSize:13, color:C.text, fontFamily:"Inter,sans-serif", marginBottom:8, outline:"none" }}/>
+                      <input type="password" placeholder="Password (min 6 characters)" autoComplete="new-password"
+                        value={linkPassword} onChange={e=>setLinkPassword(e.target.value)}
+                        onKeyDown={e=>{ if (e.key==="Enter" && linkEmail && linkPassword.length>=6) linkEmailAccount(); }}
+                        style={{ width:"100%", background:"rgba(255,255,255,0.85)", border:`1px solid ${C.border}`, borderRadius:10, padding:"10px 12px", fontSize:13, color:C.text, fontFamily:"Inter,sans-serif", marginBottom:10, outline:"none" }}/>
+                      <button onClick={linkEmailAccount} disabled={linkBusy || !linkEmail || linkPassword.length<6} style={{ width:"100%", padding:"11px", borderRadius:10, background:`linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)`, border:"none", color:"#fff", fontSize:12, fontWeight:700, letterSpacing:0.5, cursor:(linkBusy || !linkEmail || linkPassword.length<6)?"not-allowed":"pointer", opacity:(linkBusy || !linkEmail || linkPassword.length<6)?0.5:1, fontFamily:"Inter,sans-serif", boxShadow:`0 2px 8px -1px rgba(212,98,26,0.4)` }}>
+                        {linkBusy ? "LINKING…" : "LINK EMAIL TO THIS ACCOUNT"}
+                      </button>
+                    </div>
+                  )}
+
+                  {linkError && <div style={{ marginTop:10, fontSize:11, color:C.red, fontWeight:500 }}>{linkError}</div>}
+                  {linkSuccess && <div style={{ marginTop:10, fontSize:11, color:C.greenText, fontWeight:600 }}>{linkSuccess}</div>}
+                </div>
+              </SectionDivider>
+            );
+          })()}
 
           <SectionDivider>
             <div style={S.sectionLabel}>Export</div>
