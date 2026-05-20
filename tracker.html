@@ -16,14 +16,14 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background: linear-gradient(180deg, #fafbfa 0%, #f3f5f1 100%);
+      background: #fbfdfa;
       background-attachment: fixed;
       font-family: 'Inter', -apple-system, system-ui, sans-serif;
-      color: #0d130c;
+      color: #15231a;
       -webkit-font-smoothing: antialiased;
       letter-spacing: -0.01em;
     }
-    input:focus { outline: 2px solid #4d8a4d; }
+    input:focus { outline: 2px solid #7ac943; }
     input[type=number]::-webkit-inner-spin-button,
     input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     ::-webkit-scrollbar { display: none; }
@@ -168,29 +168,31 @@
     const STORAGE_KEY = "tef_tracker_v2";
 
     // ═══ MODERN FLAT · FOREST PALETTE ═══════════════════════════════════════
-    // Flat surfaces, thin borders, near-black ink, forest-green accent.
+    // Minimal + lime. Vivid fill, darker greens for legible text on white.
     const C = {
-      bg:"#f3f5f1",                 // pale sage app surface
-      bgGradTop:"#fafbfa",          // subtle top of bg gradient
+      bg:"#fbfdfa",                 // near-white app surface
+      bgGradTop:"#fbfdfa",
       surface:"#ffffff",            // flat white cards
-      card:"#ffffff", cardActive:"#ebf3e3",
-      border:"#e7eae3", borderActive:"#c8dcb2",
-      ink:"#0d130c",                // near-black primary text
-      text:"#0d130c",
-      textMuted:"#6b7563",          // muted sage-gray
-      mutedGray:"#9aa493",          // lightest gray (labels, placeholders)
-      fieldBg:"#f3f5f1",            // input background
-      accent:"#4d8a4d",             // forest green accent (primary)
-      accentDeep:"#1e4423",         // deep green (text on tint, done states)
-      accentTint:"#ebf3e3",         // pale green tint (accent cards, done bg)
-      accentFieldBg:"#d9e8c8",      // filled-input green
-      // legacy aliases kept so existing references resolve to the new palette:
-      accentLight:"#5fa85f",
-      green:"#4d8a4d", greenDark:"#1e4423", greenText:"#1e4423",
+      card:"#ffffff", cardActive:"#eef7e4",
+      border:"#eef1ec", borderActive:"#cfe8b3",
+      ink:"#15231a",                // near-black primary text
+      text:"#15231a",
+      textMuted:"#76867b",          // muted sage-gray
+      mutedGray:"#a7b3aa",          // lightest gray (labels, placeholders, hairline text)
+      hair:"#eef2ec",               // hairline divider
+      fieldBg:"#f1f6ef",            // input background
+      accentBright:"#7ac943",       // vivid lime — fills, checks, active dots
+      accent:"#4a8f2f",             // darker green — text/buttons on white
+      accentDeep:"#3c7a26",         // darkest — small text legibility
+      accentTint:"#eef7e4",         // pale lime tint (done bg)
+      accentFieldBg:"#dbefc4",      // filled-input lime
+      // legacy aliases kept so existing references resolve cleanly:
+      accentLight:"#7ac943",
+      green:"#7ac943", greenDark:"#4a8f2f", greenText:"#3c7a26",
       red:"#d4453f",
-      workoutOnly:"#1e4423",
+      workoutOnly:"#4a8f2f",
     };
-    const HEAT = { 0:"#e7eae3", 1:"#cfe3b8", 2:"#9fce7a", 3:"#5fa85f", 4:"#1e4423", future:"#f3f5f1" };
+    const HEAT = { 0:"#eef2ec", 1:"#d6eebc", 2:"#aadd76", 3:"#7ac943", 4:"#4a8f2f", future:"#fbfdfa" };
     const MONTH_LABELS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
     const MILESTONES = [
@@ -240,68 +242,63 @@
       const common = { width:22, height:22, viewBox:"0 0 24 24", fill:"none", xmlns:"http://www.w3.org/2000/svg" };
 
       if (name === "day") {
-        // Concentric: outer ring + filled center dot
         return (
           <svg {...common}>
-            <circle cx="12" cy="12" r="9" stroke={c} strokeWidth="1.8"/>
+            <circle cx="12" cy="12" r="8" stroke={c} strokeWidth="2"/>
             <circle cx="12" cy="12" r="3" fill={c}/>
           </svg>
         );
       }
       if (name === "todo") {
-        // Notepad with check + line — distinct from Day's concentric circle
         return (
           <svg {...common}>
-            <rect x="3.5" y="5" width="17" height="14" rx="2.5" stroke={c} strokeWidth="1.8" fill="none"/>
-            <path d="M7.5 9.5l2 2 4-4" stroke={c} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-            <path d="M7.5 14.5h9" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>
+            <rect x="4.5" y="4.5" width="15" height="15" rx="4.5" stroke={c} strokeWidth="2"/>
+            <path d="M8.5 12l2.2 2.2 4.6-4.7" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         );
       }
       if (name === "workout") {
-        // Three horizontal blocks (like dumbbell weights from above)
         return (
           <svg {...common}>
-            <rect x="3" y="9.5" width="5" height="5" rx="0.8" fill={c}/>
-            <rect x="9.5" y="9.5" width="5" height="5" rx="0.8" fill={c}/>
-            <rect x="16" y="9.5" width="5" height="5" rx="0.8" fill={c}/>
+            <rect x="2.5" y="9.5" width="3" height="5" rx="1.2" fill={c}/>
+            <rect x="18.5" y="9.5" width="3" height="5" rx="1.2" fill={c}/>
+            <rect x="6.5" y="10.7" width="11" height="2.6" rx="1.3" fill={c}/>
           </svg>
         );
       }
       if (name === "progress") {
-        // Ascending bar chart - 4 bars rising left to right
         return (
           <svg {...common}>
-            <rect x="3" y="15" width="3.5" height="6" rx="0.6" fill={c}/>
-            <rect x="8.5" y="11" width="3.5" height="10" rx="0.6" fill={c}/>
-            <rect x="14" y="7" width="3.5" height="14" rx="0.6" fill={c}/>
-            <rect x="19.5" y="3" width="1.5" height="18" rx="0.6" fill={c}/>
+            <rect x="4" y="13" width="3.6" height="7" rx="1.5" fill={c}/>
+            <rect x="10.2" y="8.5" width="3.6" height="11.5" rx="1.5" fill={c}/>
+            <rect x="16.4" y="4.5" width="3.6" height="15.5" rx="1.5" fill={c}/>
           </svg>
         );
       }
       if (name === "year") {
-        // 3x3 dot grid
-        const dots = [];
-        for (let r=0; r<3; r++) for (let cc=0; cc<3; cc++) {
-          dots.push(<circle key={`${r}-${cc}`} cx={5 + cc*7} cy={5 + r*7} r="1.6" fill={c}/>);
-        }
-        return <svg {...common}>{dots}</svg>;
-      }
-      if (name === "history") {
-        // Circle with clock-hand pointing back
         return (
           <svg {...common}>
-            <circle cx="12" cy="12" r="9" stroke={c} strokeWidth="1.8"/>
-            <path d="M12 12L8 9" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>
+            <rect x="4" y="4" width="16" height="16" rx="4.5" stroke={c} strokeWidth="2"/>
+            <circle cx="8.5" cy="8.5" r="1.3" fill={c}/>
+            <circle cx="12.5" cy="8.5" r="1.3" fill={c}/>
+            <circle cx="8.5" cy="12.5" r="1.3" fill={c}/>
+            <circle cx="15.5" cy="12.5" r="1.3" fill={c}/>
+          </svg>
+        );
+      }
+      if (name === "history") {
+        return (
+          <svg {...common}>
+            <circle cx="12" cy="12" r="8" stroke={c} strokeWidth="2"/>
+            <path d="M12 8v4l2.5 1.5" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         );
       }
       if (name === "settings") {
-        // Two concentric outlined rings (gear suggestion, but minimal)
         return (
           <svg {...common}>
-            <circle cx="12" cy="12" r="9" stroke={c} strokeWidth="1.8"/>
-            <circle cx="12" cy="12" r="3" stroke={c} strokeWidth="1.8"/>
+            <circle cx="12" cy="12" r="3" stroke={c} strokeWidth="2"/>
+            <path d="M12 3v2.5M12 18.5V21M21 12h-2.5M5.5 12H3M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8M18.4 18.4l-1.8-1.8M7.4 7.4L5.6 5.6" stroke={c} strokeWidth="2" strokeLinecap="round"/>
           </svg>
         );
       }
@@ -398,28 +395,27 @@
     // ═══ REUSABLE COMPONENTS ═════════════════════════════════════════════════
 
     function NumberStepper({ value, onChange, min=0, max=999, step=1 }) {
+      const btn = { width:26, height:26, background:C.fieldBg, border:"none", borderRadius:8, fontSize:15, cursor:"pointer", fontFamily:"Inter,sans-serif", lineHeight:1, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center" };
       return (
-        <div style={{ display:"flex", alignItems:"center", borderRadius:100, overflow:"hidden", background:"#ffffff", boxShadow:"none" }}>
-          <button onClick={()=>onChange(Math.max(min, value-step))}
-            style={{ width:32, height:34, background:"none", border:"none", fontSize:17, color:C.textMuted, cursor:"pointer", fontFamily:"Inter,sans-serif", lineHeight:1, fontWeight:600 }}>−</button>
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <button onClick={()=>onChange(Math.max(min, value-step))} style={{ ...btn, color:C.textMuted }}>−</button>
           <input type="number" value={value} min={min} max={max}
             onChange={e=>{ const v=parseInt(e.target.value); if(!isNaN(v)) onChange(Math.min(max,Math.max(min,v))); }}
-            style={{ width:38, textAlign:"center", border:"none", background:"none", fontSize:15, fontWeight:700, color:C.text, fontFamily:"Inter,sans-serif", padding:"6px 0", letterSpacing:-0.3 }} />
-          <button onClick={()=>onChange(Math.min(max, value+step))}
-            style={{ width:32, height:34, background:"none", border:"none", fontSize:17, color:C.accent, cursor:"pointer", fontFamily:"Inter,sans-serif", lineHeight:1, fontWeight:700 }}>+</button>
+            style={{ width:30, textAlign:"center", border:"none", background:"none", fontSize:14, fontWeight:700, color:C.text, fontFamily:"Inter,sans-serif", padding:0, letterSpacing:-0.3 }} />
+          <button onClick={()=>onChange(Math.min(max, value+step))} style={{ ...btn, color:C.accent }}>+</button>
         </div>
       );
     }
 
-    function Toggle({ on, onClick, size=30 }) {
+    // Rounded-square check (rectangular to match bento language)
+    function Toggle({ on, onClick, size=26 }) {
       return (
         <div onClick={onClick} style={{
-          width:size, height:size, borderRadius:"50%",
-          background: on ? `${C.accent}` : "#ffffff",
-          border: on ? `1.5px solid ${C.greenDark}` : `1.5px solid #e7eae3`,
+          width:size, height:size, borderRadius:8,
+          background: on ? C.accentBright : "transparent",
+          border: on ? `2px solid ${C.accentBright}` : `2px solid ${C.border}`,
           display:"flex", alignItems:"center", justifyContent:"center",
           fontSize:13, color:"#fff", fontWeight:800, cursor:"pointer", flexShrink:0,
-          boxShadow:"none",
         }}>{on?"✓":""}</div>
       );
     }
@@ -427,10 +423,9 @@
     function ReorderArrows({ onUp, onDown, canUp, canDown }) {
       const btn = enabled => ({
         width:22, height:14, border:"none", borderRadius:4,
-        background:"#ffffff", color: enabled?C.textMuted:C.mutedGray,
+        background:C.fieldBg, color: enabled?C.textMuted:C.mutedGray,
         fontSize:9, lineHeight:1, fontFamily:"Inter,sans-serif",
         cursor: enabled?"pointer":"default", padding:0,
-        boxShadow:"none",
       });
       return (
         <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
@@ -440,27 +435,19 @@
       );
     }
 
+    // Minimal habit row: emoji column, name/sub, optional stepper, square check.
+    // Borderless — separated by hairline dividers from the parent list.
     function HabitCard({ active, emoji, label, sublabel, onToggle, stepper, children }) {
       return (
-        <div style={active ? S.cardActive : S.card}>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:12, flex:1, minWidth:0 }}>
-              <div style={{
-                width:44, height:44, borderRadius:13,
-                background: active ? C.accentTint : C.fieldBg,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:21, flexShrink:0,
-                boxShadow:"none",
-              }}>{emoji}</div>
-              <div style={{ minWidth:0, flex:1 }}>
-                <div style={{ color: active?C.greenText:C.text, fontSize:15, fontWeight:700, letterSpacing:-0.2 }}>{label}</div>
-                <div style={{ color: active?C.green:C.textMuted, fontSize:12, marginTop:2, fontWeight: active?500:500 }}>{sublabel}</div>
-              </div>
+        <div>
+          <div style={{ display:"grid", gridTemplateColumns:"28px 1fr auto auto", alignItems:"center", gap:14, padding:"15px 0", borderBottom:`1px solid ${C.hair}` }}>
+            <div style={{ fontSize:20, textAlign:"center" }}>{emoji}</div>
+            <div style={{ minWidth:0 }}>
+              <div style={{ color: active?C.textMuted:C.text, fontSize:15, fontWeight:600, letterSpacing:-0.2 }}>{label}</div>
+              <div style={{ color:C.mutedGray, fontSize:12, marginTop:1, fontWeight:500 }}>{sublabel}</div>
             </div>
-            <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
-              {stepper}
-              <Toggle on={active} onClick={onToggle} />
-            </div>
+            <div style={{ display:"flex", alignItems:"center" }}>{stepper}</div>
+            <Toggle on={active} onClick={onToggle} />
           </div>
           {children}
         </div>
@@ -810,23 +797,28 @@
       const addSet = exId => mapExercises(e =>
         e.id===exId ? { ...e, sets: [...e.sets, { weight:0, reps:0 }] } : e);
 
-      const removeSet = (exId, idx) => mapExercises(e =>
-        e.id===exId ? { ...e, sets: e.sets.filter((_,i) => i!==idx) } : e);
-
-      const stepSet = (exId, idx, field, delta) => mapExercises(e =>
-        e.id===exId
-          ? { ...e, sets: e.sets.map((st,i) => i===idx
-              ? { ...st, [field]: Math.round(Math.max(0, (st[field]||0) + delta) * 10) / 10 }
-              : st) }
-          : e);
-
       const setSetValue = (exId, idx, field, val) => mapExercises(e =>
         e.id===exId
           ? { ...e, sets: e.sets.map((st,i) => i===idx ? { ...st, [field]: val } : st) }
           : e);
 
-      const toggleExerciseDone = exId => mapExercises(e =>
-        e.id===exId ? { ...e, done: !e.done } : e);
+      // Toggle a single set's done flag; exercise.done auto-syncs to "all sets done".
+      const toggleSetDone = (exId, idx) => mapExercises(e => {
+        if (e.id !== exId) return e;
+        const sets = e.sets.map((st,i) => i===idx ? { ...st, done: !st.done } : st);
+        const allDone = sets.length > 0 && sets.every(st => st.done);
+        return { ...e, sets, done: allDone };
+      });
+
+      // Look up the same set index from this exercise's most recent prior session.
+      const getPreviousSet = (exName, idx) => {
+        const hist = getExerciseHistory(exName);
+        if (hist.length === 0) return null;
+        // most recent session strictly before today (or today's own prior data excluded)
+        const prior = hist.filter(h => h.date < today);
+        const ref = (prior.length ? prior : hist)[ (prior.length ? prior : hist).length - 1 ];
+        return ref && ref.sets[idx] ? ref.sets[idx] : null;
+      };
 
       const updateExerciseNotes = (exId, notes) => mapExercises(e =>
         e.id===exId ? { ...e, notes } : e);
@@ -1479,39 +1471,31 @@
 
       // ─── TAB: DAY ───────────────────────────────────────────────────────
       const renderWorkoutHabitCard = () => (
-        <div key="workout" style={ todayLog.workout ? S.cardActive : S.card }>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:12, flex:1, minWidth:0 }}>
-              <div style={{
-                width:44, height:44, borderRadius:13,
-                background: todayLog.workout ? C.accentTint : C.fieldBg,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:21, flexShrink:0,
-                boxShadow:"none",
-              }}>🏋️</div>
-              <div style={{ minWidth:0, flex:1 }}>
-                <div style={{ color: todayLog.workout?C.greenText:C.text, fontSize:15, fontWeight:700, letterSpacing:-0.2 }}>Workout</div>
-                <div style={{ color: todayLog.workout?C.green:C.textMuted, fontSize:12, marginTop:2, fontWeight:500 }}>
-                  {selectedWorkout ? `${selectedWorkout.emoji} ${selectedWorkout.label}` : "Tap to log"}
-                </div>
+        <div key="workout">
+          <div style={{ display:"grid", gridTemplateColumns:"28px 1fr auto auto", alignItems:"center", gap:14, padding:"15px 0", borderBottom:`1px solid ${C.hair}` }}>
+            <div style={{ fontSize:20, textAlign:"center" }}>🏋️</div>
+            <div style={{ minWidth:0 }}>
+              <div style={{ color: todayLog.workout?C.textMuted:C.text, fontSize:15, fontWeight:600, letterSpacing:-0.2 }}>Workout</div>
+              <div style={{ color:C.mutedGray, fontSize:12, marginTop:1, fontWeight:500 }}>
+                {selectedWorkout ? `${selectedWorkout.emoji} ${selectedWorkout.label}` : "Tap to log"}
               </div>
             </div>
             <button onClick={()=>setShowWorkoutPicker(!showWorkoutPicker)} style={todayLog.workout ? S.pillBtnOn : S.pillBtn}>
               {todayLog.workout ? "CHANGE" : "LOG"}
             </button>
+            <div style={{ width:0 }} />
           </div>
           {showWorkoutPicker && (
-            <div style={{ marginTop:14, display:"flex", gap:8, flexWrap:"wrap" }}>
+            <div style={{ padding:"4px 0 14px", display:"flex", gap:8, flexWrap:"wrap" }}>
               {WORKOUT_TYPES.map(w => {
                 const active = todayLog.workout === w.key;
                 return (
                   <button key={w.key} onClick={()=>selectWorkout(w.key)} style={{
-                    flex:"1 1 calc(33% - 8px)", padding:"10px 6px", borderRadius:12,
-                    background: active?`${C.accent}`:"#ffffff",
+                    flex:"1 1 calc(33% - 8px)", padding:"10px 6px", borderRadius:10,
+                    background: active?C.accent:C.fieldBg,
                     border: "none",
                     color: active?"#fff":C.text,
                     fontSize:12, cursor:"pointer", fontFamily:"Inter,sans-serif", textAlign:"center", fontWeight:600,
-                    boxShadow:"none",
                   }}>
                     <div style={{ fontSize:20 }}>{w.emoji}</div>
                     <div style={{ marginTop:4, fontWeight:700 }}>{w.label}</div>
@@ -1527,38 +1511,27 @@
         const compEntry = (data.comprehensionLog||[]).find(e => e.date===viewDate);
         const isLogged = !!compEntry;
         return (
-          <div key="eartest" style={ isLogged ? S.cardActive : S.card }>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:12 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:12, flex:1, minWidth:0 }}>
-                <div style={{
-                  width:44, height:44, borderRadius:13,
-                  background: isLogged ? C.accentTint : C.fieldBg,
-                  display:"flex", alignItems:"center", justifyContent:"center",
-                  fontSize:21, flexShrink:0,
-                  boxShadow:"none",
-                }}>👂</div>
-                <div style={{ minWidth:0, flex:1 }}>
-                  <div style={{ fontSize:15, fontWeight:700, color: isLogged?C.greenText:C.text, letterSpacing:-0.2 }}>Ear Test</div>
-                  <div style={{ color: isLogged?C.green:C.textMuted, fontSize:12, marginTop:2, fontWeight:500 }}>Inner French audio-only %</div>
+          <div key="eartest">
+            <div style={{ display:"grid", gridTemplateColumns:"28px 1fr auto auto", alignItems:"center", gap:14, padding:"15px 0", borderBottom:`1px solid ${C.hair}` }}>
+              <div style={{ fontSize:20, textAlign:"center" }}>👂</div>
+              <div style={{ minWidth:0 }}>
+                <div style={{ fontSize:15, fontWeight:600, color: isLogged?C.textMuted:C.text, letterSpacing:-0.2 }}>Ear Test</div>
+                <div style={{ color:C.mutedGray, fontSize:12, marginTop:1, fontWeight:500 }}>
+                  {isLogged ? `${compEntry.value}% comprehension` : "Inner French audio-only %"}
                 </div>
               </div>
               <button onClick={()=>{ if (isLogged) clearComprehension(); else setShowCompForm(!showCompForm); }}
-                style={ isLogged ? S.pillBtnOn : S.pillBtn }>LOG</button>
+                style={ isLogged ? S.pillBtnOn : S.pillBtn }>{isLogged ? "CLEAR" : "LOG"}</button>
+              <div style={{ width:0 }} />
             </div>
-            {showCompForm && (
-              <div style={{ marginTop:12, display:"flex", gap:8 }}>
+            {showCompForm && !isLogged && (
+              <div style={{ padding:"4px 0 14px", display:"flex", gap:8 }}>
                 <input type="number" min="0" max="100" value={todayLog.comprehension}
                   onChange={e=>setTodayLog({ ...todayLog, comprehension: e.target.value })}
                   placeholder="e.g. 65"
                   style={{ ...S.input, flex:1, fontSize:16, padding:"8px 12px" }} />
                 <button onClick={logComprehension} style={{ ...S.primaryBtn, padding:"8px 16px" }}>SAVE</button>
               </div>
-            )}
-            {!showCompForm && isLogged && (
-              <div onClick={()=>setShowCompForm(true)} style={{
-                marginTop:10, fontFamily:"'Inter',sans-serif", fontSize:32, fontWeight:700, cursor:"pointer", letterSpacing:-1.5, lineHeight:1,
-                color: compEntry.value>=75?C.greenText : compEntry.value>=60?C.accent : C.red,
-              }}>{compEntry.value}%</div>
             )}
           </div>
         );
@@ -1572,8 +1545,6 @@
           return !!(data.logs[today]||{})[h.key];
         }).length;
         const pctToday = totalToday > 0 ? Math.round((doneToday/totalToday)*100) : 0;
-        const ringCircumference = 339.3; // 2π * 54
-        const ringDashOffset = ringCircumference * (1 - pctToday/100);
 
         // Last workout (only count sessions that are still logged and have content)
         const lastWorkoutEntry = Object.entries(data.workoutSessions||{})
@@ -1604,81 +1575,56 @@
         const hr = new Date().getHours();
         const greeting = hr < 12 ? "Good morning," : hr < 18 ? "Good afternoon," : "Good evening,";
 
+        // date scrubber bits
+        const goRel = delta => { const d = new Date(viewDate+"T12:00:00"); d.setDate(d.getDate()+delta); setViewDate(localDateKey(d)); };
+        const isToday = viewDate === today;
+        const dayDiff = (() => { const d = new Date(viewDate+"T12:00:00"); const t = new Date(today+"T12:00:00"); return Math.round((t-d)/86400000); })();
+        const scrubLabel = isToday ? "Today" : (dayDiff===1 ? "Yesterday" : formatDate(viewDate, {month:"short",day:"numeric"}));
+
+        const StatCol = ({ n, unit, label }) => (
+          <div>
+            <div style={{ fontSize:24, fontWeight:800, letterSpacing:-1, lineHeight:1, color:C.ink }}>
+              {n}{unit && <span style={{ fontSize:13, color:C.mutedGray, fontWeight:700 }}>{unit}</span>}
+            </div>
+            <div style={{ fontSize:11, color:C.textMuted, fontWeight:600, marginTop:6 }}>{label}</div>
+          </div>
+        );
+
         return (
-          <div style={{ padding:"4px 16px 14px" }}>
-            <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:18, padding:20 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:18 }}>
-                <div style={{ position:"relative", width:104, height:104, flexShrink:0 }}>
-                  <svg width="104" height="104" viewBox="0 0 124 124">
-                    <circle cx="62" cy="62" r="54" stroke={C.fieldBg} strokeWidth="9" fill="none"/>
-                    <circle cx="62" cy="62" r="54" stroke={C.accent} strokeWidth="9" fill="none"
-                      strokeDasharray={ringCircumference} strokeDashoffset={ringDashOffset} strokeLinecap="round"
-                      transform="rotate(-90 62 62)" style={{ transition:"stroke-dashoffset 0.6s ease" }}/>
-                  </svg>
-                  <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center" }}>
-                    <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:800, fontSize:38, lineHeight:1, letterSpacing:-1.5, color:C.ink }}>{streak}</div>
-                    <div style={{ fontSize:8, letterSpacing:0.8, textTransform:"uppercase", color:C.textMuted, fontWeight:800, marginTop:3 }}>Day Streak</div>
-                  </div>
-                </div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:11, color:C.textMuted, fontWeight:500, marginBottom:1 }}>{greeting}</div>
-                  <div style={{ fontSize:22, fontWeight:800, letterSpacing:-0.8, lineHeight:1.05, color:C.ink, marginBottom:12 }}>Breno.</div>
-                  <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
-                    <div style={{ display:"flex", justifyContent:"space-between", fontSize:10.5, color:C.textMuted, fontWeight:500 }}>
-                      <span>Today</span>
-                      <span><strong style={{color:C.ink, fontWeight:700}}>{doneToday}</strong> of <strong style={{color:C.ink, fontWeight:700}}>{totalToday}</strong> · <strong style={{color:C.accentDeep, fontWeight:700}}>{pctToday}%</strong></span>
-                    </div>
-                    <div style={{ display:"flex", justifyContent:"space-between", fontSize:10.5, color:C.textMuted, fontWeight:500 }}>
-                      <span>Year Time</span>
-                      <span>Day <strong style={{color:C.ink, fontWeight:700}}>{dayCount}</strong>, Week <strong style={{color:C.ink, fontWeight:700}}>{todayWeek}</strong></span>
-                    </div>
-                    <div style={{ display:"flex", justifyContent:"space-between", fontSize:10.5, color:C.textMuted, fontWeight:500 }}>
-                      <span>Last workout</span>
-                      <span style={{ color:C.accentDeep, fontWeight:700 }}>{lastWorkout ? `${lastWorkoutType?.emoji||""} ${lastWorkoutType?.label||lastWorkout.type} · ${lastWorkoutLabel}` : "—"}</span>
-                    </div>
-                  </div>
-                </div>
+          <div style={{ padding:"2px 20px 0" }}>
+            {/* greeting + date scrubber */}
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end", padding:"18px 0 6px" }}>
+              <div>
+                <div style={{ fontSize:13, color:C.textMuted, fontWeight:500, marginBottom:2 }}>{greeting}</div>
+                <div style={{ fontSize:30, fontWeight:800, letterSpacing:-1.2, lineHeight:1, color:C.ink }}>Breno.</div>
               </div>
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <button onClick={()=>goRel(-1)} style={{ background:"none", border:"none", color:C.mutedGray, cursor:"pointer", fontSize:18, padding:0, lineHeight:1 }}>‹</button>
+                <span onClick={()=>setViewDate(today)} style={{ fontSize:12, fontWeight:600, color:C.textMuted, cursor: isToday?"default":"pointer", minWidth:54, textAlign:"center" }}>{scrubLabel}</span>
+                <button onClick={()=>{ if (viewDate<today) goRel(1); }} style={{ background:"none", border:"none", color:C.mutedGray, cursor:"pointer", fontSize:18, padding:0, lineHeight:1, opacity: viewDate>=today?0.35:1 }}>›</button>
+              </div>
+            </div>
+
+            {/* stat grid */}
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", padding:"22px 0 18px", borderBottom:`1px solid ${C.hair}` }}>
+              <StatCol n={doneToday} unit={`/${totalToday}`} label="Habits done" />
+              <StatCol n={streak} label="Day streak" />
+              <StatCol n={pctToday} unit="%" label="Today" />
+            </div>
+
+            {/* meta line — aligned to same 3-col grid */}
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", padding:"14px 0 0", fontSize:12, color:C.textMuted, fontWeight:500 }}>
+              <span style={{ whiteSpace:"nowrap" }}>Day <strong style={{color:C.ink, fontWeight:700}}>{dayCount}</strong> · Wk <strong style={{color:C.ink, fontWeight:700}}>{todayWeek}</strong></span>
+              <span style={{ gridColumn:3, textAlign:"right", whiteSpace:"nowrap" }}>Last: <strong style={{color:C.ink, fontWeight:700}}>{lastWorkout ? `${lastWorkoutType?.emoji||""} ${lastWorkoutType?.label||lastWorkout.type}` : "—"}</strong></span>
             </div>
           </div>
         );
       };
 
       const renderDayTab = () => {
-        const arrowBtn = disabled => ({
-          width:40, height:40, borderRadius:14,
-          background:"#ffffff",
-          border:"none",
-          color: disabled?C.mutedGray:C.text,
-          fontSize:18, cursor: disabled?"default":"pointer",
-          fontFamily:"Inter,sans-serif",
-          display:"flex", alignItems:"center", justifyContent:"center",
-          boxShadow:"none",
-          opacity: disabled?0.4:1,
-        });
-        const goRel = delta => {
-          const d = new Date(viewDate+"T12:00:00"); d.setDate(d.getDate()+delta);
-          setViewDate(localDateKey(d));
-        };
-        const dayDiff = (() => {
-          const d = new Date(viewDate+"T12:00:00");
-          const t = new Date(today+"T12:00:00");
-          return Math.round((t-d)/86400000);
-        })();
-
         return (
-          <div style={S.bodyPad}>
-            {/* DAY NAV */}
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, gap:10 }}>
-              <button onClick={()=>goRel(-1)} style={arrowBtn(false)}>‹</button>
-              <div onClick={()=>setViewDate(today)} style={{ flex:1, textAlign:"center", cursor: viewDate!==today?"pointer":"default" }}>
-                <div style={{ fontSize:10, letterSpacing:1.8, color: viewDate===today?C.accent:C.textMuted, textTransform:"uppercase", fontWeight:700 }}>
-                  {viewDate===today ? "Today" : (dayDiff===1 ? "Yesterday" : `${dayDiff} days ago`)}
-                </div>
-                <div style={{ fontFamily:"'Inter',sans-serif", fontSize:17, fontWeight:600, color:C.text, marginTop:3, letterSpacing:-0.3 }}>{formatDate(viewDate, {weekday:"long",month:"long",day:"numeric"})}</div>
-              </div>
-              <button disabled={viewDate>=today} onClick={()=>{ if (viewDate<today) goRel(1); }} style={arrowBtn(viewDate>=today)}>›</button>
-            </div>
+          <div style={{ padding:"0 20px 16px" }}>
+            <div style={{ fontSize:12, fontWeight:700, color:C.ink, margin:"22px 0 0", letterSpacing:-0.2 }}>Habits</div>
 
             {allActiveHabits.map(h => {
               if (h.key === "workout") return renderWorkoutHabitCard();
@@ -1821,39 +1767,36 @@
       };
 
       // ─── TAB: WORKOUT ───────────────────────────────────────────────────
-      const renderSetRow = (exId, st, idx) => {
-        const stepBtn = color => ({
-          width:26, height:32, background:"none", border:"none",
-          color, fontSize:15, fontFamily:"Inter,sans-serif", lineHeight:1, cursor:"pointer", fontWeight:600,
+      const renderSetRow = (exId, exName, st, idx) => {
+        const prev = getPreviousSet(exName, idx);
+        const inputStyle = filled => ({
+          width:"100%", background: filled?C.accentTint:C.fieldBg, border:"none", borderRadius:8,
+          padding:"8px 4px", fontSize:14, fontWeight:700, textAlign:"center",
+          fontFamily:"Inter,sans-serif", color: filled?C.accentDeep:C.text, outline:"none",
+          MozAppearance:"textfield",
         });
-        const wrap = { display:"flex", alignItems:"center", background:"#ffffff", borderRadius:10, overflow:"hidden", boxShadow:"none" };
-        const numStyle = { width:40, textAlign:"center", border:"none", background:"none", fontSize:13, fontWeight:700, fontFamily:"Inter,sans-serif", color:C.text, padding:0, letterSpacing:-0.3 };
-        const unitStyle = { fontSize:8, color:C.textMuted, letterSpacing:1, marginLeft:2, fontWeight:600 };
-
+        const hasW = (st.weight||0) > 0, hasR = (st.reps||0) > 0;
         return (
-          <div key={idx} style={{ display:"grid", gridTemplateColumns:"22px 1fr 1fr 20px", gap:6, alignItems:"center" }}>
-            <div style={{ fontSize:10, color:C.textMuted, fontWeight:700, letterSpacing:1 }}>S{idx+1}</div>
-            <div style={wrap}>
-              <button onClick={()=>stepSet(exId,idx,"weight",-5)} style={stepBtn(C.textMuted)}>−</button>
-              <div style={{ flex:1, textAlign:"center", fontSize:13, fontWeight:700, color:C.text, fontFamily:"Inter,sans-serif" }}>
-                <input type="number" step="0.5" value={st.weight||0}
-                  onChange={e=>setSetValue(exId,idx,"weight",parseFloat(e.target.value)||0)}
-                  style={numStyle} />
-                <span style={unitStyle}>LB</span>
-              </div>
-              <button onClick={()=>stepSet(exId,idx,"weight",5)} style={stepBtn(C.accent)}>+</button>
+          <div key={idx} style={{ display:"grid", gridTemplateColumns:"26px 1fr 56px 50px 30px", gap:8, alignItems:"center", padding:"8px 0" }}>
+            <div style={{ fontSize:14, fontWeight:800, textAlign:"center", color: st.done?C.accentDeep:C.text, letterSpacing:-0.3 }}>{idx+1}</div>
+            <div style={{ fontSize:12, color:C.mutedGray, fontWeight:500, paddingLeft:2 }}>
+              {prev ? <span><strong style={{color:C.textMuted, fontWeight:700}}>{prev.weight||0}</strong> × <strong style={{color:C.textMuted, fontWeight:700}}>{prev.reps||0}</strong></span> : <span style={{ fontStyle:"italic" }}>—</span>}
             </div>
-            <div style={wrap}>
-              <button onClick={()=>stepSet(exId,idx,"reps",-1)} style={stepBtn(C.textMuted)}>−</button>
-              <div style={{ flex:1, textAlign:"center", fontSize:13, fontWeight:700, color:C.text, fontFamily:"Inter,sans-serif" }}>
-                <input type="number" step="0.5" value={st.reps||0}
-                  onChange={e=>setSetValue(exId,idx,"reps",parseFloat(e.target.value)||0)}
-                  style={{ ...numStyle, width:32 }} />
-                <span style={unitStyle}>REPS</span>
-              </div>
-              <button onClick={()=>stepSet(exId,idx,"reps",1)} style={stepBtn(C.accent)}>+</button>
+            <input type="number" step="0.5" value={hasW?st.weight:""} placeholder="—"
+              onChange={e=>setSetValue(exId,idx,"weight",parseFloat(e.target.value)||0)}
+              style={inputStyle(hasW && st.done)} />
+            <input type="number" step="1" value={hasR?st.reps:""} placeholder="—"
+              onChange={e=>setSetValue(exId,idx,"reps",parseFloat(e.target.value)||0)}
+              style={inputStyle(hasR && st.done)} />
+            <div style={{ display:"flex", justifyContent:"center" }}>
+              <div onClick={()=>toggleSetDone(exId,idx)} style={{
+                width:26, height:26, borderRadius:8,
+                background: st.done?C.accentBright:"transparent",
+                border: st.done?`2px solid ${C.accentBright}`:`2px solid ${C.border}`,
+                display:"flex", alignItems:"center", justifyContent:"center",
+                fontSize:12, color:"#fff", fontWeight:800, cursor:"pointer",
+              }}>{st.done?"✓":""}</div>
             </div>
-            <button onClick={()=>removeSet(exId,idx)} style={{ width:20, height:20, background:"none", border:"none", color:C.textMuted, fontSize:14, cursor:"pointer", fontFamily:"Inter,sans-serif" }}>×</button>
           </div>
         );
       };
@@ -1862,59 +1805,79 @@
         const isRenaming = editingExercise && editingExercise.id === ex.id;
         const total = todaySession.exercises.length;
         const typeLabel = WORKOUT_TYPES.find(t=>t.key===todaySession.type)?.label || todaySession.type;
+        const chartOpen = chartExpandedFor === ex.name;
+
+        // Trend: change in top-set weight between the two most recent prior sessions.
+        const hist = getExerciseHistory(ex.name).filter(h => h.date < today);
+        let trend = null;
+        if (hist.length >= 2) trend = hist[hist.length-1].top - hist[hist.length-2].top;
+        else if (hist.length === 1) trend = 0;
+        const lastSession = hist[hist.length-1];
+        const lastLabel = lastSession
+          ? `Last: ${lastSession.top || (lastSession.sets[0]?.weight||0)} × ${lastSession.sets[0]?.reps||0} × ${lastSession.sets.length}`
+          : "No history yet";
 
         return (
-          <div key={ex.id} style={ ex.done ? S.cardActive : S.card }>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12, gap:10 }}>
-              <div style={{ flex:1, display:"flex", alignItems:"center", gap:8 }}>
+          <div key={ex.id} style={{ padding:"18px 0", borderBottom:`1px solid ${C.hair}` }}>
+            {/* header: name + meta on left, trend + chart on right (vertically centered) */}
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14, gap:10 }}>
+              <div style={{ flex:1, minWidth:0, display:"flex", alignItems:"center", gap:8 }}>
                 <ReorderArrows
                   onUp={()=>moveExercise(ex.id,-1)}
                   onDown={()=>moveExercise(ex.id,1)}
                   canUp={exIdx>0}
                   canDown={exIdx<total-1} />
-                {isRenaming ? (
-                  <input type="text" defaultValue={ex.name} autoFocus
-                    onBlur={e=>{ renameExercise(todaySession.type, ex.name, e.target.value); setEditingExercise(null); }}
-                    onKeyDown={e=>{ if(e.key==="Enter") e.target.blur(); if(e.key==="Escape") setEditingExercise(null); }}
-                    style={{ flex:1, background:"#ffffff", border:`1px solid ${C.accent}`, borderRadius:8, padding:"6px 10px", fontSize:14, fontWeight:700, color:C.text, fontFamily:"Inter,sans-serif" }} />
-                ) : (
-                  <div onClick={()=>setEditingExercise({ id: ex.id })}
-                    style={{ fontSize:14, fontWeight:700, color: ex.done?C.greenText:C.text, cursor:"pointer", flex:1, letterSpacing:-0.2 }}>
-                    {ex.name}
-                  </div>
-                )}
+                <div style={{ minWidth:0, flex:1 }}>
+                  {isRenaming ? (
+                    <input type="text" defaultValue={ex.name} autoFocus
+                      onBlur={e=>{ renameExercise(todaySession.type, ex.name, e.target.value); setEditingExercise(null); }}
+                      onKeyDown={e=>{ if(e.key==="Enter") e.target.blur(); if(e.key==="Escape") setEditingExercise(null); }}
+                      style={{ width:"100%", background:C.fieldBg, border:`1px solid ${C.accent}`, borderRadius:8, padding:"6px 10px", fontSize:15, fontWeight:700, color:C.text, fontFamily:"Inter,sans-serif" }} />
+                  ) : (
+                    <>
+                      <div onClick={()=>setEditingExercise({ id: ex.id })}
+                        style={{ fontSize:16, fontWeight:700, color:C.text, cursor:"pointer", letterSpacing:-0.3 }}>{ex.name}</div>
+                      <div style={{ fontSize:12, color:C.mutedGray, fontWeight:500, marginTop:2 }}>{lastLabel}</div>
+                    </>
+                  )}
+                </div>
               </div>
-              <button onClick={()=>{
-                  const msg = todaySession.type === "mix"
-                    ? `Hide "${ex.name}" from Mix? It will stay in its original workout type.`
-                    : `Remove "${ex.name}" from ${typeLabel}? Future sessions of this type won't include it.`;
-                  if(window.confirm(msg)) deleteExercise(todaySession.type, ex.name);
-                }}
-                style={{ width:24, height:24, borderRadius:7, background:"#ffffff", border:`1px solid ${C.border}`, color:C.textMuted, fontSize:14, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontFamily:"Inter,sans-serif", lineHeight:1, padding:0 }}>×</button>
-              <button onClick={()=>{ setChartExpandedFor(chartExpandedFor===ex.name ? null : ex.name); }}
-                title="Progress chart"
-                style={{ width:24, height:24, borderRadius:7, background: chartExpandedFor===ex.name ? C.accent : C.accentTint, border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, marginRight:14, padding:0 }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
-                  <path d="M3 17l4-4 3 3 5-6 4 4" stroke={chartExpandedFor===ex.name ? "#fff" : C.accentDeep} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-                  <circle cx="18" cy="8" r="1.6" fill={chartExpandedFor===ex.name ? "#fff" : C.accentDeep}/>
-                </svg>
-              </button>
-              <Toggle on={ex.done} onClick={()=>toggleExerciseDone(ex.id)} />
+              <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+                {trend !== null && (
+                  <span style={{ fontSize:13, fontWeight:700, color: trend>0?C.accentDeep : trend<0?C.red : C.mutedGray, display:"inline-flex", alignItems:"center", gap:2 }}>
+                    {trend>0?"↑":trend<0?"↓":""}{trend>0?"+":""}{trend}
+                  </span>
+                )}
+                <button onClick={()=>setChartExpandedFor(chartOpen ? null : ex.name)} title="Progress chart"
+                  style={{ width:30, height:30, borderRadius:9, background: chartOpen?C.accent:C.fieldBg, border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                    <path d="M3 17l4-4 3 3 5-6 4 4" stroke={chartOpen?"#fff":C.accentDeep} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+              </div>
             </div>
 
+            {/* table */}
             {ex.sets.length > 0 && (
-              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                {ex.sets.map((st, idx) => renderSetRow(ex.id, st, idx))}
-              </div>
+              <>
+                <div style={{ display:"grid", gridTemplateColumns:"26px 1fr 56px 50px 30px", gap:8, padding:"0 0 8px", fontSize:10, letterSpacing:0.4, textTransform:"uppercase", fontWeight:700, color:C.mutedGray, borderBottom:`1px solid ${C.hair}` }}>
+                  <span style={{ textAlign:"center" }}>Set</span>
+                  <span style={{ paddingLeft:2 }}>Previous</span>
+                  <span style={{ textAlign:"center" }}>Lb</span>
+                  <span style={{ textAlign:"center" }}>Reps</span>
+                  <span style={{ textAlign:"center" }}>✓</span>
+                </div>
+                {ex.sets.map((st, idx) => renderSetRow(ex.id, ex.name, st, idx))}
+              </>
             )}
 
             <button onClick={()=>addSet(ex.id)}
-              style={{ marginTop: ex.sets.length?8:0, background:"#ffffff", border:`1px dashed ${C.border}`, borderRadius:10, width:"100%", padding:8, fontSize:11, color:C.textMuted, letterSpacing:1, fontFamily:"Inter,sans-serif", cursor:"pointer", fontWeight:600 }}>+ ADD SET</button>
+              style={{ background:"none", border:"none", color:C.accentDeep, fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif", padding:"12px 0 0" }}>+ Add set</button>
 
-            <textarea value={ex.notes||""} onChange={e=>updateExerciseNotes(ex.id, e.target.value)} placeholder="Notes (optional)…" rows="1"
-              style={{ width:"100%", marginTop:8, fontSize:11, color:C.text, fontStyle:"italic", padding:"8px 10px", background:"#ffffff", borderRadius:8, border:`1px solid ${C.border}`, borderLeftWidth:3, borderLeftColor:C.accent, fontFamily:"Inter,sans-serif", resize:"vertical", minHeight:32 }} />
+            <textarea value={ex.notes||""} onChange={e=>updateExerciseNotes(ex.id, e.target.value)} placeholder="Notes…" rows="1"
+              style={{ width:"100%", marginTop:10, fontSize:12, color:C.text, fontStyle:"italic", padding:"8px 10px", background:C.fieldBg, borderRadius:8, border:"none", borderLeft:`3px solid ${C.accentBright}`, fontFamily:"Inter,sans-serif", resize:"vertical", minHeight:34 }} />
 
-            {chartExpandedFor === ex.name && <ExerciseChart exName={ex.name} />}
+            {chartOpen && <ExerciseChart exName={ex.name} />}
           </div>
         );
       };
@@ -1927,30 +1890,29 @@
 
         return (
           <>
-            <div style={{ ...S.cardActive, display:"flex", alignItems:"center", gap:12 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:12, background:C.ink, borderRadius:16, padding:14, marginBottom:10 }}>
               <div style={{
-                width:52, height:52, borderRadius:15,
-                background: C.accentTint,
+                width:42, height:42, borderRadius:11,
+                background:"rgba(255,255,255,0.12)",
                 display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:26, flexShrink:0,
-                boxShadow:"none",
+                fontSize:22, flexShrink:0,
               }}>{w?w.emoji:"🏋️"}</div>
               <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontFamily:"'Inter',sans-serif", fontSize:18, fontWeight:600, color:C.greenText, letterSpacing:-0.3 }}>{w?w.label:"Workout"} Day</div>
-                <div style={{ fontSize:11, color:C.green, marginTop:2, fontWeight:500 }}>{formatDate(today,{weekday:"long",month:"long",day:"numeric"})} · {doneCount} of {totalCount} done</div>
+                <div style={{ fontSize:16, fontWeight:800, color:"#fff", letterSpacing:-0.3 }}>{w?w.label:"Workout"}</div>
+                <div style={{ fontSize:11, color:"rgba(255,255,255,0.6)", marginTop:1, fontWeight:500 }}>{formatDate(today,{weekday:"short",month:"short",day:"numeric"})} · {doneCount} of {totalCount} done</div>
               </div>
               <button onClick={()=>{ if(window.confirm("Change workout type? Current sets and notes will be lost.")) clearSession(); }}
-                style={{ background:"#ffffff", border:"none", borderRadius:8, color:C.textMuted, fontSize:10, padding:"7px 12px", letterSpacing:1, fontFamily:"Inter,sans-serif", cursor:"pointer", fontWeight:700, boxShadow:"none" }}>CHANGE</button>
+                style={{ background:"rgba(255,255,255,0.12)", border:"none", borderRadius:9, color:"#fff", fontSize:10, padding:"7px 11px", letterSpacing:0.4, fontFamily:"Inter,sans-serif", cursor:"pointer", fontWeight:700 }}>CHANGE</button>
             </div>
 
             {todaySession.exercises.map((ex, exIdx) => renderExerciseCard(ex, exIdx))}
 
-            <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+            <div style={{ display:"flex", gap:8, margin:"16px 0 12px" }}>
               <input type="text" value={newExerciseName} onChange={e=>setNewExerciseName(e.target.value)} placeholder="Add custom exercise…"
                 onKeyDown={e=>{ if(e.key==="Enter") { addCustomExercise(todaySession.type, newExerciseName); setNewExerciseName(""); } }}
-                style={{ flex:1, background:"#ffffff", border:`1px dashed ${C.accent}`, borderRadius:14, padding:"12px 14px", fontSize:12, color:C.text, fontFamily:"Inter,sans-serif", letterSpacing:0.3, fontWeight:500 }} />
+                style={{ flex:1, background:C.fieldBg, border:"none", borderRadius:10, padding:"12px 14px", fontSize:13, color:C.text, fontFamily:"Inter,sans-serif", fontWeight:500 }} />
               <button onClick={()=>{ addCustomExercise(todaySession.type, newExerciseName); setNewExerciseName(""); }}
-                style={{ background:`${C.accent}`, border:"none", borderRadius:14, color:"#fff", fontSize:12, fontWeight:700, padding:"0 18px", cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.5 }}>ADD</button>
+                style={{ background:C.accent, border:"none", borderRadius:10, color:"#fff", fontSize:12, fontWeight:700, padding:"0 18px", cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.4 }}>ADD</button>
             </div>
 
             {hiddenForType.length > 0 && (
