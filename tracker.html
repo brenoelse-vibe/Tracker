@@ -16,7 +16,7 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background: #fbfdfa;
+      background: #ffffff;
       background-attachment: fixed;
       font-family: 'Inter', -apple-system, system-ui, sans-serif;
       color: #15231a;
@@ -170,11 +170,11 @@
     // ═══ MODERN FLAT · FOREST PALETTE ═══════════════════════════════════════
     // Minimal + lime. Vivid fill, darker greens for legible text on white.
     const C = {
-      bg:"#fbfdfa",                 // near-white app surface
-      bgGradTop:"#fbfdfa",
+      bg:"#ffffff",                 // pure white app surface
+      bgGradTop:"#ffffff",
       surface:"#ffffff",            // flat white cards
       card:"#ffffff", cardActive:"#eef7e4",
-      border:"#eef1ec", borderActive:"#cfe8b3",
+      border:"#e8ece6", borderActive:"#cfe8b3",
       ink:"#15231a",                // near-black primary text
       text:"#15231a",
       textMuted:"#76867b",          // muted sage-gray
@@ -192,7 +192,7 @@
       red:"#d4453f",
       workoutOnly:"#4a8f2f",
     };
-    const HEAT = { 0:"#eef2ec", 1:"#d6eebc", 2:"#aadd76", 3:"#7ac943", 4:"#4a8f2f", future:"#fbfdfa" };
+    const HEAT = { 0:"#eef2ec", 1:"#d6eebc", 2:"#aadd76", 3:"#7ac943", 4:"#4a8f2f", future:"#ffffff" };
     const MONTH_LABELS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
     const MILESTONES = [
@@ -408,14 +408,15 @@
     }
 
     // Rounded-square check (rectangular to match bento language)
-    function Toggle({ on, onClick, size=26 }) {
+    function Toggle({ on, onClick, size=28 }) {
       return (
         <div onClick={onClick} style={{
-          width:size, height:size, borderRadius:8,
+          width:size, height:size, borderRadius:9,
           background: on ? C.accentBright : "transparent",
           border: on ? `2px solid ${C.accentBright}` : `2px solid ${C.border}`,
+          boxShadow: on ? `0 0 0 4px ${C.accentTint}` : "none",
           display:"flex", alignItems:"center", justifyContent:"center",
-          fontSize:13, color:"#fff", fontWeight:800, cursor:"pointer", flexShrink:0,
+          fontSize:15, color:"#fff", fontWeight:800, cursor:"pointer", flexShrink:0,
         }}>{on?"✓":""}</div>
       );
     }
@@ -436,15 +437,21 @@
     }
 
     // Minimal habit row: emoji column, name/sub, optional stepper, square check.
-    // Borderless — separated by hairline dividers from the parent list.
+    // Done state B: thick lime left edge + check halo. Bigger type.
     function HabitCard({ active, emoji, label, sublabel, onToggle, stepper, children }) {
       return (
         <div>
-          <div style={{ display:"grid", gridTemplateColumns:"28px 1fr auto auto", alignItems:"center", gap:14, padding:"15px 0", borderBottom:`1px solid ${C.hair}` }}>
-            <div style={{ fontSize:20, textAlign:"center" }}>{emoji}</div>
+          <div style={{
+            display:"grid", gridTemplateColumns:"30px 1fr auto auto", alignItems:"center", gap:15,
+            padding: active ? "16px 0 16px 18px" : "16px 0",
+            marginLeft: active ? -22 : 0,
+            borderLeft: active ? `4px solid ${C.accentBright}` : "none",
+            borderBottom:`1px solid ${C.hair}`,
+          }}>
+            <div style={{ fontSize:23, textAlign:"center" }}>{emoji}</div>
             <div style={{ minWidth:0 }}>
-              <div style={{ color: active?C.textMuted:C.text, fontSize:15, fontWeight:600, letterSpacing:-0.2 }}>{label}</div>
-              <div style={{ color:C.mutedGray, fontSize:12, marginTop:1, fontWeight:500 }}>{sublabel}</div>
+              <div style={{ color:C.text, fontSize:17, fontWeight: active?700:600, letterSpacing:-0.3 }}>{label}</div>
+              <div style={{ color:C.mutedGray, fontSize:13, marginTop:2, fontWeight:500 }}>{sublabel}</div>
             </div>
             <div style={{ display:"flex", alignItems:"center" }}>{stepper}</div>
             <Toggle on={active} onClick={onToggle} />
@@ -1470,18 +1477,26 @@
 
 
       // ─── TAB: DAY ───────────────────────────────────────────────────────
-      const renderWorkoutHabitCard = () => (
+      const renderWorkoutHabitCard = () => {
+        const on = !!todayLog.workout;
+        return (
         <div key="workout">
-          <div style={{ display:"grid", gridTemplateColumns:"28px 1fr auto auto", alignItems:"center", gap:14, padding:"15px 0", borderBottom:`1px solid ${C.hair}` }}>
-            <div style={{ fontSize:20, textAlign:"center" }}>🏋️</div>
+          <div style={{
+            display:"grid", gridTemplateColumns:"30px 1fr auto auto", alignItems:"center", gap:15,
+            padding: on ? "16px 0 16px 18px" : "16px 0",
+            marginLeft: on ? -22 : 0,
+            borderLeft: on ? `4px solid ${C.accentBright}` : "none",
+            borderBottom:`1px solid ${C.hair}`,
+          }}>
+            <div style={{ fontSize:23, textAlign:"center" }}>🏋️</div>
             <div style={{ minWidth:0 }}>
-              <div style={{ color: todayLog.workout?C.textMuted:C.text, fontSize:15, fontWeight:600, letterSpacing:-0.2 }}>Workout</div>
-              <div style={{ color:C.mutedGray, fontSize:12, marginTop:1, fontWeight:500 }}>
+              <div style={{ color:C.text, fontSize:17, fontWeight: on?700:600, letterSpacing:-0.3 }}>Workout</div>
+              <div style={{ color:C.mutedGray, fontSize:13, marginTop:2, fontWeight:500 }}>
                 {selectedWorkout ? `${selectedWorkout.emoji} ${selectedWorkout.label}` : "Tap to log"}
               </div>
             </div>
-            <button onClick={()=>setShowWorkoutPicker(!showWorkoutPicker)} style={todayLog.workout ? S.pillBtnOn : S.pillBtn}>
-              {todayLog.workout ? "CHANGE" : "LOG"}
+            <button onClick={()=>setShowWorkoutPicker(!showWorkoutPicker)} style={on ? S.pillBtnOn : S.pillBtn}>
+              {on ? "CHANGE" : "LOG"}
             </button>
             <div style={{ width:0 }} />
           </div>
@@ -1505,18 +1520,25 @@
             </div>
           )}
         </div>
-      );
+        );
+      };
 
       const renderEarTestCard = () => {
         const compEntry = (data.comprehensionLog||[]).find(e => e.date===viewDate);
         const isLogged = !!compEntry;
         return (
           <div key="eartest">
-            <div style={{ display:"grid", gridTemplateColumns:"28px 1fr auto auto", alignItems:"center", gap:14, padding:"15px 0", borderBottom:`1px solid ${C.hair}` }}>
-              <div style={{ fontSize:20, textAlign:"center" }}>👂</div>
+            <div style={{
+              display:"grid", gridTemplateColumns:"30px 1fr auto auto", alignItems:"center", gap:15,
+              padding: isLogged ? "16px 0 16px 18px" : "16px 0",
+              marginLeft: isLogged ? -22 : 0,
+              borderLeft: isLogged ? `4px solid ${C.accentBright}` : "none",
+              borderBottom:`1px solid ${C.hair}`,
+            }}>
+              <div style={{ fontSize:23, textAlign:"center" }}>👂</div>
               <div style={{ minWidth:0 }}>
-                <div style={{ fontSize:15, fontWeight:600, color: isLogged?C.textMuted:C.text, letterSpacing:-0.2 }}>Ear Test</div>
-                <div style={{ color:C.mutedGray, fontSize:12, marginTop:1, fontWeight:500 }}>
+                <div style={{ fontSize:17, fontWeight: isLogged?700:600, color:C.text, letterSpacing:-0.3 }}>Ear Test</div>
+                <div style={{ color:C.mutedGray, fontSize:13, marginTop:2, fontWeight:500 }}>
                   {isLogged ? `${compEntry.value}% comprehension` : "Inner French audio-only %"}
                 </div>
               </div>
@@ -2101,49 +2123,34 @@
           return renderTodoExpanded(t, isOverdue);
         }
 
-        const baseCard = {
-          background:"#ffffff",
-          borderRadius:18,
-          padding:"14px 16px",
-          boxShadow:"none",
-        };
-        const overdueShadow = "inset 4px 0 0 #d4453f";
-        const doneShadow = "0 1px 0 rgba(255,255,255,1) inset, inset 5px 0 0 #5fa85f, 0 1px 2px rgba(74,140,74,0.08), 0 8px 20px -12px rgba(74,140,74,0.18)";
-
         const dateLabel = formatTodoDate(t.dueDate);
-        const cardStyle = {
-          ...baseCard,
-          background: t.done ? "#ffffff" : baseCard.background,
-          boxShadow: t.done ? doneShadow : (isOverdue ? overdueShadow : baseCard.boxShadow),
-          display:"flex", alignItems:"center", gap:14,
-          cursor:"pointer",
-        };
+        const accentEdge = t.done ? C.accentBright : (isOverdue ? C.red : null);
 
         return (
-          <div key={t.id} onClick={()=>setTodoExpandedId(t.id)} style={cardStyle}>
+          <div key={t.id} onClick={()=>setTodoExpandedId(t.id)} style={{
+            display:"flex", alignItems:"center", gap:14, cursor:"pointer",
+            padding: accentEdge ? "16px 0 16px 18px" : "16px 0",
+            marginLeft: accentEdge ? -22 : 0,
+            borderLeft: accentEdge ? `4px solid ${accentEdge}` : "none",
+            borderBottom:`1px solid ${C.hair}`,
+          }}>
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{
-                fontSize:15, fontWeight:600, letterSpacing:-0.2,
-                color: t.done?C.greenText:C.text,
+                fontSize:17, fontWeight: t.done?700:600, letterSpacing:-0.3,
+                color: t.done?C.textMuted:C.text,
                 textDecoration: t.done?"line-through":"none",
-                textDecorationColor: t.done?"rgba(45,110,45,0.5)":"none",
+                textDecorationColor: t.done?C.mutedGray:"transparent",
               }}>{t.title}</div>
               {(t.priority || dateLabel) && (
                 <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:4 }}>
-                  {t.priority && (
-                    <span style={{
-                      width:6, height:6, borderRadius:"50%",
-                      background: PRIORITY_COLORS[t.priority],
-                    }}/>
+                  {t.priority && !t.done && (
+                    <span style={{ width:7, height:7, borderRadius:2, background: PRIORITY_COLORS[t.priority] }}/>
                   )}
                   {dateLabel && !t.done && (
-                    <span style={{
-                      fontSize:11, fontWeight: isOverdue?700:500,
-                      color: isOverdue?C.accent:C.textMuted,
-                    }}>{dateLabel}</span>
+                    <span style={{ fontSize:13, fontWeight: isOverdue?700:500, color: isOverdue?C.red:C.mutedGray }}>{dateLabel}</span>
                   )}
                   {t.done && t.doneAt && (
-                    <span style={{ fontSize:11, fontWeight:600, color:C.green }}>
+                    <span style={{ fontSize:13, fontWeight:600, color:C.accentDeep }}>
                       Done · {t.doneAt === today ? "today" : formatDate(t.doneAt,{month:"short",day:"numeric"})}
                     </span>
                   )}
@@ -2165,14 +2172,11 @@
 
         return (
           <div key={t.id} style={{
-            background:"#ffffff",
-            borderRadius:18,
+            background:C.surface,
+            borderRadius:14,
             padding:16,
-            boxShadow: t.done
-              ? "0 1px 0 rgba(255,255,255,1) inset, inset 5px 0 0 #5fa85f, 0 2px 4px rgba(74,140,74,0.08), 0 12px 28px -8px rgba(74,140,74,0.18)"
-              : isOverdue
-              ? "inset 4px 0 0 #d4453f"
-              : "none",
+            border:`1px solid ${C.border}`,
+            borderLeft: t.done ? `4px solid ${C.accentBright}` : isOverdue ? `4px solid ${C.red}` : `1px solid ${C.border}`,
           }}>
             <div style={{ display:"flex", alignItems:"flex-start", gap:14, marginBottom:14 }}>
               <div style={{ flex:1 }}>
@@ -2296,15 +2300,15 @@
         const isToday = options.isToday;
         const dateSubtitle = options.dateSubtitle;
         return (
-          <div key={label} style={{ marginBottom:18 }}>
-            <div style={{ display:"flex", alignItems:"baseline", gap:10, padding:"0 6px", marginBottom:10 }}>
-              <span style={{ fontSize:11, fontWeight: isToday?600:500, letterSpacing:0.2, color: isToday?C.greenDark:C.mutedGray }}>{label}</span>
-              <span style={{ fontSize:11, fontWeight:500, color:C.mutedGray, letterSpacing:0.2 }}>{todos.length}</span>
+          <div key={label} style={{ marginBottom:10 }}>
+            <div style={{ display:"flex", alignItems:"baseline", gap:10, margin:"18px 0 2px" }}>
+              <span style={{ fontSize:13, fontWeight:700, letterSpacing:-0.2, color: isToday?C.accentDeep:C.textMuted }}>{label}</span>
+              <span style={{ fontSize:12, fontWeight:600, color:C.mutedGray }}>{todos.length}</span>
               {dateSubtitle && (
-                <span style={{ fontSize:11, fontWeight:500, color:C.mutedGray, letterSpacing:0.2, marginLeft:"auto" }}>{dateSubtitle}</span>
+                <span style={{ fontSize:12, fontWeight:500, color:C.mutedGray, marginLeft:"auto" }}>{dateSubtitle}</span>
               )}
             </div>
-            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+            <div>
               {todos.map(t => renderTodoCard(t))}
             </div>
           </div>
@@ -2482,7 +2486,7 @@
                   <span style={{ fontSize:11, fontWeight:500, color:C.mutedGray, letterSpacing:0.2 }}>Completed</span>
                   <span style={{ fontSize:11, fontWeight:500, color:C.mutedGray, letterSpacing:0.2 }}>{completed.length}</span>
                 </div>
-                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                <div>
                   {completed.slice(0,20).map(t => renderTodoCard(t))}
                 </div>
               </div>
