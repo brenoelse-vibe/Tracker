@@ -12,21 +12,18 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700;0,9..144,800;1,9..144,500;1,9..144,600&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background:
-        radial-gradient(at 15% 0%, rgba(255, 156, 74, 0.10) 0%, transparent 45%),
-        radial-gradient(at 85% 100%, rgba(74, 140, 74, 0.07) 0%, transparent 45%),
-        linear-gradient(180deg, #f7f3ea 0%, #efe9dc 100%);
+      background: linear-gradient(180deg, #fafbfa 0%, #f3f5f1 100%);
       background-attachment: fixed;
       font-family: 'Inter', -apple-system, system-ui, sans-serif;
-      color: #2a2520;
+      color: #0d130c;
       -webkit-font-smoothing: antialiased;
       letter-spacing: -0.01em;
     }
-    input:focus { outline: 2px solid #d4621a; }
+    input:focus { outline: 2px solid #4d8a4d; }
     input[type=number]::-webkit-inner-spin-button,
     input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     ::-webkit-scrollbar { display: none; }
@@ -170,16 +167,30 @@
     // ═══ CONSTANTS ═══════════════════════════════════════════════════════════
     const STORAGE_KEY = "tef_tracker_v2";
 
+    // ═══ MODERN FLAT · FOREST PALETTE ═══════════════════════════════════════
+    // Flat surfaces, thin borders, near-black ink, forest-green accent.
     const C = {
-      bg:"#f7f3ea", card:"rgba(255,255,255,0.7)", cardActive:"rgba(255,255,255,0.85)",
-      border:"rgba(140,126,106,0.2)", borderActive:"rgba(95,168,95,0.35)",
-      text:"#2a2520", textMuted:"#8a7e6a", mutedGray:"#a89c88",
-      accent:"#d4621a", accentLight:"#ff9c4a",
-      green:"#5fa85f", greenDark:"#3d7a3d", greenText:"#2d6e2d",
-      red:"#c44",
-      workoutOnly:"#3d7a3d",
+      bg:"#f3f5f1",                 // pale sage app surface
+      bgGradTop:"#fafbfa",          // subtle top of bg gradient
+      surface:"#ffffff",            // flat white cards
+      card:"#ffffff", cardActive:"#ebf3e3",
+      border:"#e7eae3", borderActive:"#c8dcb2",
+      ink:"#0d130c",                // near-black primary text
+      text:"#0d130c",
+      textMuted:"#6b7563",          // muted sage-gray
+      mutedGray:"#9aa493",          // lightest gray (labels, placeholders)
+      fieldBg:"#f3f5f1",            // input background
+      accent:"#4d8a4d",             // forest green accent (primary)
+      accentDeep:"#1e4423",         // deep green (text on tint, done states)
+      accentTint:"#ebf3e3",         // pale green tint (accent cards, done bg)
+      accentFieldBg:"#d9e8c8",      // filled-input green
+      // legacy aliases kept so existing references resolve to the new palette:
+      accentLight:"#5fa85f",
+      green:"#4d8a4d", greenDark:"#1e4423", greenText:"#1e4423",
+      red:"#d4453f",
+      workoutOnly:"#1e4423",
     };
-    const HEAT = { 0:"#e8e2d6", 1:"#f5c98a", 2:"#e89a3c", 3:"#c46d10", 4:"#7a3f08", future:"#f7f3ea" };
+    const HEAT = { 0:"#e7eae3", 1:"#cfe3b8", 2:"#9fce7a", 3:"#5fa85f", 4:"#1e4423", future:"#f3f5f1" };
     const MONTH_LABELS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
     const MILESTONES = [
@@ -316,19 +327,19 @@
       todos: [],
     };
 
-    // ═══ SHARED STYLES ═══════════════════════════════════════════════════════
+    // ═══ SHARED STYLES (modern flat) ═════════════════════════════════════════
     const S = {
-      card:        { background:"rgba(255,255,255,0.7)", borderRadius:20, padding:16, border:"none", marginBottom:10, boxShadow:"0 1px 0 rgba(255,255,255,0.95) inset, 0 1px 2px rgba(80,60,30,0.04), 0 8px 20px -12px rgba(80,60,30,0.12)" },
-      cardActive:  { background:"rgba(255,255,255,0.85)", borderRadius:20, padding:16, border:"none", marginBottom:10, boxShadow:"0 1px 0 rgba(255,255,255,1) inset, inset 5px 0 0 #5fa85f, 0 1px 2px rgba(74,140,74,0.08), 0 8px 20px -12px rgba(74,140,74,0.18)" },
-      sectionLabel:{ fontSize:11, letterSpacing:1.5, color:C.textMuted, textTransform:"uppercase", marginBottom:14, fontWeight:600 },
-      smallLabel:  { fontSize:11, color:C.textMuted, textTransform:"uppercase", letterSpacing:1, marginBottom:10, fontWeight:600 },
-      pillBtn:     { background:"rgba(255,255,255,0.65)", border:`1px solid ${C.border}`, borderRadius:10, color:C.textMuted, fontSize:11, fontWeight:600, padding:"7px 14px", cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.3 },
-      pillBtnOn:   { background:`linear-gradient(135deg, ${C.green} 0%, ${C.greenDark} 100%)`, border:`1px solid ${C.greenDark}`, borderRadius:10, color:"#fff", fontSize:11, fontWeight:700, padding:"7px 14px", cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.3, boxShadow:"0 2px 8px -1px rgba(74,140,74,0.45)" },
-      input:       { background:"rgba(255,255,255,0.65)", border:`1px solid ${C.border}`, borderRadius:10, color:C.text, fontSize:14, padding:"10px 12px", fontFamily:"Inter,sans-serif" },
-      primaryBtn:  { background:`linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)`, border:"none", borderRadius:10, color:"#fff", fontSize:13, fontWeight:700, padding:"10px 16px", cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.3, boxShadow:"0 4px 12px -2px rgba(212,98,26,0.4)" },
-      dangerBtn:   { width:"100%", padding:"14px", borderRadius:14, background:"rgba(255,255,255,0.5)", border:`1px solid ${C.red}`, color:C.red, fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"Inter,sans-serif" },
+      card:        { background:C.surface, borderRadius:14, padding:16, border:`1px solid ${C.border}`, marginBottom:10 },
+      cardActive:  { background:C.accentTint, borderRadius:14, padding:16, border:`1px solid ${C.borderActive}`, marginBottom:10 },
+      sectionLabel:{ fontSize:10, letterSpacing:0.6, color:C.textMuted, textTransform:"uppercase", marginBottom:14, fontWeight:800 },
+      smallLabel:  { fontSize:10, color:C.textMuted, textTransform:"uppercase", letterSpacing:0.6, marginBottom:10, fontWeight:800 },
+      pillBtn:     { background:C.fieldBg, border:"none", borderRadius:8, color:C.textMuted, fontSize:11, fontWeight:700, padding:"7px 14px", cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.2 },
+      pillBtnOn:   { background:C.accent, border:"none", borderRadius:8, color:"#fff", fontSize:11, fontWeight:700, padding:"7px 14px", cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.2 },
+      input:       { background:C.fieldBg, border:`1px solid ${C.border}`, borderRadius:8, color:C.text, fontSize:14, padding:"10px 12px", fontFamily:"Inter,sans-serif" },
+      primaryBtn:  { background:C.accent, border:"none", borderRadius:10, color:"#fff", fontSize:13, fontWeight:700, padding:"10px 16px", cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.2 },
+      dangerBtn:   { width:"100%", padding:"14px", borderRadius:12, background:C.surface, border:`1px solid ${C.red}`, color:C.red, fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"Inter,sans-serif" },
       bodyPad:     { padding:"20px 16px" },
-      serif:       { fontFamily:"'Fraunces', serif" },
+      serif:       { fontFamily:"'Inter', sans-serif" },  // serif retired; alias keeps refs working
     };
 
     // ═══ PURE HELPERS ════════════════════════════════════════════════════════
@@ -388,7 +399,7 @@
 
     function NumberStepper({ value, onChange, min=0, max=999, step=1 }) {
       return (
-        <div style={{ display:"flex", alignItems:"center", borderRadius:100, overflow:"hidden", background:"rgba(255,255,255,0.65)", boxShadow:"0 1px 0 rgba(255,255,255,0.85) inset, 0 1px 2px rgba(80,60,30,0.04)" }}>
+        <div style={{ display:"flex", alignItems:"center", borderRadius:100, overflow:"hidden", background:"#ffffff", boxShadow:"none" }}>
           <button onClick={()=>onChange(Math.max(min, value-step))}
             style={{ width:32, height:34, background:"none", border:"none", fontSize:17, color:C.textMuted, cursor:"pointer", fontFamily:"Inter,sans-serif", lineHeight:1, fontWeight:600 }}>−</button>
           <input type="number" value={value} min={min} max={max}
@@ -404,11 +415,11 @@
       return (
         <div onClick={onClick} style={{
           width:size, height:size, borderRadius:"50%",
-          background: on ? `linear-gradient(135deg, ${C.green} 0%, ${C.greenDark} 100%)` : "rgba(255,255,255,0.65)",
-          border: on ? `1.5px solid ${C.greenDark}` : `1.5px solid rgba(140,126,106,0.22)`,
+          background: on ? `${C.accent}` : "#ffffff",
+          border: on ? `1.5px solid ${C.greenDark}` : `1.5px solid #e7eae3`,
           display:"flex", alignItems:"center", justifyContent:"center",
           fontSize:13, color:"#fff", fontWeight:800, cursor:"pointer", flexShrink:0,
-          boxShadow: on ? "0 1px 0 rgba(255,255,255,0.3) inset, 0 2px 8px -1px rgba(74,140,74,0.5)" : "0 1px 0 rgba(255,255,255,0.85) inset, 0 1px 3px rgba(80,60,30,0.06)",
+          boxShadow:"none",
         }}>{on?"✓":""}</div>
       );
     }
@@ -416,10 +427,10 @@
     function ReorderArrows({ onUp, onDown, canUp, canDown }) {
       const btn = enabled => ({
         width:22, height:14, border:"none", borderRadius:4,
-        background:"rgba(255,255,255,0.6)", color: enabled?C.textMuted:C.mutedGray,
+        background:"#ffffff", color: enabled?C.textMuted:C.mutedGray,
         fontSize:9, lineHeight:1, fontFamily:"Inter,sans-serif",
         cursor: enabled?"pointer":"default", padding:0,
-        boxShadow:"0 1px 0 rgba(255,255,255,0.85) inset, 0 1px 2px rgba(80,60,30,0.04)",
+        boxShadow:"none",
       });
       return (
         <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
@@ -436,10 +447,10 @@
             <div style={{ display:"flex", alignItems:"center", gap:12, flex:1, minWidth:0 }}>
               <div style={{
                 width:44, height:44, borderRadius:13,
-                background: active ? "linear-gradient(135deg, #fff 0%, #e8f0e4 100%)" : "linear-gradient(135deg, #fff 0%, #f4ede0 100%)",
+                background: active ? C.accentTint : C.fieldBg,
                 display:"flex", alignItems:"center", justifyContent:"center",
                 fontSize:21, flexShrink:0,
-                boxShadow:"0 1px 0 rgba(255,255,255,0.95) inset, 0 3px 8px -2px rgba(80,60,30,0.12)",
+                boxShadow:"none",
               }}>{emoji}</div>
               <div style={{ minWidth:0, flex:1 }}>
                 <div style={{ color: active?C.greenText:C.text, fontSize:15, fontWeight:700, letterSpacing:-0.2 }}>{label}</div>
@@ -462,10 +473,10 @@
           {EMOJI_PRESETS.map(e => (
             <button key={e} onClick={()=>onSelect(e)} style={{
               width:34, height:34, fontSize:18, borderRadius:8,
-              background: selected===e ? `linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)` : "rgba(255,255,255,0.65)",
+              background: selected===e ? `${C.accent}` : "#ffffff",
               border: selected===e ? "none" : `1px solid ${C.border}`,
               cursor:"pointer", fontFamily:"Inter,sans-serif",
-              boxShadow: selected===e ? `0 2px 6px -1px rgba(212,98,26,0.4)` : "none",
+              boxShadow:"none",
             }}>{e}</button>
           ))}
         </div>
@@ -520,6 +531,8 @@
       const [editingExercise, setEditingExercise] = useState(null);
       const [libraryExpanded, setLibraryExpanded] = useState(false);
       const [libraryNewByType, setLibraryNewByType] = useState({});
+      const [chartExpandedFor, setChartExpandedFor] = useState(null); // exercise name
+      const [chartMetric, setChartMetric] = useState("volume"); // volume | e1rm | top
 
       // Todo tab state
       const [todoSheetOpen, setTodoSheetOpen] = useState(false);
@@ -1262,7 +1275,7 @@
       if (!user) {
         const inputStyle = {
           width: "100%",
-          background: "rgba(255,255,255,0.85)",
+          background: "#ffffff",
           border: `1px solid ${C.border}`,
           borderRadius: 12,
           padding: "12px 14px",
@@ -1276,11 +1289,11 @@
         };
         const primaryBtn = {
           width: "100%",
-          background: `linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)`,
+          background: `${C.accent}`,
           border: "none", borderRadius: 12, padding: "13px 20px",
           color: "#fff", fontSize: 14, fontWeight: 700, letterSpacing: 0.4,
           cursor: "pointer", fontFamily: "Inter,sans-serif",
-          boxShadow: "0 1px 0 rgba(255,255,255,0.3) inset, 0 4px 12px -2px rgba(212,98,26,0.4)",
+          boxShadow:"none",
         };
         const ghostBtn = {
           background: "none", border: "none", color: C.textMuted,
@@ -1311,8 +1324,8 @@
         return (
           <div style={{ display:"flex", alignItems:"center", justifyContent:"center", minHeight:"100vh", flexDirection:"column", gap:20, padding:32, maxWidth:380, margin:"0 auto" }}>
             <div style={{ textAlign:"center" }}>
-              <div style={{ width:42, height:42, background:`linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)`, borderRadius:12, color:"#fff", display:"inline-flex", alignItems:"center", justifyContent:"center", fontFamily:"'Fraunces',serif", fontWeight:700, fontSize:22, boxShadow:`0 4px 12px -2px rgba(212,98,26,0.4)`, marginBottom:14 }}>B</div>
-              <div style={{ fontFamily:"'Fraunces',serif", fontSize:30, fontWeight:600, color:C.text, letterSpacing:-1 }}>Tracker</div>
+              <div style={{ width:42, height:42, background:`${C.accent}`, borderRadius:12, color:"#fff", display:"inline-flex", alignItems:"center", justifyContent:"center", fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, marginBottom:14 }}>B</div>
+              <div style={{ fontFamily:"'Inter',sans-serif", fontSize:30, fontWeight:600, color:C.text, letterSpacing:-1 }}>Tracker</div>
               <div style={{ fontSize:13, color:C.textMuted, marginTop:8, fontWeight:500 }}>
                 {loginMode === "choose" && "Sign in to sync your data across devices"}
                 {loginMode === "signin" && "Sign in with your email"}
@@ -1324,7 +1337,7 @@
             {/* CHOOSE: Google + email entry point */}
             {loginMode === "choose" && (
               <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:10 }}>
-                <button onClick={()=>window.__firebase.signIn()} style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:12, background:"rgba(255,255,255,0.85)", border:"none", borderRadius:12, padding:"14px 24px", fontSize:15, color:C.text, fontWeight:600, cursor:"pointer", fontFamily:"Inter,sans-serif", boxShadow:"0 1px 0 rgba(255,255,255,1) inset, 0 4px 16px -4px rgba(80,60,30,0.15)" }}>
+                <button onClick={()=>window.__firebase.signIn()} style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:12, background:"#ffffff", border:"none", borderRadius:12, padding:"14px 24px", fontSize:15, color:C.text, fontWeight:600, cursor:"pointer", fontFamily:"Inter,sans-serif", boxShadow:"none" }}>
                   <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
                   Continue with Google
                 </button>
@@ -1333,7 +1346,7 @@
                   or
                   <div style={{ flex:1, height:1, background:"rgba(140,126,106,0.2)" }}/>
                 </div>
-                <button onClick={()=>{ setLoginMode("signin"); setLoginError(""); setLoginInfo(""); }} style={{ background:"rgba(255,255,255,0.55)", border:`1px solid ${C.border}`, borderRadius:12, padding:"13px 20px", color:C.text, fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"Inter,sans-serif", boxShadow:"0 1px 0 rgba(255,255,255,0.85) inset" }}>
+                <button onClick={()=>{ setLoginMode("signin"); setLoginError(""); setLoginInfo(""); }} style={{ background:"#ffffff", border:`1px solid ${C.border}`, borderRadius:12, padding:"13px 20px", color:C.text, fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"Inter,sans-serif", boxShadow:"0 1px 0 #ffffff inset" }}>
                   Sign in with email
                 </button>
               </div>
@@ -1365,7 +1378,7 @@
             {/* CREATE form */}
             {loginMode === "create" && (
               <div style={{ width:"100%" }}>
-                <div style={{ background:"rgba(255,156,74,0.12)", border:`1px solid rgba(212,98,26,0.25)`, borderRadius:10, padding:"10px 12px", marginBottom:14, fontSize:11, color:C.text, fontWeight:500, lineHeight:1.5 }}>
+                <div style={{ background:C.accentTint, border:`1px solid ${C.borderActive}`, borderRadius:10, padding:"10px 12px", marginBottom:14, fontSize:11, color:C.text, fontWeight:500, lineHeight:1.5 }}>
                   <strong style={{color:C.accent}}>Note:</strong> This creates a brand-new, empty account. If you want to add email login to your existing Google account, sign in with Google first and link email from Settings.
                 </div>
                 <input type="email" placeholder="Email" autoComplete="email" autoCapitalize="off"
@@ -1407,13 +1420,13 @@
       const renderHeader = () => (
         <div style={{ padding:"20px 18px 12px" }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:9 }}>
-              <span style={{ width:24, height:24, background:`linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)`, borderRadius:7, color:"#fff", display:"inline-flex", alignItems:"center", justifyContent:"center", fontFamily:"'Fraunces',serif", fontWeight:700, fontSize:13, boxShadow:`0 2px 6px -1px rgba(212,98,26,0.4)` }}>B</span>
-              <span style={{ fontSize:13, fontWeight:700, color:C.text, letterSpacing:0.2 }}>Tracker</span>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ width:26, height:26, background:C.ink, borderRadius:7, color:"#fff", display:"inline-flex", alignItems:"center", justifyContent:"center", fontFamily:"'Inter',sans-serif", fontWeight:800, fontSize:13, letterSpacing:-0.5 }}>B</span>
+              <span style={{ fontSize:14, fontWeight:700, color:C.ink, letterSpacing:-0.3 }}>tracker</span>
             </div>
             <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-              <span style={{ display:"inline-flex", alignItems:"center", gap:6, background: syncing?"rgba(240,160,32,0.12)":"rgba(74,140,74,0.12)", color: syncing?"#a06010":C.greenText, padding:"4px 10px", borderRadius:100, fontSize:10, fontWeight:600, letterSpacing:0.4 }}>
-                <span style={{ width:5, height:5, background: syncing?"#f0a020":C.green, borderRadius:"50%" }}/>
+              <span style={{ display:"inline-flex", alignItems:"center", gap:5, background: syncing?"#fdf0d4":C.accentTint, color: syncing?"#8a5a0d":C.accentDeep, padding:"4px 9px", borderRadius:6, fontSize:10, fontWeight:600, letterSpacing:0.3 }}>
+                <span style={{ width:5, height:5, background: syncing?"#e0a020":C.accent, borderRadius:"50%" }}/>
                 {syncing ? "SYNCING" : "SYNCED"}
               </span>
               <span onClick={()=>window.__firebase.signOut()} style={{ fontSize:10, color:C.textMuted, cursor:"pointer", textDecoration:"underline", fontWeight:500 }}>Sign out</span>
@@ -1424,7 +1437,7 @@
 
       const tabStyle = active => ({
         flex:1, padding:"6px 4px 4px", background:"none", border:"none",
-        color: active?C.greenDark:C.textMuted,
+        color: active?C.accentDeep:C.mutedGray,
         cursor:"pointer", fontFamily:"Inter,sans-serif",
         display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2,
         position:"relative",
@@ -1439,24 +1452,22 @@
           paddingBottom:"calc(10px + env(safe-area-inset-bottom, 0px))",
         }}>
           <div style={{
-            width:"100%", maxWidth:410,
-            background:"rgba(255, 252, 246, 0.88)",
-            backdropFilter:"blur(20px)",
-            WebkitBackdropFilter:"blur(20px)",
-            borderRadius:24,
-            boxShadow:"0 1px 0 rgba(255,255,255,1) inset, 0 -1px 0 rgba(140,126,106,0.12) inset, 0 8px 28px -8px rgba(80,60,30,0.18), 0 2px 8px -2px rgba(80,60,30,0.08)",
+            width:"100%", maxWidth:430,
+            background:C.surface,
+            border:`1px solid ${C.border}`,
+            borderRadius:18,
             pointerEvents:"auto",
           }}>
-            <div style={{ display:"flex", padding:"8px 4px 10px" }}>
+            <div style={{ display:"flex", padding:"8px 2px 9px" }}>
               {TABS.map(t => {
                 const active = activeTab === t.key;
-                const color = active ? C.greenDark : C.textMuted;
+                const color = active ? C.accentDeep : C.mutedGray;
                 return (
                   <button key={t.key} onClick={()=>setActiveTab(t.key)} style={tabStyle(active)}>
-                    <div style={{ height:22, display:"flex", alignItems:"center", justifyContent:"center", opacity: active?1:0.7, transition:"opacity 0.2s" }}>
+                    <div style={{ height:22, display:"flex", alignItems:"center", justifyContent:"center" }}>
                       <TabIcon name={t.key} active={active} color={color} />
                     </div>
-                    <div style={{ fontSize:9.5, fontWeight: active?700:500, letterSpacing:0.2, lineHeight:1, marginTop:2 }}>{t.label}</div>
+                    <div style={{ fontSize:9, fontWeight: active?800:600, letterSpacing:0.1, lineHeight:1, marginTop:3, color }}>{t.label}</div>
                   </button>
                 );
               })}
@@ -1473,10 +1484,10 @@
             <div style={{ display:"flex", alignItems:"center", gap:12, flex:1, minWidth:0 }}>
               <div style={{
                 width:44, height:44, borderRadius:13,
-                background: todayLog.workout ? "linear-gradient(135deg, #fff 0%, #e8f0e4 100%)" : "linear-gradient(135deg, #fff 0%, #f4ede0 100%)",
+                background: todayLog.workout ? C.accentTint : C.fieldBg,
                 display:"flex", alignItems:"center", justifyContent:"center",
                 fontSize:21, flexShrink:0,
-                boxShadow:"0 1px 0 rgba(255,255,255,0.95) inset, 0 3px 8px -2px rgba(80,60,30,0.12)",
+                boxShadow:"none",
               }}>🏋️</div>
               <div style={{ minWidth:0, flex:1 }}>
                 <div style={{ color: todayLog.workout?C.greenText:C.text, fontSize:15, fontWeight:700, letterSpacing:-0.2 }}>Workout</div>
@@ -1496,11 +1507,11 @@
                 return (
                   <button key={w.key} onClick={()=>selectWorkout(w.key)} style={{
                     flex:"1 1 calc(33% - 8px)", padding:"10px 6px", borderRadius:12,
-                    background: active?`linear-gradient(135deg, ${C.green} 0%, ${C.greenDark} 100%)`:"rgba(255,255,255,0.65)",
+                    background: active?`${C.accent}`:"#ffffff",
                     border: "none",
                     color: active?"#fff":C.text,
                     fontSize:12, cursor:"pointer", fontFamily:"Inter,sans-serif", textAlign:"center", fontWeight:600,
-                    boxShadow: active ? "0 2px 8px -1px rgba(74,140,74,0.4)" : "0 1px 0 rgba(255,255,255,0.85) inset, 0 1px 2px rgba(80,60,30,0.04)",
+                    boxShadow:"none",
                   }}>
                     <div style={{ fontSize:20 }}>{w.emoji}</div>
                     <div style={{ marginTop:4, fontWeight:700 }}>{w.label}</div>
@@ -1521,10 +1532,10 @@
               <div style={{ display:"flex", alignItems:"center", gap:12, flex:1, minWidth:0 }}>
                 <div style={{
                   width:44, height:44, borderRadius:13,
-                  background: isLogged ? "linear-gradient(135deg, #fff 0%, #e8f0e4 100%)" : "linear-gradient(135deg, #fff 0%, #f4ede0 100%)",
+                  background: isLogged ? C.accentTint : C.fieldBg,
                   display:"flex", alignItems:"center", justifyContent:"center",
                   fontSize:21, flexShrink:0,
-                  boxShadow:"0 1px 0 rgba(255,255,255,0.95) inset, 0 3px 8px -2px rgba(80,60,30,0.12)",
+                  boxShadow:"none",
                 }}>👂</div>
                 <div style={{ minWidth:0, flex:1 }}>
                   <div style={{ fontSize:15, fontWeight:700, color: isLogged?C.greenText:C.text, letterSpacing:-0.2 }}>Ear Test</div>
@@ -1545,7 +1556,7 @@
             )}
             {!showCompForm && isLogged && (
               <div onClick={()=>setShowCompForm(true)} style={{
-                marginTop:10, fontFamily:"'Fraunces',serif", fontSize:32, fontWeight:700, cursor:"pointer", letterSpacing:-1.5, lineHeight:1,
+                marginTop:10, fontFamily:"'Inter',sans-serif", fontSize:32, fontWeight:700, cursor:"pointer", letterSpacing:-1.5, lineHeight:1,
                 color: compEntry.value>=75?C.greenText : compEntry.value>=60?C.accent : C.red,
               }}>{compEntry.value}%</div>
             )}
@@ -1590,46 +1601,40 @@
 
         // Year time week number
         const todayWeek = getISOWeek(new Date());
+        const hr = new Date().getHours();
+        const greeting = hr < 12 ? "Good morning," : hr < 18 ? "Good afternoon," : "Good evening,";
 
         return (
           <div style={{ padding:"4px 16px 14px" }}>
-            <div style={{ background:"rgba(255,255,255,0.7)", backdropFilter:"blur(24px)", WebkitBackdropFilter:"blur(24px)", borderRadius:28, padding:22, boxShadow:"0 1px 0 rgba(255,255,255,1) inset, 0 1px 3px rgba(80,60,30,0.04), 0 16px 40px -12px rgba(80,60,30,0.14)" }}>
+            <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:18, padding:20 }}>
               <div style={{ display:"flex", alignItems:"center", gap:18 }}>
-                <div style={{ position:"relative", width:110, height:110, flexShrink:0 }}>
-                  <svg width="110" height="110" viewBox="0 0 124 124">
-                    <defs>
-                      <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor={C.green}/>
-                        <stop offset="100%" stopColor={C.greenDark}/>
-                      </linearGradient>
-                    </defs>
-                    <circle cx="62" cy="62" r="54" stroke="#e8eee0" strokeWidth="9" fill="none"/>
-                    <circle cx="62" cy="62" r="54" stroke="url(#ringGrad)" strokeWidth="9" fill="none"
+                <div style={{ position:"relative", width:104, height:104, flexShrink:0 }}>
+                  <svg width="104" height="104" viewBox="0 0 124 124">
+                    <circle cx="62" cy="62" r="54" stroke={C.fieldBg} strokeWidth="9" fill="none"/>
+                    <circle cx="62" cy="62" r="54" stroke={C.accent} strokeWidth="9" fill="none"
                       strokeDasharray={ringCircumference} strokeDashoffset={ringDashOffset} strokeLinecap="round"
                       transform="rotate(-90 62 62)" style={{ transition:"stroke-dashoffset 0.6s ease" }}/>
                   </svg>
                   <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center" }}>
-                    <div style={{ fontFamily:"'Fraunces',serif", fontWeight:700, fontSize:40, lineHeight:1, letterSpacing:-1.5, color:C.greenText }}>{streak}</div>
-                    <div style={{ fontSize:8, letterSpacing:1.5, textTransform:"uppercase", color:C.textMuted, fontWeight:700, marginTop:3 }}>Day Streak</div>
+                    <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:800, fontSize:38, lineHeight:1, letterSpacing:-1.5, color:C.ink }}>{streak}</div>
+                    <div style={{ fontSize:8, letterSpacing:0.8, textTransform:"uppercase", color:C.textMuted, fontWeight:800, marginTop:3 }}>Day Streak</div>
                   </div>
                 </div>
                 <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:11, color:C.textMuted, fontWeight:500, marginBottom:1 }}>Good morning,</div>
-                  <div style={{ fontSize:22, fontWeight:800, letterSpacing:-0.8, lineHeight:1.05, color:C.text, marginBottom:12 }}>
-                    <span style={{ fontFamily:"'Fraunces',serif", fontStyle:"italic", fontWeight:600, color:C.greenText }}>Breno.</span>
-                  </div>
+                  <div style={{ fontSize:11, color:C.textMuted, fontWeight:500, marginBottom:1 }}>{greeting}</div>
+                  <div style={{ fontSize:22, fontWeight:800, letterSpacing:-0.8, lineHeight:1.05, color:C.ink, marginBottom:12 }}>Breno.</div>
                   <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
                     <div style={{ display:"flex", justifyContent:"space-between", fontSize:10.5, color:C.textMuted, fontWeight:500 }}>
                       <span>Today</span>
-                      <span><strong style={{color:C.text, fontWeight:700}}>{doneToday}</strong> of <strong style={{color:C.text, fontWeight:700}}>{totalToday}</strong> · <strong style={{color:C.greenText, fontWeight:700}}>{pctToday}%</strong></span>
+                      <span><strong style={{color:C.ink, fontWeight:700}}>{doneToday}</strong> of <strong style={{color:C.ink, fontWeight:700}}>{totalToday}</strong> · <strong style={{color:C.accentDeep, fontWeight:700}}>{pctToday}%</strong></span>
                     </div>
                     <div style={{ display:"flex", justifyContent:"space-between", fontSize:10.5, color:C.textMuted, fontWeight:500 }}>
                       <span>Year Time</span>
-                      <span>Day <strong style={{color:C.text, fontWeight:700}}>{dayCount}</strong>, Week <strong style={{color:C.text, fontWeight:700}}>{todayWeek}</strong></span>
+                      <span>Day <strong style={{color:C.ink, fontWeight:700}}>{dayCount}</strong>, Week <strong style={{color:C.ink, fontWeight:700}}>{todayWeek}</strong></span>
                     </div>
                     <div style={{ display:"flex", justifyContent:"space-between", fontSize:10.5, color:C.textMuted, fontWeight:500 }}>
                       <span>Last workout</span>
-                      <span style={{ color:C.greenText, fontWeight:700 }}>{lastWorkout ? `${lastWorkoutType?.emoji||""} ${lastWorkoutType?.label||lastWorkout.type} · ${lastWorkoutLabel}` : "—"}</span>
+                      <span style={{ color:C.accentDeep, fontWeight:700 }}>{lastWorkout ? `${lastWorkoutType?.emoji||""} ${lastWorkoutType?.label||lastWorkout.type} · ${lastWorkoutLabel}` : "—"}</span>
                     </div>
                   </div>
                 </div>
@@ -1642,13 +1647,13 @@
       const renderDayTab = () => {
         const arrowBtn = disabled => ({
           width:40, height:40, borderRadius:14,
-          background:"rgba(255,255,255,0.65)",
+          background:"#ffffff",
           border:"none",
           color: disabled?C.mutedGray:C.text,
           fontSize:18, cursor: disabled?"default":"pointer",
           fontFamily:"Inter,sans-serif",
           display:"flex", alignItems:"center", justifyContent:"center",
-          boxShadow:"0 1px 0 rgba(255,255,255,0.95) inset, 0 2px 6px -2px rgba(80,60,30,0.08)",
+          boxShadow:"none",
           opacity: disabled?0.4:1,
         });
         const goRel = delta => {
@@ -1670,7 +1675,7 @@
                 <div style={{ fontSize:10, letterSpacing:1.8, color: viewDate===today?C.accent:C.textMuted, textTransform:"uppercase", fontWeight:700 }}>
                   {viewDate===today ? "Today" : (dayDiff===1 ? "Yesterday" : `${dayDiff} days ago`)}
                 </div>
-                <div style={{ fontFamily:"'Fraunces',serif", fontSize:17, fontWeight:600, color:C.text, marginTop:3, letterSpacing:-0.3 }}>{formatDate(viewDate, {weekday:"long",month:"long",day:"numeric"})}</div>
+                <div style={{ fontFamily:"'Inter',sans-serif", fontSize:17, fontWeight:600, color:C.text, marginTop:3, letterSpacing:-0.3 }}>{formatDate(viewDate, {weekday:"long",month:"long",day:"numeric"})}</div>
               </div>
               <button disabled={viewDate>=today} onClick={()=>{ if (viewDate<today) goRel(1); }} style={arrowBtn(viewDate>=today)}>›</button>
             </div>
@@ -1698,13 +1703,130 @@
       };
 
 
+      // ─── EXERCISE PROGRESS CHART ────────────────────────────────────────
+      // Build per-session history for one exercise across all logged sessions.
+      // Returns [{ date, volume, e1rm, top, sets:[{weight,reps}] }] sorted oldest→newest.
+      const getExerciseHistory = (exName) => {
+        const out = [];
+        Object.entries(data.workoutSessions || {}).forEach(([date, sess]) => {
+          const dayLog = (data.logs || {})[date];
+          if (!dayLog || !dayLog.workout) return; // only count days marked as workouts
+          (sess.exercises || []).forEach(e => {
+            if (e.name !== exName) return;
+            const sets = (e.sets || []).filter(st => (st.weight || 0) > 0 || (st.reps || 0) > 0);
+            if (sets.length === 0) return;
+            const volume = sets.reduce((a, st) => a + (st.weight || 0) * (st.reps || 0), 0);
+            const top = sets.reduce((a, st) => Math.max(a, st.weight || 0), 0);
+            // Epley estimated 1RM, taken from the best set
+            const e1rm = Math.round(sets.reduce((a, st) => {
+              const est = (st.weight || 0) * (1 + (st.reps || 0) / 30);
+              return Math.max(a, est);
+            }, 0));
+            out.push({ date, volume, top, e1rm, sets });
+          });
+        });
+        return out.sort((a, b) => a.date.localeCompare(b.date));
+      };
+
+      const METRIC_DEFS = {
+        volume: { label: "Volume",  unit: "lb", pick: h => h.volume, fmt: v => v >= 1000 ? (v/1000).toFixed(1)+"k" : Math.round(v) },
+        e1rm:   { label: "Est. 1RM", unit: "lb", pick: h => h.e1rm,  fmt: v => Math.round(v) },
+        top:    { label: "Top set",  unit: "lb", pick: h => h.top,   fmt: v => Math.round(v) },
+      };
+
+      const ExerciseChart = ({ exName }) => {
+        const history = getExerciseHistory(exName);
+        const def = METRIC_DEFS[chartMetric];
+
+        const TabRow = (
+          <div style={{ display:"flex", gap:3, padding:2, background:C.fieldBg, borderRadius:9, marginBottom:12 }}>
+            {Object.entries(METRIC_DEFS).map(([key, m]) => {
+              const on = chartMetric === key;
+              return (
+                <button key={key} onClick={()=>setChartMetric(key)} style={{
+                  flex:1, background: on?C.surface:"none", border:"none", borderRadius:7,
+                  padding:"6px 4px", fontSize:10, fontWeight:700, letterSpacing:0.2,
+                  color: on?C.ink:C.textMuted, cursor:"pointer", fontFamily:"Inter,sans-serif",
+                }}>{m.label}</button>
+              );
+            })}
+          </div>
+        );
+
+        if (history.length < 2) {
+          return (
+            <div style={{ marginTop:12, paddingTop:14, borderTop:`1px solid ${C.border}` }}>
+              <div style={S.smallLabel}>Progress · {def.label}</div>
+              {TabRow}
+              <div style={{ padding:"24px 12px", textAlign:"center", color:C.mutedGray, fontSize:12, fontWeight:600 }}>
+                {history.length === 0 ? "No history yet — log a few sessions." : "Log one more session to see a trend."}
+              </div>
+            </div>
+          );
+        }
+
+        const vals = history.map(def.pick);
+        const maxV = Math.max(...vals), minV = Math.min(...vals);
+        const span = maxV - minV || 1;
+        const W = 400, H = 120, padTop = 14, padBot = 16;
+        const plotH = H - padTop - padBot;
+        const x = i => history.length === 1 ? W/2 : (i/(history.length-1)) * (W - 20) + 10;
+        const y = v => padTop + plotH * (1 - (v - minV)/span);
+        const pts = history.map((h,i) => `${x(i)},${y(def.pick(h))}`).join(" ");
+        const areaPts = `${pts} ${x(history.length-1)},${H-padBot} ${x(0)},${H-padBot}`;
+
+        const latest = def.pick(history[history.length-1]);
+        const first = def.pick(history[0]);
+        const gain = latest - first;
+        const gainPct = first > 0 ? Math.round((gain/first)*100) : 0;
+
+        return (
+          <div style={{ marginTop:12, paddingTop:14, borderTop:`1px solid ${C.border}` }}>
+            <div style={S.smallLabel}>Progress · {history.length} sessions</div>
+            {TabRow}
+            <div style={{ height:H, margin:"0 -4px 12px" }}>
+              <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ overflow:"visible" }}>
+                {[0,0.5,1].map(f => (
+                  <line key={f} x1="0" y1={padTop+plotH*f} x2={W} y2={padTop+plotH*f}
+                    stroke={C.border} strokeDasharray="2,3" />
+                ))}
+                <defs>
+                  <linearGradient id="exArea" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={C.accent} stopOpacity="0.28"/>
+                    <stop offset="100%" stopColor={C.accent} stopOpacity="0"/>
+                  </linearGradient>
+                </defs>
+                <polygon points={areaPts} fill="url(#exArea)" />
+                <polyline points={pts} fill="none" stroke={C.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                {history.map((h,i) => (
+                  <circle key={i} cx={x(i)} cy={y(def.pick(h))} r={i===history.length-1?4:2.6}
+                    fill={i===history.length-1?C.accent:C.surface} stroke={C.accent} strokeWidth="2"/>
+                ))}
+              </svg>
+            </div>
+            <div style={{ display:"flex", gap:8, paddingTop:10, borderTop:`1px solid ${C.border}` }}>
+              {[
+                { num: def.fmt(latest), label: `Last (${def.unit})` },
+                { num: (gain>=0?"+":"") + (chartMetric==="volume" ? gainPct+"%" : def.fmt(gain)), label: "Change" },
+                { num: history.length, label: "Sessions" },
+              ].map((s,i) => (
+                <div key={i} style={{ flex:1, textAlign:"center" }}>
+                  <div style={{ fontSize:15, fontWeight:800, color:C.accentDeep, letterSpacing:-0.5, lineHeight:1 }}>{s.num}</div>
+                  <div style={{ fontSize:8, color:C.textMuted, fontWeight:800, letterSpacing:0.5, textTransform:"uppercase", marginTop:4 }}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      };
+
       // ─── TAB: WORKOUT ───────────────────────────────────────────────────
       const renderSetRow = (exId, st, idx) => {
         const stepBtn = color => ({
           width:26, height:32, background:"none", border:"none",
           color, fontSize:15, fontFamily:"Inter,sans-serif", lineHeight:1, cursor:"pointer", fontWeight:600,
         });
-        const wrap = { display:"flex", alignItems:"center", background:"rgba(255,255,255,0.6)", borderRadius:10, overflow:"hidden", boxShadow:"0 1px 0 rgba(255,255,255,0.85) inset, 0 1px 2px rgba(80,60,30,0.04)" };
+        const wrap = { display:"flex", alignItems:"center", background:"#ffffff", borderRadius:10, overflow:"hidden", boxShadow:"none" };
         const numStyle = { width:40, textAlign:"center", border:"none", background:"none", fontSize:13, fontWeight:700, fontFamily:"Inter,sans-serif", color:C.text, padding:0, letterSpacing:-0.3 };
         const unitStyle = { fontSize:8, color:C.textMuted, letterSpacing:1, marginLeft:2, fontWeight:600 };
 
@@ -1754,7 +1876,7 @@
                   <input type="text" defaultValue={ex.name} autoFocus
                     onBlur={e=>{ renameExercise(todaySession.type, ex.name, e.target.value); setEditingExercise(null); }}
                     onKeyDown={e=>{ if(e.key==="Enter") e.target.blur(); if(e.key==="Escape") setEditingExercise(null); }}
-                    style={{ flex:1, background:"rgba(255,255,255,0.65)", border:`1px solid ${C.accent}`, borderRadius:8, padding:"6px 10px", fontSize:14, fontWeight:700, color:C.text, fontFamily:"Inter,sans-serif" }} />
+                    style={{ flex:1, background:"#ffffff", border:`1px solid ${C.accent}`, borderRadius:8, padding:"6px 10px", fontSize:14, fontWeight:700, color:C.text, fontFamily:"Inter,sans-serif" }} />
                 ) : (
                   <div onClick={()=>setEditingExercise({ id: ex.id })}
                     style={{ fontSize:14, fontWeight:700, color: ex.done?C.greenText:C.text, cursor:"pointer", flex:1, letterSpacing:-0.2 }}>
@@ -1768,7 +1890,15 @@
                     : `Remove "${ex.name}" from ${typeLabel}? Future sessions of this type won't include it.`;
                   if(window.confirm(msg)) deleteExercise(todaySession.type, ex.name);
                 }}
-                style={{ width:24, height:24, borderRadius:7, background:"rgba(255,255,255,0.65)", border:`1px solid ${C.border}`, color:C.textMuted, fontSize:14, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontFamily:"Inter,sans-serif", lineHeight:1, padding:0, marginRight:14 }}>×</button>
+                style={{ width:24, height:24, borderRadius:7, background:"#ffffff", border:`1px solid ${C.border}`, color:C.textMuted, fontSize:14, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontFamily:"Inter,sans-serif", lineHeight:1, padding:0 }}>×</button>
+              <button onClick={()=>{ setChartExpandedFor(chartExpandedFor===ex.name ? null : ex.name); }}
+                title="Progress chart"
+                style={{ width:24, height:24, borderRadius:7, background: chartExpandedFor===ex.name ? C.accent : C.accentTint, border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, marginRight:14, padding:0 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+                  <path d="M3 17l4-4 3 3 5-6 4 4" stroke={chartExpandedFor===ex.name ? "#fff" : C.accentDeep} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <circle cx="18" cy="8" r="1.6" fill={chartExpandedFor===ex.name ? "#fff" : C.accentDeep}/>
+                </svg>
+              </button>
               <Toggle on={ex.done} onClick={()=>toggleExerciseDone(ex.id)} />
             </div>
 
@@ -1779,10 +1909,12 @@
             )}
 
             <button onClick={()=>addSet(ex.id)}
-              style={{ marginTop: ex.sets.length?8:0, background:"rgba(255,255,255,0.5)", border:`1px dashed ${C.border}`, borderRadius:10, width:"100%", padding:8, fontSize:11, color:C.textMuted, letterSpacing:1, fontFamily:"Inter,sans-serif", cursor:"pointer", fontWeight:600 }}>+ ADD SET</button>
+              style={{ marginTop: ex.sets.length?8:0, background:"#ffffff", border:`1px dashed ${C.border}`, borderRadius:10, width:"100%", padding:8, fontSize:11, color:C.textMuted, letterSpacing:1, fontFamily:"Inter,sans-serif", cursor:"pointer", fontWeight:600 }}>+ ADD SET</button>
 
             <textarea value={ex.notes||""} onChange={e=>updateExerciseNotes(ex.id, e.target.value)} placeholder="Notes (optional)…" rows="1"
-              style={{ width:"100%", marginTop:8, fontSize:11, color:C.text, fontStyle:"italic", padding:"8px 10px", background:"rgba(255,255,255,0.5)", borderRadius:8, border:`1px solid ${C.border}`, borderLeftWidth:3, borderLeftColor:C.accent, fontFamily:"Inter,sans-serif", resize:"vertical", minHeight:32 }} />
+              style={{ width:"100%", marginTop:8, fontSize:11, color:C.text, fontStyle:"italic", padding:"8px 10px", background:"#ffffff", borderRadius:8, border:`1px solid ${C.border}`, borderLeftWidth:3, borderLeftColor:C.accent, fontFamily:"Inter,sans-serif", resize:"vertical", minHeight:32 }} />
+
+            {chartExpandedFor === ex.name && <ExerciseChart exName={ex.name} />}
           </div>
         );
       };
@@ -1798,17 +1930,17 @@
             <div style={{ ...S.cardActive, display:"flex", alignItems:"center", gap:12 }}>
               <div style={{
                 width:52, height:52, borderRadius:15,
-                background: "linear-gradient(135deg, #fff 0%, #e8f0e4 100%)",
+                background: C.accentTint,
                 display:"flex", alignItems:"center", justifyContent:"center",
                 fontSize:26, flexShrink:0,
-                boxShadow:"0 1px 0 rgba(255,255,255,0.95) inset, 0 3px 8px -2px rgba(74,140,74,0.18)",
+                boxShadow:"none",
               }}>{w?w.emoji:"🏋️"}</div>
               <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontFamily:"'Fraunces',serif", fontSize:18, fontWeight:600, color:C.greenText, letterSpacing:-0.3 }}>{w?w.label:"Workout"} Day</div>
+                <div style={{ fontFamily:"'Inter',sans-serif", fontSize:18, fontWeight:600, color:C.greenText, letterSpacing:-0.3 }}>{w?w.label:"Workout"} Day</div>
                 <div style={{ fontSize:11, color:C.green, marginTop:2, fontWeight:500 }}>{formatDate(today,{weekday:"long",month:"long",day:"numeric"})} · {doneCount} of {totalCount} done</div>
               </div>
               <button onClick={()=>{ if(window.confirm("Change workout type? Current sets and notes will be lost.")) clearSession(); }}
-                style={{ background:"rgba(255,255,255,0.65)", border:"none", borderRadius:8, color:C.textMuted, fontSize:10, padding:"7px 12px", letterSpacing:1, fontFamily:"Inter,sans-serif", cursor:"pointer", fontWeight:700, boxShadow:"0 1px 0 rgba(255,255,255,0.85) inset, 0 1px 2px rgba(80,60,30,0.04)" }}>CHANGE</button>
+                style={{ background:"#ffffff", border:"none", borderRadius:8, color:C.textMuted, fontSize:10, padding:"7px 12px", letterSpacing:1, fontFamily:"Inter,sans-serif", cursor:"pointer", fontWeight:700, boxShadow:"none" }}>CHANGE</button>
             </div>
 
             {todaySession.exercises.map((ex, exIdx) => renderExerciseCard(ex, exIdx))}
@@ -1816,9 +1948,9 @@
             <div style={{ display:"flex", gap:8, marginBottom:12 }}>
               <input type="text" value={newExerciseName} onChange={e=>setNewExerciseName(e.target.value)} placeholder="Add custom exercise…"
                 onKeyDown={e=>{ if(e.key==="Enter") { addCustomExercise(todaySession.type, newExerciseName); setNewExerciseName(""); } }}
-                style={{ flex:1, background:"rgba(255,255,255,0.6)", border:`1px dashed ${C.accent}`, borderRadius:14, padding:"12px 14px", fontSize:12, color:C.text, fontFamily:"Inter,sans-serif", letterSpacing:0.3, fontWeight:500 }} />
+                style={{ flex:1, background:"#ffffff", border:`1px dashed ${C.accent}`, borderRadius:14, padding:"12px 14px", fontSize:12, color:C.text, fontFamily:"Inter,sans-serif", letterSpacing:0.3, fontWeight:500 }} />
               <button onClick={()=>{ addCustomExercise(todaySession.type, newExerciseName); setNewExerciseName(""); }}
-                style={{ background:`linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)`, border:"none", borderRadius:14, color:"#fff", fontSize:12, fontWeight:700, padding:"0 18px", cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.5, boxShadow:`0 4px 12px -2px rgba(212,98,26,0.4)` }}>ADD</button>
+                style={{ background:`${C.accent}`, border:"none", borderRadius:14, color:"#fff", fontSize:12, fontWeight:700, padding:"0 18px", cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.5 }}>ADD</button>
             </div>
 
             {hiddenForType.length > 0 && (
@@ -1827,7 +1959,7 @@
                 {hiddenForType.map(h => (
                   <div key={h} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 0", borderTop:`1px solid ${C.border}` }}>
                     <span style={{ fontSize:11, color:C.textMuted, textDecoration:"line-through" }}>{h}</span>
-                    <button onClick={()=>restorePreset(todaySession.type, h)} style={{ background:"rgba(255,255,255,0.6)", border:`1px solid ${C.accent}`, borderRadius:8, color:C.accent, fontSize:10, padding:"4px 10px", cursor:"pointer", fontFamily:"Inter,sans-serif", fontWeight:700, letterSpacing:0.4 }}>RESTORE</button>
+                    <button onClick={()=>restorePreset(todaySession.type, h)} style={{ background:"#ffffff", border:`1px solid ${C.accent}`, borderRadius:8, color:C.accent, fontSize:10, padding:"4px 10px", cursor:"pointer", fontFamily:"Inter,sans-serif", fontWeight:700, letterSpacing:0.4 }}>RESTORE</button>
                   </div>
                 ))}
               </div>
@@ -1872,7 +2004,7 @@
 
             {recent.length > 0 && (
               <div style={S.card}>
-                <div style={{ fontFamily:"'Fraunces',serif", fontSize:15, fontWeight:600, marginBottom:10, letterSpacing:-0.3 }}>Recent sessions</div>
+                <div style={{ fontFamily:"'Inter',sans-serif", fontSize:15, fontWeight:600, marginBottom:10, letterSpacing:-0.3 }}>Recent sessions</div>
                 {recent.map(([d, s], i) => {
                   const w = WORKOUT_TYPES.find(t => t.key===s.type);
                   const doneCount = (s.exercises||[]).filter(e => e.done).length;
@@ -1898,7 +2030,7 @@
                             <div style={{ fontSize:11, color:C.textMuted, fontStyle:"italic", padding:"4px 0" }}>No exercises logged for this session.</div>
                           )}
                           {(s.exercises||[]).filter(e => (e.sets||[]).length>0 || e.done).map(e => (
-                            <div key={e.id} style={{ padding:"8px 12px", marginBottom:4, background:"rgba(255,255,255,0.6)", borderRadius:10, boxShadow: e.done ? `inset 3px 0 0 ${C.green}, 0 1px 0 rgba(255,255,255,0.85) inset` : "0 1px 0 rgba(255,255,255,0.85) inset" }}>
+                            <div key={e.id} style={{ padding:"8px 12px", marginBottom:4, background:"#ffffff", borderRadius:10, boxShadow: e.done ? `inset 3px 0 0 ${C.green}, 0 1px 0 #ffffff inset` : "0 1px 0 #ffffff inset" }}>
                               <div style={{ fontSize:12, fontWeight:700, color: e.done?C.greenText:C.text, display:"flex", alignItems:"center", gap:6, letterSpacing:-0.2 }}>
                                 {e.done && <span style={{ color:C.green }}>✓</span>}
                                 <span>{e.name}</span>
@@ -1925,7 +2057,7 @@
             {/* EXERCISE LIBRARY */}
             <div style={S.card}>
               <div onClick={()=>setLibraryExpanded(!libraryExpanded)} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", cursor:"pointer" }}>
-                <div style={{ fontFamily:"'Fraunces',serif", fontSize:15, fontWeight:600, letterSpacing:-0.3 }}>Exercise library</div>
+                <div style={{ fontFamily:"'Inter',sans-serif", fontSize:15, fontWeight:600, letterSpacing:-0.3 }}>Exercise library</div>
                 <span style={{ fontSize:11, color:C.textMuted, fontWeight:600 }}>{libraryExpanded?"▲":"▼"}</span>
               </div>
               {!libraryExpanded && (
@@ -1957,7 +2089,7 @@
                           const originalName = renamedFromMap[name];
                           const isRenamedPreset = !!originalName;
                           return (
-                            <div key={name} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"7px 10px", marginBottom:4, background:"rgba(255,255,255,0.55)", borderRadius:10, boxShadow:"0 1px 0 rgba(255,255,255,0.85) inset" }}>
+                            <div key={name} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"7px 10px", marginBottom:4, background:"#ffffff", borderRadius:10, boxShadow:"0 1px 0 #ffffff inset" }}>
                               <div style={{ display:"flex", alignItems:"center", gap:6, minWidth:0 }}>
                                 <span style={{ fontSize:12, color:C.text, fontWeight:500 }}>{name}</span>
                                 {isCustom && <span style={{ fontSize:8, color:C.accent, fontWeight:700, letterSpacing:1 }}>CUSTOM</span>}
@@ -1966,7 +2098,7 @@
                               <button onClick={()=>{
                                 const target = isRenamedPreset ? originalName : name;
                                 if (window.confirm(`Delete "${name}" from ${t.label}? Past sessions are unaffected.`)) deleteExercise(t.key, target);
-                              }} style={{ width:22, height:22, borderRadius:6, background:"rgba(255,255,255,0.5)", border:`1px solid ${C.border}`, color:C.textMuted, fontSize:13, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontFamily:"Inter,sans-serif", lineHeight:1, padding:0 }}>×</button>
+                              }} style={{ width:22, height:22, borderRadius:6, background:"#ffffff", border:`1px solid ${C.border}`, color:C.textMuted, fontSize:13, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontFamily:"Inter,sans-serif", lineHeight:1, padding:0 }}>×</button>
                             </div>
                           );
                         })}
@@ -1976,7 +2108,7 @@
                             {hidden.map(h => (
                               <div key={h} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 10px", marginBottom:4 }}>
                                 <span style={{ fontSize:11, color:C.textMuted, textDecoration:"line-through" }}>{h}</span>
-                                <button onClick={()=>restorePreset(t.key, h)} style={{ background:"rgba(255,255,255,0.6)", border:`1px solid ${C.accent}`, borderRadius:8, color:C.accent, fontSize:9, padding:"3px 8px", cursor:"pointer", fontFamily:"Inter,sans-serif", fontWeight:700, letterSpacing:0.4 }}>RESTORE</button>
+                                <button onClick={()=>restorePreset(t.key, h)} style={{ background:"#ffffff", border:`1px solid ${C.accent}`, borderRadius:8, color:C.accent, fontSize:9, padding:"3px 8px", cursor:"pointer", fontFamily:"Inter,sans-serif", fontWeight:700, letterSpacing:0.4 }}>RESTORE</button>
                               </div>
                             ))}
                           </div>
@@ -1984,9 +2116,9 @@
                         <div style={{ display:"flex", gap:6, marginTop:6 }}>
                           <input type="text" value={newName} onChange={e=>setLibraryNewByType({ ...libraryNewByType, [t.key]: e.target.value })} placeholder={`Add to ${t.label}…`}
                             onKeyDown={e=>{ if(e.key==="Enter" && newName.trim()) { addCustomExercise(t.key, newName); setLibraryNewByType({ ...libraryNewByType, [t.key]: "" }); } }}
-                            style={{ flex:1, background:"rgba(255,255,255,0.55)", border:`1px dashed ${C.border}`, borderRadius:10, padding:"7px 10px", fontSize:11, color:C.text, fontFamily:"Inter,sans-serif" }} />
+                            style={{ flex:1, background:"#ffffff", border:`1px dashed ${C.border}`, borderRadius:10, padding:"7px 10px", fontSize:11, color:C.text, fontFamily:"Inter,sans-serif" }} />
                           <button onClick={()=>{ if(newName.trim()) { addCustomExercise(t.key, newName); setLibraryNewByType({ ...libraryNewByType, [t.key]: "" }); } }}
-                            style={{ background:"rgba(255,255,255,0.65)", border:`1px solid ${C.accent}`, borderRadius:10, color:C.accent, fontSize:10, fontWeight:700, padding:"0 12px", cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.4 }}>ADD</button>
+                            style={{ background:"#ffffff", border:`1px solid ${C.accent}`, borderRadius:10, color:C.accent, fontSize:10, fontWeight:700, padding:"0 12px", cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.4 }}>ADD</button>
                         </div>
                       </div>
                     );
@@ -2008,18 +2140,18 @@
         }
 
         const baseCard = {
-          background:"rgba(255,255,255,0.7)",
+          background:"#ffffff",
           borderRadius:18,
           padding:"14px 16px",
-          boxShadow:"0 1px 0 rgba(255,255,255,0.95) inset, 0 1px 2px rgba(80,60,30,0.04), 0 6px 16px -10px rgba(80,60,30,0.08)",
+          boxShadow:"none",
         };
-        const overdueShadow = "0 1px 0 rgba(255,255,255,0.95) inset, inset 5px 0 0 #d4621a, 0 1px 2px rgba(212,98,26,0.08), 0 6px 16px -10px rgba(212,98,26,0.15)";
+        const overdueShadow = "inset 4px 0 0 #d4453f";
         const doneShadow = "0 1px 0 rgba(255,255,255,1) inset, inset 5px 0 0 #5fa85f, 0 1px 2px rgba(74,140,74,0.08), 0 8px 20px -12px rgba(74,140,74,0.18)";
 
         const dateLabel = formatTodoDate(t.dueDate);
         const cardStyle = {
           ...baseCard,
-          background: t.done ? "rgba(255,255,255,0.85)" : baseCard.background,
+          background: t.done ? "#ffffff" : baseCard.background,
           boxShadow: t.done ? doneShadow : (isOverdue ? overdueShadow : baseCard.boxShadow),
           display:"flex", alignItems:"center", gap:14,
           cursor:"pointer",
@@ -2071,14 +2203,14 @@
 
         return (
           <div key={t.id} style={{
-            background:"rgba(255,255,255,0.92)",
+            background:"#ffffff",
             borderRadius:18,
             padding:16,
             boxShadow: t.done
               ? "0 1px 0 rgba(255,255,255,1) inset, inset 5px 0 0 #5fa85f, 0 2px 4px rgba(74,140,74,0.08), 0 12px 28px -8px rgba(74,140,74,0.18)"
               : isOverdue
-              ? "0 1px 0 rgba(255,255,255,1) inset, inset 5px 0 0 #d4621a, 0 2px 4px rgba(212,98,26,0.08), 0 12px 28px -8px rgba(212,98,26,0.18)"
-              : "0 1px 0 rgba(255,255,255,1) inset, 0 2px 4px rgba(80,60,30,0.05), 0 12px 28px -8px rgba(80,60,30,0.18)",
+              ? "inset 4px 0 0 #d4453f"
+              : "none",
           }}>
             <div style={{ display:"flex", alignItems:"flex-start", gap:14, marginBottom:14 }}>
               <div style={{ flex:1 }}>
@@ -2086,7 +2218,7 @@
                   <input type="text" defaultValue={t.title} autoFocus
                     onBlur={e=>{ const v = e.target.value.trim(); if (v) updateTodo(t.id,{title:v}); setTodoEditing(null); }}
                     onKeyDown={e=>{ if (e.key==="Enter") e.target.blur(); if (e.key==="Escape") setTodoEditing(null); }}
-                    style={{ width:"100%", background:"rgba(255,255,255,0.7)", border:`1px solid ${C.accent}`, borderRadius:10, padding:"8px 10px", fontSize:16, fontWeight:600, color:C.text, fontFamily:"Inter,sans-serif", letterSpacing:-0.2 }} />
+                    style={{ width:"100%", background:"#ffffff", border:`1px solid ${C.accent}`, borderRadius:10, padding:"8px 10px", fontSize:16, fontWeight:600, color:C.text, fontFamily:"Inter,sans-serif", letterSpacing:-0.2 }} />
                 ) : (
                   <div onClick={()=>setTodoEditing({id:t.id, field:"title"})} style={{
                     fontSize:16, fontWeight:600, letterSpacing:-0.2, lineHeight:1.35,
@@ -2106,7 +2238,7 @@
                   <input type="date" defaultValue={t.dueDate || ""} autoFocus
                     onBlur={e=>{ updateTodo(t.id,{dueDate: e.target.value || null}); setTodoEditing(null); }}
                     onChange={e=>{ updateTodo(t.id,{dueDate: e.target.value || null}); setTodoEditing(null); }}
-                    style={{ flex:1, background:"rgba(255,255,255,0.7)", border:`1px solid ${C.accent}`, borderRadius:8, padding:"6px 10px", fontSize:13, color:C.text, fontFamily:"Inter,sans-serif" }} />
+                    style={{ flex:1, background:"#ffffff", border:`1px solid ${C.accent}`, borderRadius:8, padding:"6px 10px", fontSize:13, color:C.text, fontFamily:"Inter,sans-serif" }} />
                 ) : (
                   <div onClick={()=>setTodoEditing({id:t.id, field:"date"})} style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"space-between", cursor:"pointer" }}>
                     <span style={{ fontSize:13, fontWeight:600, color: isOverdue?C.accent:C.text }}>
@@ -2127,8 +2259,8 @@
                     {["high","med","low"].map(p => (
                       <button key={p} onClick={()=>{ updateTodo(t.id,{priority:p}); setTodoEditing(null); }} style={{
                         flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:5,
-                        background: t.priority===p ? "rgba(212,98,26,0.10)" : "rgba(255,255,255,0.7)",
-                        border:`1px solid ${t.priority===p?"rgba(212,98,26,0.3)":"rgba(140,126,106,0.18)"}`,
+                        background: t.priority===p ? "#fbe9e8" : "#ffffff",
+                        border:`1px solid ${t.priority===p?"#f0b3b0":"#e7eae3"}`,
                         borderRadius:8, padding:"6px 8px", fontSize:11, fontWeight:600,
                         color: t.priority===p?C.accent:C.textMuted,
                         cursor:"pointer", fontFamily:"Inter,sans-serif",
@@ -2164,7 +2296,7 @@
                 {isEditingNotes ? (
                   <textarea defaultValue={t.notes||""} autoFocus rows="2"
                     onBlur={e=>{ updateTodo(t.id,{notes: e.target.value}); setTodoEditing(null); }}
-                    style={{ flex:1, background:"rgba(255,255,255,0.7)", border:`1px solid ${C.accent}`, borderRadius:8, padding:"6px 10px", fontSize:13, color:C.text, fontFamily:"Inter,sans-serif", resize:"vertical", minHeight:42 }} />
+                    style={{ flex:1, background:"#ffffff", border:`1px solid ${C.accent}`, borderRadius:8, padding:"6px 10px", fontSize:13, color:C.text, fontFamily:"Inter,sans-serif", resize:"vertical", minHeight:42 }} />
                 ) : (
                   <div onClick={()=>setTodoEditing({id:t.id, field:"notes"})} style={{ flex:1, display:"flex", alignItems:"flex-start", justifyContent:"space-between", cursor:"pointer", gap:8 }}>
                     <span style={{ fontSize:13, fontWeight:t.notes?500:500, color: t.notes?C.text:"#b8aa92", fontStyle: t.notes?"normal":"italic", lineHeight:1.4, flex:1 }}>
@@ -2179,7 +2311,7 @@
             {/* ACTIONS */}
             <div style={{ display:"flex", gap:8, marginTop:6, paddingTop:12, borderTop:`1px solid rgba(140,126,106,0.12)` }}>
               <button onClick={()=>setTodoExpandedId(null)} style={{
-                flex:1, background:"rgba(255,255,255,0.7)", border:`1px solid rgba(140,126,106,0.18)`,
+                flex:1, background:"#ffffff", border:`1px solid #e7eae3`,
                 borderRadius:10, padding:10, fontSize:12, fontWeight:600, color:C.textMuted,
                 cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.3,
               }}>CLOSE</button>
@@ -2224,18 +2356,17 @@
         return (
           <>
             <div onClick={()=>{ setTodoSheetOpen(false); setTodoDateOpen(false); setTodoPriorityOpen(false); }}
-              style={{ position:"fixed", inset:0, background:"rgba(80,60,30,0.18)", backdropFilter:"blur(2px)", zIndex:99, pointerEvents:"auto" }}/>
+              style={{ position:"fixed", inset:0, background:"rgba(13,19,12,0.28)", zIndex:99, pointerEvents:"auto" }}/>
             <div style={{
               position:"fixed",
               bottom: "calc(84px + env(safe-area-inset-bottom, 0px))",
               left:12, right:12, maxWidth: 406, margin:"0 auto",
               zIndex:101,
               background:"rgba(255, 252, 246, 0.97)",
-              backdropFilter:"blur(24px)",
-              WebkitBackdropFilter:"blur(24px)",
+              
               borderRadius:22,
               padding:"18px 18px 14px",
-              boxShadow:"0 1px 0 rgba(255,255,255,1) inset, 0 -1px 0 rgba(140,126,106,0.1) inset, 0 12px 36px -8px rgba(80,60,30,0.22), 0 4px 12px -2px rgba(80,60,30,0.1)",
+              boxShadow:"none",
             }}>
               <input type="text" value={todoDraft.title} autoFocus
                 onChange={e=>setTodoDraft({...todoDraft, title: e.target.value})}
@@ -2247,7 +2378,7 @@
 
               {/* Date sub-picker */}
               {todoDateOpen && (
-                <div style={{ marginBottom:10, padding:"10px", background:"rgba(255,255,255,0.7)", borderRadius:12, border:`1px solid rgba(140,126,106,0.18)` }}>
+                <div style={{ marginBottom:10, padding:"10px", background:"#ffffff", borderRadius:12, border:`1px solid #e7eae3` }}>
                   <div style={{ display:"flex", gap:6, marginBottom:8, flexWrap:"wrap" }}>
                     <button onClick={()=>{ setTodoDraft({...todoDraft, dueDate: today}); setTodoDateOpen(false); }} style={chipStyle(todoDraft.dueDate===today)}>Today</button>
                     {(() => {
@@ -2263,7 +2394,7 @@
                   </div>
                   <input type="date" value={todoDraft.dueDate||""}
                     onChange={e=>{ setTodoDraft({...todoDraft, dueDate: e.target.value || ""}); }}
-                    style={{ width:"100%", background:"rgba(255,255,255,0.85)", border:`1px solid rgba(140,126,106,0.22)`, borderRadius:8, padding:"7px 10px", fontSize:13, color:C.text, fontFamily:"Inter,sans-serif" }} />
+                    style={{ width:"100%", background:"#ffffff", border:`1px solid #e7eae3`, borderRadius:8, padding:"7px 10px", fontSize:13, color:C.text, fontFamily:"Inter,sans-serif" }} />
                   {todoDraft.dueDate && (
                     <button onClick={()=>setTodoDraft({...todoDraft, dueDate:""})} style={{ marginTop:6, background:"none", border:"none", color:C.textMuted, fontSize:11, cursor:"pointer", fontFamily:"Inter,sans-serif" }}>Clear</button>
                   )}
@@ -2272,13 +2403,13 @@
 
               {/* Priority sub-picker */}
               {todoPriorityOpen && (
-                <div style={{ marginBottom:10, padding:"10px", background:"rgba(255,255,255,0.7)", borderRadius:12, border:`1px solid rgba(140,126,106,0.18)` }}>
+                <div style={{ marginBottom:10, padding:"10px", background:"#ffffff", borderRadius:12, border:`1px solid #e7eae3` }}>
                   <div style={{ display:"flex", gap:6 }}>
                     {["high","med","low"].map(p => (
                       <button key={p} onClick={()=>{ setTodoDraft({...todoDraft, priority:p}); setTodoPriorityOpen(false); }} style={{
                         flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:5,
-                        background: todoDraft.priority===p ? "rgba(212,98,26,0.10)" : "rgba(255,255,255,0.85)",
-                        border:`1px solid ${todoDraft.priority===p?"rgba(212,98,26,0.3)":"rgba(140,126,106,0.22)"}`,
+                        background: todoDraft.priority===p ? "#fbe9e8" : "#ffffff",
+                        border:`1px solid ${todoDraft.priority===p?"#f0b3b0":"#e7eae3"}`,
                         borderRadius:8, padding:"7px 8px", fontSize:11, fontWeight:600,
                         color: todoDraft.priority===p?C.accent:C.textMuted,
                         cursor:"pointer", fontFamily:"Inter,sans-serif",
@@ -2315,10 +2446,10 @@
                     style={{ background:"none", border:"none", color:C.textMuted, fontSize:12, fontWeight:600, padding:"7px 10px", cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.2 }}>Cancel</button>
                   <button onClick={addTodo} disabled={!hasTitle} style={{
                     width:34, height:34, borderRadius:"50%",
-                    background: hasTitle ? `linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)` : "rgba(140,126,106,0.25)",
+                    background: hasTitle ? `${C.accent}` : "rgba(140,126,106,0.25)",
                     border:"none", color:"#fff", cursor: hasTitle?"pointer":"not-allowed",
                     display:"flex", alignItems:"center", justifyContent:"center",
-                    boxShadow: hasTitle ? "0 1px 0 rgba(255,255,255,0.3) inset, 0 2px 8px -1px rgba(212,98,26,0.5)" : "none",
+                    boxShadow:"none",
                   }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   </button>
@@ -2331,8 +2462,8 @@
 
       const chipStyle = active => ({
         display:"inline-flex", alignItems:"center", gap:5,
-        background: active?"rgba(212,98,26,0.10)":"rgba(255,255,255,0.7)",
-        border:`1px solid ${active?"rgba(212,98,26,0.3)":"rgba(140,126,106,0.22)"}`,
+        background: active?"#fbe9e8":"#ffffff",
+        border:`1px solid ${active?"#f0b3b0":"#e7eae3"}`,
         borderRadius:100, padding:"6px 11px 6px 9px",
         fontSize:11, fontWeight:600,
         color: active?C.accent:C.textMuted,
@@ -2367,13 +2498,13 @@
           <div style={S.bodyPad}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", fontSize:11, fontWeight:600, color:C.textMuted, textTransform:"uppercase", letterSpacing:1.5, margin:"6px 4px 18px" }}>
               <span>Todo</span>
-              <span style={{ fontFamily:"'Fraunces',serif", fontSize:13, color:C.accent, fontWeight:700, letterSpacing:0, textTransform:"none" }}>{active.length} active</span>
+              <span style={{ fontFamily:"'Inter',sans-serif", fontSize:13, color:C.accent, fontWeight:700, letterSpacing:0, textTransform:"none" }}>{active.length} active</span>
             </div>
 
             {active.length === 0 && completed.length === 0 && (
               <div style={{ ...S.card, textAlign:"center", padding:"40px 20px" }}>
                 <div style={{ fontSize:28, marginBottom:10, opacity:0.4 }}>✓</div>
-                <div style={{ fontFamily:"'Fraunces',serif", fontSize:18, fontWeight:600, letterSpacing:-0.3, marginBottom:4 }}>Nothing to do</div>
+                <div style={{ fontFamily:"'Inter',sans-serif", fontSize:18, fontWeight:600, letterSpacing:-0.3, marginBottom:4 }}>Nothing to do</div>
                 <div style={{ fontSize:12, color:C.textMuted, fontWeight:500 }}>Tap "Add task" below to get started.</div>
               </div>
             )}
@@ -2411,11 +2542,11 @@
             <button onClick={()=>setTodoSheetOpen(true)} style={{
               pointerEvents:"auto",
               display:"inline-flex", alignItems:"center", gap:8,
-              background:`linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)`,
+              background:`${C.accent}`,
               color:"#fff", padding:"13px 22px", borderRadius:100,
               fontSize:14, fontWeight:700, letterSpacing:0.3,
               border:"none", cursor:"pointer", fontFamily:"Inter,sans-serif",
-              boxShadow:"0 1px 0 rgba(255,255,255,0.3) inset, 0 4px 16px -2px rgba(212,98,26,0.5), 0 12px 32px -8px rgba(212,98,26,0.4)",
+              boxShadow:"none",
             }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></svg>
               Add task
@@ -2447,10 +2578,10 @@
                 <div key={item.label} style={S.card}>
                   <div style={{ display:"flex", justifyContent:"space-between", marginBottom:10, alignItems:"baseline" }}>
                     <div style={{ fontSize:14, color:C.text, fontWeight:600 }}>{item.emoji} {item.label}</div>
-                    <div style={{ fontFamily:"'Fraunces',serif", fontSize:16, color:C.accent, fontWeight:600, letterSpacing:-0.4 }}>{item.current}/{item.target} <span style={{ fontSize:11, color:C.textMuted, fontWeight:500 }}>{item.unit}</span></div>
+                    <div style={{ fontFamily:"'Inter',sans-serif", fontSize:16, color:C.accent, fontWeight:600, letterSpacing:-0.4 }}>{item.current}/{item.target} <span style={{ fontSize:11, color:C.textMuted, fontWeight:500 }}>{item.unit}</span></div>
                   </div>
                   <div style={{ height:6, background:"rgba(140,126,106,0.15)", borderRadius:100, overflow:"hidden" }}>
-                    <div style={{ height:"100%", borderRadius:100, width:`${p}%`, background: p>=100?`linear-gradient(90deg, ${C.green} 0%, ${C.greenDark} 100%)`:`linear-gradient(90deg, ${C.accentLight} 0%, ${C.accent} 100%)`, transition:"width 0.6s ease" }} />
+                    <div style={{ height:"100%", borderRadius:100, width:`${p}%`, background: p>=100?C.accentDeep:C.accent, transition:"width 0.6s ease" }} />
                   </div>
                   <div style={{ fontSize:11, color:C.textMuted, marginTop:6, textAlign:"right", fontWeight:500 }}>{p}% complete</div>
                 </div>
@@ -2461,9 +2592,9 @@
               <div style={{ fontSize:14, color:C.text, marginBottom:12, fontWeight:600 }}>🏋️ Workout Breakdown</div>
               <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
                 {WORKOUT_TYPES.map(w => (
-                  <div key={w.key} style={{ flex:"1 1 calc(33% - 8px)", background:"rgba(255,255,255,0.5)", borderRadius:12, padding:"12px 6px", textAlign:"center", boxShadow:"0 1px 0 rgba(255,255,255,0.85) inset" }}>
+                  <div key={w.key} style={{ flex:"1 1 calc(33% - 8px)", background:"#ffffff", borderRadius:12, padding:"12px 6px", textAlign:"center", boxShadow:"0 1px 0 #ffffff inset" }}>
                     <div style={{ fontSize:18 }}>{w.emoji}</div>
-                    <div style={{ fontFamily:"'Fraunces',serif", fontSize:22, fontWeight:600, color:C.accent, marginTop:4, letterSpacing:-0.6 }}>{workoutCounts[w.key]||0}</div>
+                    <div style={{ fontFamily:"'Inter',sans-serif", fontSize:22, fontWeight:600, color:C.accent, marginTop:4, letterSpacing:-0.6 }}>{workoutCounts[w.key]||0}</div>
                     <div style={{ fontSize:9, color:C.textMuted, textTransform:"uppercase", letterSpacing:1, fontWeight:600, marginTop:1 }}>{w.label}</div>
                   </div>
                 ))}
@@ -2476,7 +2607,7 @@
                 const done = (data.pimsleurTotal||0) >= m.pimsleur;
                 return (
                   <div key={m.month} style={{ display:"flex", alignItems:"center", gap:14, marginBottom:14, opacity: done?1:0.6 }}>
-                    <div style={{ width:36, height:36, borderRadius:"50%", flexShrink:0, background: done?`linear-gradient(135deg, ${C.green} 0%, ${C.greenDark} 100%)`:"rgba(255,255,255,0.6)", border:done?"none":`1.5px solid rgba(140,126,106,0.22)`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, color: done?"#fff":C.textMuted, fontWeight:700, boxShadow: done?"0 2px 8px -1px rgba(74,140,74,0.4)":"0 1px 0 rgba(255,255,255,0.85) inset, 0 1px 2px rgba(80,60,30,0.04)" }}>{done?"✓":m.month}</div>
+                    <div style={{ width:36, height:36, borderRadius:"50%", flexShrink:0, background: done?`${C.accent}`:"#ffffff", border:done?"none":`1.5px solid #e7eae3`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, color: done?"#fff":C.textMuted, fontWeight:700, boxShadow:"none" }}>{done?"✓":m.month}</div>
                     <div>
                       <div style={{ fontSize:14, color: done?C.greenText:C.text, fontWeight:700, letterSpacing:-0.2 }}>{m.label}</div>
                       <div style={{ fontSize:11, color:C.textMuted, marginTop:2 }}>Pimsleur {m.pimsleur} · Ear {m.comprehension}% · Inner French {m.innerFrench} eps</div>
@@ -2509,7 +2640,7 @@
                 { label:"Workouts", value:yearStats.workouts },
               ].map(st => (
                 <div key={st.label}>
-                  <div style={{ fontFamily:"'Fraunces',serif", fontSize:26, fontWeight:600, color:C.accent, letterSpacing:-1, lineHeight:1 }}>{st.value}</div>
+                  <div style={{ fontFamily:"'Inter',sans-serif", fontSize:26, fontWeight:600, color:C.accent, letterSpacing:-1, lineHeight:1 }}>{st.value}</div>
                   <div style={{ fontSize:10, color:C.textMuted, letterSpacing:1, textTransform:"uppercase", marginTop:4, fontWeight:600 }}>{st.label}</div>
                 </div>
               ))}
@@ -2517,7 +2648,7 @@
 
             <div ref={yearScrollRef} style={{ ...S.card, overflowX:"auto" }}>
               <div style={{ display:"flex", gap:3, minWidth:"fit-content" }}>
-                <div style={{ display:"flex", flexDirection:"column", gap:3, marginRight:4, paddingTop:34, position:"sticky", left:0, background:"rgba(255,255,255,0.95)", zIndex:1, paddingRight:4 }}>
+                <div style={{ display:"flex", flexDirection:"column", gap:3, marginRight:4, paddingTop:34, position:"sticky", left:0, background:"#ffffff", zIndex:1, paddingRight:4 }}>
                   {["","M","","W","","F",""].map((d,i) => (
                     <div key={i} style={{ height:16, fontSize:8, color:C.textMuted, display:"flex", alignItems:"center", width:14, fontWeight:600 }}>{d}</div>
                   ))}
@@ -2538,7 +2669,7 @@
                         {week.days.map((cell, di) => {
                           const bgCol = heatColor(cell);
                           const isDark = [HEAT[3], HEAT[4], C.workoutOnly].includes(bgCol);
-                          const numCol = isDark ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.45)";
+                          const numCol = isDark ? "#ffffff" : "rgba(0,0,0,0.45)";
                           return (
                             <div key={di} style={{
                               width:16, height:16, borderRadius:3,
@@ -2580,7 +2711,7 @@
 
       // ─── TAB: HISTORY ───────────────────────────────────────────────────
       const renderHistoryEditor = (date, log) => (
-        <div style={{ background:"rgba(255,255,255,0.6)", borderRadius:14, padding:14, marginBottom:12, boxShadow:"0 1px 0 rgba(255,255,255,0.85) inset, 0 1px 2px rgba(80,60,30,0.04)" }}>
+        <div style={{ background:"#ffffff", borderRadius:14, padding:14, marginBottom:12, boxShadow:"none" }}>
           {[{key:"pimsleur",emoji:"🎧",label:"Pimsleur"},{key:"anki",emoji:"🃏",label:"Flash cards"},{key:"innerFrench",emoji:"🎙️",label:"Inner French"},...(data.customHabits||[])].map(h => (
             <div key={h.key} onClick={()=>toggleDayHabit(date,h.key)} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0", cursor:"pointer", borderBottom:`1px solid ${C.border}` }}>
               <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -2598,11 +2729,11 @@
                 return (
                   <button key={wk.key} onClick={()=>setDayWorkout(date,wk.key)} style={{
                     flex:"1 1 calc(33% - 6px)", padding:"8px 4px", borderRadius:10,
-                    background: active?`linear-gradient(135deg, ${C.green} 0%, ${C.greenDark} 100%)`:"rgba(255,255,255,0.6)",
+                    background: active?`${C.accent}`:"#ffffff",
                     border:"none",
                     color: active?"#fff":C.text,
                     fontSize:11, fontWeight:600, cursor:"pointer", fontFamily:"Inter,sans-serif", textAlign:"center",
-                    boxShadow: active ? "0 2px 8px -1px rgba(74,140,74,0.4)" : "0 1px 0 rgba(255,255,255,0.85) inset, 0 1px 2px rgba(80,60,30,0.04)",
+                    boxShadow:"none",
                   }}>
                     <div style={{ fontSize:16 }}>{wk.emoji}</div>
                     <div style={{ marginTop:2 }}>{wk.label}</div>
@@ -2612,7 +2743,7 @@
             </div>
           </div>
           <button onClick={()=>{ if(window.confirm(`Delete ${formatDate(date,{weekday:"long",month:"short",day:"numeric"})}?`)) deleteDay(date); }}
-            style={{ width:"100%", padding:"10px", borderRadius:12, background:"rgba(255,255,255,0.5)", border:`1px solid ${C.red}`, color:C.red, fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"Inter,sans-serif", marginTop:10 }}>
+            style={{ width:"100%", padding:"10px", borderRadius:12, background:"#ffffff", border:`1px solid ${C.red}`, color:C.red, fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"Inter,sans-serif", marginTop:10 }}>
             Delete this day
           </button>
         </div>
@@ -2670,11 +2801,11 @@
                     <span style={{ fontSize:14, color:C.text, textDecoration: hidden?"line-through":"none", fontWeight:500 }}>{h.label}</span>
                   </div>
                   <button onClick={()=>toggleBuiltin(h.key)} style={{
-                    background: hidden?`linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)`:"rgba(255,255,255,0.65)",
+                    background: hidden?`${C.accent}`:"#ffffff",
                     border: hidden?"none":`1px solid ${C.border}`,
                     borderRadius:8, color: hidden?"#fff":C.textMuted,
                     fontSize:11, fontWeight:700, letterSpacing:0.3, padding:"5px 12px", cursor:"pointer", fontFamily:"Inter,sans-serif",
-                    boxShadow: hidden?`0 2px 8px -1px rgba(212,98,26,0.4)`:"0 1px 0 rgba(255,255,255,0.85) inset",
+                    boxShadow:"none",
                   }}>{hidden ? "RESTORE" : "HIDE"}</button>
                 </div>
               );
@@ -2686,7 +2817,7 @@
             <div style={S.smallLabel}>Custom</div>
             <div style={{ display:"flex", gap:8, marginBottom:10 }}>
               <input type="text" value={newHabitEmoji} onChange={e=>setNewHabitEmoji(e.target.value || "📌")} maxLength="4"
-                style={{ width:54, textAlign:"center", background:"rgba(255,255,255,0.65)", border:`1px solid ${C.border}`, borderRadius:10, fontSize:20, padding:"8px 0", fontFamily:"Inter,sans-serif" }} />
+                style={{ width:54, textAlign:"center", background:"#ffffff", border:`1px solid ${C.border}`, borderRadius:10, fontSize:20, padding:"8px 0", fontFamily:"Inter,sans-serif" }} />
               <input type="text" value={newHabitName} onChange={e=>setNewHabitName(e.target.value)} placeholder="New habit name…"
                 onKeyDown={e=>{ if(e.key==="Enter") addCustomHabit(); }}
                 style={{ ...S.input, flex:1 }} />
@@ -2706,26 +2837,26 @@
                     <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                       <span onClick={()=>setEditingEmojiFor(isEditing?null:h.key)} style={{
                         fontSize:22, cursor:"pointer", padding:"2px 8px", borderRadius:8,
-                        background: isEditing?"rgba(255,255,255,0.65)":"none",
+                        background: isEditing?"#ffffff":"none",
                         border: `1px solid ${isEditing?C.border:"transparent"}`,
                       }}>{h.emoji}</span>
                       <span style={{ fontSize:14, color:C.text, fontWeight:500 }}>{h.label}</span>
                     </div>
-                    <button onClick={()=>deleteCustomHabit(h.key)} style={{ background:"rgba(255,255,255,0.5)", border:`1px solid ${C.red}`, borderRadius:8, color:C.red, fontSize:11, fontWeight:700, letterSpacing:0.3, padding:"5px 12px", cursor:"pointer", fontFamily:"Inter,sans-serif" }}>DELETE</button>
+                    <button onClick={()=>deleteCustomHabit(h.key)} style={{ background:"#ffffff", border:`1px solid ${C.red}`, borderRadius:8, color:C.red, fontSize:11, fontWeight:700, letterSpacing:0.3, padding:"5px 12px", cursor:"pointer", fontFamily:"Inter,sans-serif" }}>DELETE</button>
                   </div>
                   {isEditing && (
                     <div style={{ display:"flex", flexWrap:"wrap", gap:6, padding:"8px 0 12px" }}>
                       <input type="text" defaultValue={h.emoji}
                         onBlur={e=>{ updateHabitEmoji(h.key, e.target.value || "📌"); setEditingEmojiFor(null); }}
                         maxLength="4"
-                        style={{ width:54, textAlign:"center", background:"rgba(255,255,255,0.65)", border:`1px solid ${C.border}`, borderRadius:10, fontSize:18, padding:"6px 0", fontFamily:"Inter,sans-serif" }} />
+                        style={{ width:54, textAlign:"center", background:"#ffffff", border:`1px solid ${C.border}`, borderRadius:10, fontSize:18, padding:"6px 0", fontFamily:"Inter,sans-serif" }} />
                       {EMOJI_PRESETS.map(e => (
                         <button key={e} onClick={()=>{ updateHabitEmoji(h.key, e); setEditingEmojiFor(null); }} style={{
                           width:34, height:34, fontSize:18, borderRadius:8,
-                          background: h.emoji===e?`linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)`:"rgba(255,255,255,0.65)",
+                          background: h.emoji===e?`${C.accent}`:"#ffffff",
                           border: h.emoji===e?"none":`1px solid ${C.border}`,
                           cursor:"pointer", fontFamily:"Inter,sans-serif",
-                          boxShadow: h.emoji===e?`0 2px 6px -1px rgba(212,98,26,0.4)`:"none",
+                          boxShadow:"none",
                         }}>{e}</button>
                       ))}
                     </div>
@@ -2745,13 +2876,13 @@
             {allActiveHabits.map((h, i) => {
               const btnStyle = disabled => ({
                 width:32, height:32, borderRadius:10,
-                background: "rgba(255,255,255,0.65)",
+                background: "#ffffff",
                 border: "none",
                 color: disabled?C.mutedGray:C.text,
                 fontSize:14, cursor: disabled?"default":"pointer",
                 fontFamily:"Inter,sans-serif",
                 opacity: disabled?0.4:1,
-                boxShadow:"0 1px 0 rgba(255,255,255,0.85) inset, 0 1px 2px rgba(80,60,30,0.04)",
+                boxShadow:"none",
               });
               return (
                 <div key={h.key} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0", borderTop: i===0?"none":`1px solid ${C.border}` }}>
@@ -2865,9 +2996,9 @@
                       </div>
                     </div>
                     {hasGoogle ? (
-                      <button onClick={()=>unlinkProvider("google.com","Google")} disabled={linkBusy} style={{ background:"rgba(255,255,255,0.5)", border:`1px solid ${C.border}`, borderRadius:8, color:C.textMuted, fontSize:11, fontWeight:700, letterSpacing:0.3, padding:"5px 12px", cursor:"pointer", fontFamily:"Inter,sans-serif" }}>UNLINK</button>
+                      <button onClick={()=>unlinkProvider("google.com","Google")} disabled={linkBusy} style={{ background:"#ffffff", border:`1px solid ${C.border}`, borderRadius:8, color:C.textMuted, fontSize:11, fontWeight:700, letterSpacing:0.3, padding:"5px 12px", cursor:"pointer", fontFamily:"Inter,sans-serif" }}>UNLINK</button>
                     ) : (
-                      <button onClick={linkGoogleAccount} disabled={linkBusy} style={{ background:`linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)`, border:"none", borderRadius:8, color:"#fff", fontSize:11, fontWeight:700, letterSpacing:0.3, padding:"5px 12px", cursor:"pointer", fontFamily:"Inter,sans-serif", boxShadow:`0 2px 6px -1px rgba(212,98,26,0.4)` }}>LINK</button>
+                      <button onClick={linkGoogleAccount} disabled={linkBusy} style={{ background:`${C.accent}`, border:"none", borderRadius:8, color:"#fff", fontSize:11, fontWeight:700, letterSpacing:0.3, padding:"5px 12px", cursor:"pointer", fontFamily:"Inter,sans-serif" }}>LINK</button>
                     )}
                   </div>
 
@@ -2883,26 +3014,26 @@
                       </div>
                     </div>
                     {hasEmail ? (
-                      <button onClick={()=>unlinkProvider("password","Email")} disabled={linkBusy} style={{ background:"rgba(255,255,255,0.5)", border:`1px solid ${C.border}`, borderRadius:8, color:C.textMuted, fontSize:11, fontWeight:700, letterSpacing:0.3, padding:"5px 12px", cursor:"pointer", fontFamily:"Inter,sans-serif" }}>UNLINK</button>
+                      <button onClick={()=>unlinkProvider("password","Email")} disabled={linkBusy} style={{ background:"#ffffff", border:`1px solid ${C.border}`, borderRadius:8, color:C.textMuted, fontSize:11, fontWeight:700, letterSpacing:0.3, padding:"5px 12px", cursor:"pointer", fontFamily:"Inter,sans-serif" }}>UNLINK</button>
                     ) : (
-                      <button onClick={()=>{ setLinkPanelOpen(!linkPanelOpen); setLinkError(""); setLinkSuccess(""); }} disabled={linkBusy} style={{ background:`linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)`, border:"none", borderRadius:8, color:"#fff", fontSize:11, fontWeight:700, letterSpacing:0.3, padding:"5px 12px", cursor:"pointer", fontFamily:"Inter,sans-serif", boxShadow:`0 2px 6px -1px rgba(212,98,26,0.4)` }}>{linkPanelOpen ? "CANCEL" : "LINK"}</button>
+                      <button onClick={()=>{ setLinkPanelOpen(!linkPanelOpen); setLinkError(""); setLinkSuccess(""); }} disabled={linkBusy} style={{ background:`${C.accent}`, border:"none", borderRadius:8, color:"#fff", fontSize:11, fontWeight:700, letterSpacing:0.3, padding:"5px 12px", cursor:"pointer", fontFamily:"Inter,sans-serif" }}>{linkPanelOpen ? "CANCEL" : "LINK"}</button>
                     )}
                   </div>
 
                   {/* Email link panel */}
                   {linkPanelOpen && !hasEmail && (
-                    <div style={{ marginTop:12, padding:12, background:"rgba(255,255,255,0.6)", borderRadius:12, border:`1px solid ${C.border}` }}>
+                    <div style={{ marginTop:12, padding:12, background:"#ffffff", borderRadius:12, border:`1px solid ${C.border}` }}>
                       <div style={{ fontSize:11, color:C.textMuted, marginBottom:10, lineHeight:1.5, fontWeight:500 }}>
                         Pick an email + password for this account. Use the same email as your Google account if you want, or a different one — either works. You'll be able to sign in with either method.
                       </div>
                       <input type="email" placeholder="Email" autoComplete="email" autoCapitalize="off"
                         value={linkEmail} onChange={e=>setLinkEmail(e.target.value)}
-                        style={{ width:"100%", background:"rgba(255,255,255,0.85)", border:`1px solid ${C.border}`, borderRadius:10, padding:"10px 12px", fontSize:13, color:C.text, fontFamily:"Inter,sans-serif", marginBottom:8, outline:"none" }}/>
+                        style={{ width:"100%", background:"#ffffff", border:`1px solid ${C.border}`, borderRadius:10, padding:"10px 12px", fontSize:13, color:C.text, fontFamily:"Inter,sans-serif", marginBottom:8, outline:"none" }}/>
                       <input type="password" placeholder="Password (min 6 characters)" autoComplete="new-password"
                         value={linkPassword} onChange={e=>setLinkPassword(e.target.value)}
                         onKeyDown={e=>{ if (e.key==="Enter" && linkEmail && linkPassword.length>=6) linkEmailAccount(); }}
-                        style={{ width:"100%", background:"rgba(255,255,255,0.85)", border:`1px solid ${C.border}`, borderRadius:10, padding:"10px 12px", fontSize:13, color:C.text, fontFamily:"Inter,sans-serif", marginBottom:10, outline:"none" }}/>
-                      <button onClick={linkEmailAccount} disabled={linkBusy || !linkEmail || linkPassword.length<6} style={{ width:"100%", padding:"11px", borderRadius:10, background:`linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)`, border:"none", color:"#fff", fontSize:12, fontWeight:700, letterSpacing:0.5, cursor:(linkBusy || !linkEmail || linkPassword.length<6)?"not-allowed":"pointer", opacity:(linkBusy || !linkEmail || linkPassword.length<6)?0.5:1, fontFamily:"Inter,sans-serif", boxShadow:`0 2px 8px -1px rgba(212,98,26,0.4)` }}>
+                        style={{ width:"100%", background:"#ffffff", border:`1px solid ${C.border}`, borderRadius:10, padding:"10px 12px", fontSize:13, color:C.text, fontFamily:"Inter,sans-serif", marginBottom:10, outline:"none" }}/>
+                      <button onClick={linkEmailAccount} disabled={linkBusy || !linkEmail || linkPassword.length<6} style={{ width:"100%", padding:"11px", borderRadius:10, background:`${C.accent}`, border:"none", color:"#fff", fontSize:12, fontWeight:700, letterSpacing:0.5, cursor:(linkBusy || !linkEmail || linkPassword.length<6)?"not-allowed":"pointer", opacity:(linkBusy || !linkEmail || linkPassword.length<6)?0.5:1, fontFamily:"Inter,sans-serif" }}>
                         {linkBusy ? "LINKING…" : "LINK EMAIL TO THIS ACCOUNT"}
                       </button>
                     </div>
@@ -2919,7 +3050,7 @@
             <div style={S.sectionLabel}>Export</div>
             <div style={S.card}>
               <div style={{ fontSize:13, color:C.textMuted, marginBottom:12, lineHeight:1.5, fontWeight:500 }}>Download everything as an Excel workbook with 5 sheets: Summary, Daily Logs, Workout Sets, Workout Sessions, and Todos.</div>
-              <button onClick={exportCSV} style={{ width:"100%", padding:"14px", borderRadius:12, background:`linear-gradient(135deg, ${C.accentLight} 0%, ${C.accent} 100%)`, border:"none", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:1, boxShadow:`0 4px 12px -2px rgba(212,98,26,0.4)` }}>
+              <button onClick={exportCSV} style={{ width:"100%", padding:"14px", borderRadius:12, background:`${C.accent}`, border:"none", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:1 }}>
                 📊 EXPORT TO EXCEL
               </button>
             </div>
