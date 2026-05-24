@@ -177,8 +177,8 @@
       border:"#e8ece6", borderActive:"#cfe8b3",
       ink:"#15231a",                // near-black primary text
       text:"#15231a",
-      textMuted:"#76867b",          // muted sage-gray
-      mutedGray:"#a7b3aa",          // lightest gray (labels, placeholders, hairline text)
+      textMuted:"#5e6e62",          // darker muted sage-gray
+      mutedGray:"#8a978d",          // darker light gray (labels, placeholders)
       hair:"#eef2ec",               // hairline divider
       fieldBg:"#f1f6ef",            // input background
       accentBright:"#7ac943",       // vivid lime — fills, checks, active dots
@@ -266,15 +266,6 @@
           </svg>
         );
       }
-      if (name === "progress") {
-        return (
-          <svg {...common}>
-            <rect x="4" y="13" width="3.6" height="7" rx="1.5" fill={c}/>
-            <rect x="10.2" y="8.5" width="3.6" height="11.5" rx="1.5" fill={c}/>
-            <rect x="16.4" y="4.5" width="3.6" height="15.5" rx="1.5" fill={c}/>
-          </svg>
-        );
-      }
       if (name === "year") {
         return (
           <svg {...common}>
@@ -309,7 +300,6 @@
       { key:"day",      label:"Day" },
       { key:"todo",     label:"Todo" },
       { key:"workout",  label:"Workout" },
-      { key:"progress", label:"Progress" },
       { key:"year",     label:"Year" },
       { key:"history",  label:"History" },
       { key:"settings", label:"Settings" },
@@ -414,10 +404,56 @@
           width:size, height:size, borderRadius:9,
           background: on ? C.accentBright : "transparent",
           border: on ? `2px solid ${C.accentBright}` : `2px solid ${C.border}`,
-          boxShadow: on ? `0 0 0 4px ${C.accentTint}` : "none",
+          boxShadow: "none",
           display:"flex", alignItems:"center", justifyContent:"center",
           fontSize:15, color:"#fff", fontWeight:800, cursor:"pointer", flexShrink:0,
         }}>{on?"✓":""}</div>
+      );
+    }
+
+    // Swipe-to-delete row. Drag left (touch or mouse) to reveal a delete button;
+    // tap it to confirm. Works reliably in mobile Safari (no native slider needed).
+    function SwipeRow({ onDelete, children }) {
+      const [dx, setDx] = useState(0);          // current translate
+      const [open, setOpen] = useState(false);  // delete revealed
+      const start = useRef(null);
+      const moved = useRef(false);
+      const REVEAL = 72;
+
+      const begin = x => { start.current = x; moved.current = false; };
+      const move = x => {
+        if (start.current === null) return;
+        const delta = x - start.current + (open ? -REVEAL : 0);
+        if (Math.abs(delta) > 4) moved.current = true;
+        setDx(Math.max(-REVEAL, Math.min(0, delta)));
+      };
+      const end = () => {
+        if (start.current === null) return;
+        start.current = null;
+        const shouldOpen = dx < -REVEAL/2;
+        setOpen(shouldOpen);
+        setDx(shouldOpen ? -REVEAL : 0);
+      };
+
+      return (
+        <div style={{ position:"relative", overflow:"hidden" }}>
+          {/* delete action behind the row */}
+          <div style={{ position:"absolute", top:0, right:0, bottom:0, width:REVEAL, display:"flex", alignItems:"center", justifyContent:"center", background:C.red, borderRadius:8 }}>
+            <button onClick={()=>{ setOpen(false); setDx(0); onDelete(); }}
+              style={{ background:"none", border:"none", color:"#fff", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", width:"100%", height:"100%", padding:0 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M5 7h14M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
+          </div>
+          {/* foreground row */}
+          <div
+            onTouchStart={e=>begin(e.touches[0].clientX)}
+            onTouchMove={e=>move(e.touches[0].clientX)}
+            onTouchEnd={end}
+            onClickCapture={e=>{ if (moved.current) { e.stopPropagation(); e.preventDefault(); moved.current=false; } }}
+            style={{ background:C.bg, transform:`translateX(${dx}px)`, transition: start.current===null?"transform 0.2s ease":"none", position:"relative", zIndex:1 }}>
+            {children}
+          </div>
+        </div>
       );
     }
 
@@ -527,6 +563,7 @@
       const [libraryNewByType, setLibraryNewByType] = useState({});
       const [chartExpandedFor, setChartExpandedFor] = useState(null); // exercise name
       const [chartMetric, setChartMetric] = useState("volume"); // volume | e1rm | top
+      const [forcePicker, setForcePicker] = useState(false); // "back" to picker/breakdown even with a session
 
       // Todo tab state
       const [todoSheetOpen, setTodoSheetOpen] = useState(false);
@@ -646,7 +683,6 @@
         return log.length ? log[log.length-1].value : null;
       }, [data.comprehensionLog]);
 
-      const currentMilestone = MILESTONES.find(m => (data.pimsleurTotal||0) < m.pimsleur) || MILESTONES[MILESTONES.length-1];
       const selectedWorkout = WORKOUT_TYPES.find(w => w.key === todayLog.workout);
       const todaySession = (data.workoutSessions||{})[today] || null;
 
@@ -753,6 +789,17 @@
 
       // ─── Action: workout sessions ───────────────────────────────────────
       const startSession = typeKey => {
+        // If today's session is already this type, don't rebuild — just resume it
+        // (avoids wiping in-progress sets when re-selecting from the menu).
+        const existing = (data.workoutSessions||{})[today];
+        if (existing && existing.type === typeKey) {
+          const curLog0 = data.logs[today] || blankLog();
+          if (curLog0.workout !== typeKey) {
+            update({ logs: { ...data.logs, [today]: { ...curLog0, workout: typeKey } } });
+          }
+          return;
+        }
+
         const exNames = getExercisesForType(data, typeKey);
 
         // Look up the most recent sets per exercise across ALL session types.
@@ -788,12 +835,6 @@
         });
       };
 
-      const clearSession = () => {
-        const next = { ...(data.workoutSessions||{}) };
-        delete next[today];
-        update({ workoutSessions: next });
-      };
-
       // Helper: apply a function to today's exercises array
       const mapExercises = fn => {
         const cur = (data.workoutSessions||{})[today];
@@ -803,6 +844,13 @@
 
       const addSet = exId => mapExercises(e =>
         e.id===exId ? { ...e, sets: [...e.sets, { weight:0, reps:0 }] } : e);
+
+      const removeSet = (exId, idx) => mapExercises(e => {
+        if (e.id !== exId) return e;
+        const sets = e.sets.filter((_,i) => i!==idx);
+        const allDone = sets.length > 0 && sets.every(st => st.done);
+        return { ...e, sets, done: allDone };
+      });
 
       const setSetValue = (exId, idx, field, val) => mapExercises(e =>
         e.id===exId
@@ -1283,7 +1331,6 @@
           fontFamily: "Inter,sans-serif",
           fontWeight: 500,
           outline: "none",
-          boxShadow: "0 1px 0 rgba(255,255,255,1) inset",
           marginBottom: 10,
         };
         const primaryBtn = {
@@ -1345,7 +1392,7 @@
                   or
                   <div style={{ flex:1, height:1, background:"rgba(140,126,106,0.2)" }}/>
                 </div>
-                <button onClick={()=>{ setLoginMode("signin"); setLoginError(""); setLoginInfo(""); }} style={{ background:"#ffffff", border:`1px solid ${C.border}`, borderRadius:12, padding:"13px 20px", color:C.text, fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"Inter,sans-serif", boxShadow:"0 1px 0 #ffffff inset" }}>
+                <button onClick={()=>{ setLoginMode("signin"); setLoginError(""); setLoginInfo(""); }} style={{ background:"#ffffff", border:`1px solid ${C.border}`, borderRadius:12, padding:"13px 20px", color:C.text, fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"Inter,sans-serif" }}>
                   Sign in with email
                 </button>
               </div>
@@ -1799,27 +1846,29 @@
         });
         const hasW = (st.weight||0) > 0, hasR = (st.reps||0) > 0;
         return (
-          <div key={idx} style={{ display:"grid", gridTemplateColumns:"26px 1fr 56px 50px 30px", gap:8, alignItems:"center", padding:"8px 0" }}>
-            <div style={{ fontSize:14, fontWeight:800, textAlign:"center", color: st.done?C.accentDeep:C.text, letterSpacing:-0.3 }}>{idx+1}</div>
-            <div style={{ fontSize:12, color:C.mutedGray, fontWeight:500, paddingLeft:2 }}>
-              {prev ? <span><strong style={{color:C.textMuted, fontWeight:700}}>{prev.weight||0}</strong> × <strong style={{color:C.textMuted, fontWeight:700}}>{prev.reps||0}</strong></span> : <span style={{ fontStyle:"italic" }}>—</span>}
+          <SwipeRow key={idx} onDelete={()=>removeSet(exId,idx)}>
+            <div style={{ display:"grid", gridTemplateColumns:"26px 1fr 56px 50px 30px", gap:8, alignItems:"center", padding:"8px 0" }}>
+              <div style={{ fontSize:14, fontWeight:800, textAlign:"center", color: st.done?C.accentDeep:C.text, letterSpacing:-0.3 }}>{idx+1}</div>
+              <div style={{ fontSize:12, color:C.mutedGray, fontWeight:500, paddingLeft:2 }}>
+                {prev ? <span><strong style={{color:C.textMuted, fontWeight:700}}>{prev.weight||0}</strong> × <strong style={{color:C.textMuted, fontWeight:700}}>{prev.reps||0}</strong></span> : <span style={{ fontStyle:"italic" }}>—</span>}
+              </div>
+              <input type="number" step="0.5" value={hasW?st.weight:""} placeholder="—"
+                onChange={e=>setSetValue(exId,idx,"weight",parseFloat(e.target.value)||0)}
+                style={inputStyle(hasW && st.done)} />
+              <input type="number" step="1" value={hasR?st.reps:""} placeholder="—"
+                onChange={e=>setSetValue(exId,idx,"reps",parseFloat(e.target.value)||0)}
+                style={inputStyle(hasR && st.done)} />
+              <div style={{ display:"flex", justifyContent:"center" }}>
+                <div onClick={()=>toggleSetDone(exId,idx)} style={{
+                  width:26, height:26, borderRadius:8,
+                  background: st.done?C.accentBright:"transparent",
+                  border: st.done?`2px solid ${C.accentBright}`:`2px solid ${C.border}`,
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  fontSize:12, color:"#fff", fontWeight:800, cursor:"pointer",
+                }}>{st.done?"✓":""}</div>
+              </div>
             </div>
-            <input type="number" step="0.5" value={hasW?st.weight:""} placeholder="—"
-              onChange={e=>setSetValue(exId,idx,"weight",parseFloat(e.target.value)||0)}
-              style={inputStyle(hasW && st.done)} />
-            <input type="number" step="1" value={hasR?st.reps:""} placeholder="—"
-              onChange={e=>setSetValue(exId,idx,"reps",parseFloat(e.target.value)||0)}
-              style={inputStyle(hasR && st.done)} />
-            <div style={{ display:"flex", justifyContent:"center" }}>
-              <div onClick={()=>toggleSetDone(exId,idx)} style={{
-                width:26, height:26, borderRadius:8,
-                background: st.done?C.accentBright:"transparent",
-                border: st.done?`2px solid ${C.accentBright}`:`2px solid ${C.border}`,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:12, color:"#fff", fontWeight:800, cursor:"pointer",
-              }}>{st.done?"✓":""}</div>
-            </div>
-          </div>
+          </SwipeRow>
         );
       };
 
@@ -1834,35 +1883,21 @@
         let trend = null;
         if (hist.length >= 2) trend = hist[hist.length-1].top - hist[hist.length-2].top;
         else if (hist.length === 1) trend = 0;
-        const lastSession = hist[hist.length-1];
-        const lastLabel = lastSession
-          ? `Last: ${lastSession.top || (lastSession.sets[0]?.weight||0)} × ${lastSession.sets[0]?.reps||0} × ${lastSession.sets.length}`
-          : "No history yet";
 
         return (
           <div key={ex.id} style={{ padding:"18px 0", borderBottom:`1px solid ${C.hair}` }}>
-            {/* header: name + meta on left, trend + chart on right (vertically centered) */}
+            {/* header: name on left, reorder + chart on right (vertically centered) */}
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14, gap:10 }}>
-              <div style={{ flex:1, minWidth:0, display:"flex", alignItems:"center", gap:8 }}>
-                <ReorderArrows
-                  onUp={()=>moveExercise(ex.id,-1)}
-                  onDown={()=>moveExercise(ex.id,1)}
-                  canUp={exIdx>0}
-                  canDown={exIdx<total-1} />
-                <div style={{ minWidth:0, flex:1 }}>
-                  {isRenaming ? (
-                    <input type="text" defaultValue={ex.name} autoFocus
-                      onBlur={e=>{ renameExercise(todaySession.type, ex.name, e.target.value); setEditingExercise(null); }}
-                      onKeyDown={e=>{ if(e.key==="Enter") e.target.blur(); if(e.key==="Escape") setEditingExercise(null); }}
-                      style={{ width:"100%", background:C.fieldBg, border:`1px solid ${C.accent}`, borderRadius:8, padding:"6px 10px", fontSize:15, fontWeight:700, color:C.text, fontFamily:"Inter,sans-serif" }} />
-                  ) : (
-                    <>
-                      <div onClick={()=>setEditingExercise({ id: ex.id })}
-                        style={{ fontSize:16, fontWeight:700, color:C.text, cursor:"pointer", letterSpacing:-0.3 }}>{ex.name}</div>
-                      <div style={{ fontSize:12, color:C.mutedGray, fontWeight:500, marginTop:2 }}>{lastLabel}</div>
-                    </>
-                  )}
-                </div>
+              <div style={{ minWidth:0, flex:1 }}>
+                {isRenaming ? (
+                  <input type="text" defaultValue={ex.name} autoFocus
+                    onBlur={e=>{ renameExercise(todaySession.type, ex.name, e.target.value); setEditingExercise(null); }}
+                    onKeyDown={e=>{ if(e.key==="Enter") e.target.blur(); if(e.key==="Escape") setEditingExercise(null); }}
+                    style={{ width:"100%", background:C.fieldBg, border:`1px solid ${C.accentBright}`, borderRadius:8, padding:"6px 10px", fontSize:16, fontWeight:700, color:C.text, fontFamily:"Inter,sans-serif" }} />
+                ) : (
+                  <div onClick={()=>setEditingExercise({ id: ex.id })}
+                    style={{ fontSize:16, fontWeight:700, color:C.text, cursor:"pointer", letterSpacing:-0.3 }}>{ex.name}</div>
+                )}
               </div>
               <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
                 {trend !== null && (
@@ -1870,8 +1905,13 @@
                     {trend>0?"↑":trend<0?"↓":""}{trend>0?"+":""}{trend}
                   </span>
                 )}
+                <ReorderArrows
+                  onUp={()=>moveExercise(ex.id,-1)}
+                  onDown={()=>moveExercise(ex.id,1)}
+                  canUp={exIdx>0}
+                  canDown={exIdx<total-1} />
                 <button onClick={()=>setChartExpandedFor(chartOpen ? null : ex.name)} title="Progress chart"
-                  style={{ width:30, height:30, borderRadius:9, background: chartOpen?C.accent:C.fieldBg, border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>
+                  style={{ width:30, height:30, borderRadius:9, background: chartOpen?C.accentBright:C.fieldBg, border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
                     <path d="M3 17l4-4 3 3 5-6 4 4" stroke={chartOpen?"#fff":C.accentDeep} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
@@ -1912,6 +1952,11 @@
 
         return (
           <>
+            {renderWorkoutBreakdown()}
+            <button onClick={()=>setForcePicker(true)}
+              style={{ display:"flex", alignItems:"center", gap:6, background:"none", border:"none", padding:"0 0 12px", cursor:"pointer", fontFamily:"Inter,sans-serif", color:C.accentDeep, fontSize:13, fontWeight:700 }}>
+              <span style={{ fontSize:16, lineHeight:1 }}>‹</span> Workout menu
+            </button>
             <div style={{ display:"flex", alignItems:"center", gap:12, background:C.ink, borderRadius:16, padding:14, marginBottom:10 }}>
               <div style={{
                 width:42, height:42, borderRadius:11,
@@ -1923,8 +1968,8 @@
                 <div style={{ fontSize:16, fontWeight:800, color:"#fff", letterSpacing:-0.3 }}>{w?w.label:"Workout"}</div>
                 <div style={{ fontSize:11, color:"rgba(255,255,255,0.6)", marginTop:1, fontWeight:500 }}>{formatDate(today,{weekday:"short",month:"short",day:"numeric"})} · {doneCount} of {totalCount} done</div>
               </div>
-              <button onClick={()=>{ if(window.confirm("Change workout type? Current sets and notes will be lost.")) clearSession(); }}
-                style={{ background:"rgba(255,255,255,0.12)", border:"none", borderRadius:9, color:"#fff", fontSize:10, padding:"7px 11px", letterSpacing:0.4, fontFamily:"Inter,sans-serif", cursor:"pointer", fontWeight:700 }}>CHANGE</button>
+              <button onClick={()=>setForcePicker(true)}
+                style={{ background:"rgba(255,255,255,0.12)", border:"none", borderRadius:9, color:"#fff", fontSize:10, padding:"7px 11px", letterSpacing:0.4, fontFamily:"Inter,sans-serif", cursor:"pointer", fontWeight:700 }}>SWITCH</button>
             </div>
 
             {todaySession.exercises.map((ex, exIdx) => renderExerciseCard(ex, exIdx))}
@@ -1970,12 +2015,24 @@
 
         return (
           <>
-            <div style={S.sectionLabel}>Pick today's workout</div>
+            {renderWorkoutBreakdown()}
+            {todaySession && (
+              <button onClick={()=>setForcePicker(false)} style={{ display:"flex", alignItems:"center", gap:6, background:C.fieldBg, border:"none", borderRadius:10, padding:"10px 14px", marginBottom:16, cursor:"pointer", fontFamily:"Inter,sans-serif", color:C.accentDeep, fontSize:13, fontWeight:700 }}>
+                ‹ Back to today's {WORKOUT_TYPES.find(t=>t.key===todaySession.type)?.label||""} session
+              </button>
+            )}
+            <div style={{ fontSize:13, fontWeight:700, color:C.ink, letterSpacing:-0.2, margin:"6px 0 12px" }}>{todaySession ? "Switch workout" : "Pick today's workout"}</div>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:20 }}>
               {WORKOUT_TYPES.map(w => {
                 const count = getExercisesForType(data, w.key).length;
                 return (
-                  <button key={w.key} onClick={()=>startSession(w.key)} style={{
+                  <button key={w.key} onClick={()=>{
+                      const cur = (data.workoutSessions||{})[today];
+                      const switching = cur && cur.type !== w.key;
+                      const hasContent = cur && (cur.exercises||[]).some(e => e.done || (e.sets||[]).length > 0);
+                      if (switching && hasContent && !window.confirm(`Switch to ${w.label}? Today's ${WORKOUT_TYPES.find(t=>t.key===cur.type)?.label||""} sets will be replaced.`)) return;
+                      startSession(w.key); setForcePicker(false);
+                    }} style={{
                     ...S.card, marginBottom:0, padding:"18px 12px", textAlign:"center", cursor:"pointer", fontFamily:"Inter,sans-serif",
                   }}>
                     <div style={{ fontSize:32, lineHeight:1, marginBottom:8 }}>{w.emoji}</div>
@@ -2014,7 +2071,7 @@
                             <div style={{ fontSize:11, color:C.textMuted, fontStyle:"italic", padding:"4px 0" }}>No exercises logged for this session.</div>
                           )}
                           {(s.exercises||[]).filter(e => (e.sets||[]).length>0 || e.done).map(e => (
-                            <div key={e.id} style={{ padding:"8px 12px", marginBottom:4, background:"#ffffff", borderRadius:10, boxShadow: e.done ? `inset 3px 0 0 ${C.green}, 0 1px 0 #ffffff inset` : "0 1px 0 #ffffff inset" }}>
+                            <div key={e.id} style={{ padding:"8px 12px", marginBottom:4, background:"#ffffff", borderRadius:10, borderLeft: e.done ? `3px solid ${C.accentBright}` : "none" }}>
                               <div style={{ fontSize:12, fontWeight:700, color: e.done?C.greenText:C.text, display:"flex", alignItems:"center", gap:6, letterSpacing:-0.2 }}>
                                 {e.done && <span style={{ color:C.green }}>✓</span>}
                                 <span>{e.name}</span>
@@ -2073,7 +2130,7 @@
                           const originalName = renamedFromMap[name];
                           const isRenamedPreset = !!originalName;
                           return (
-                            <div key={name} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"7px 10px", marginBottom:4, background:"#ffffff", borderRadius:10, boxShadow:"0 1px 0 #ffffff inset" }}>
+                            <div key={name} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"7px 10px", marginBottom:4, background:"#ffffff", borderRadius:10 }}>
                               <div style={{ display:"flex", alignItems:"center", gap:6, minWidth:0 }}>
                                 <span style={{ fontSize:12, color:C.text, fontWeight:500 }}>{name}</span>
                                 {isCustom && <span style={{ fontSize:8, color:C.accent, fontWeight:700, letterSpacing:1 }}>CUSTOM</span>}
@@ -2521,67 +2578,27 @@
         );
       };
 
-      const renderWorkoutTab = () => (
-        <div style={S.bodyPad}>
-          {todaySession ? renderWorkoutSession() : renderWorkoutPicker()}
+      // Workout breakdown — counts per type. Lives at the top of the Workout tab.
+      const renderWorkoutBreakdown = () => (
+        <div style={{ marginBottom:8 }}>
+          <div style={{ fontSize:13, fontWeight:700, color:C.ink, letterSpacing:-0.2, marginBottom:14 }}>Workout breakdown</div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:"18px 8px" }}>
+            {WORKOUT_TYPES.map(w => (
+              <div key={w.key} style={{ textAlign:"center" }}>
+                <div style={{ fontSize:24 }}>{w.emoji}</div>
+                <div style={{ fontSize:24, fontWeight:800, color:C.accent, marginTop:6, letterSpacing:-0.8, lineHeight:1 }}>{workoutCounts[w.key]||0}</div>
+                <div style={{ fontSize:9, color:C.textMuted, textTransform:"uppercase", letterSpacing:0.6, fontWeight:800, marginTop:5 }}>{w.label}</div>
+              </div>
+            ))}
+          </div>
         </div>
       );
 
-
-      // ─── TAB: PROGRESS ──────────────────────────────────────────────────
-      const renderProgressTab = () => {
-        const items = [
-          { label:"Pimsleur Lessons", current:data.pimsleurTotal||0, target:currentMilestone.pimsleur, unit:"lessons", emoji:"🎧" },
-          { label:"Inner French",     current:data.innerFrenchTotal||0, target:currentMilestone.innerFrench, unit:"episodes", emoji:"🎙️" },
-          { label:"Ear Comprehension",current:lastComp||0, target:currentMilestone.comprehension, unit:"%", emoji:"👂" },
-        ];
+      const renderWorkoutTab = () => {
+        const showSession = todaySession && !forcePicker;
         return (
           <div style={S.bodyPad}>
-            <div style={S.sectionLabel}>Next: {currentMilestone.label}</div>
-            {items.map(item => {
-              const p = pct(item.current, item.target);
-              return (
-                <div key={item.label} style={S.card}>
-                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:10, alignItems:"baseline" }}>
-                    <div style={{ fontSize:14, color:C.text, fontWeight:600 }}>{item.emoji} {item.label}</div>
-                    <div style={{ fontFamily:"'Inter',sans-serif", fontSize:16, color:C.accent, fontWeight:600, letterSpacing:-0.4 }}>{item.current}/{item.target} <span style={{ fontSize:11, color:C.textMuted, fontWeight:500 }}>{item.unit}</span></div>
-                  </div>
-                  <div style={{ height:6, background:"rgba(140,126,106,0.15)", borderRadius:100, overflow:"hidden" }}>
-                    <div style={{ height:"100%", borderRadius:100, width:`${p}%`, background: p>=100?C.accentDeep:C.accent, transition:"width 0.6s ease" }} />
-                  </div>
-                  <div style={{ fontSize:11, color:C.textMuted, marginTop:6, textAlign:"right", fontWeight:500 }}>{p}% complete</div>
-                </div>
-              );
-            })}
-
-            <div style={S.card}>
-              <div style={{ fontSize:14, color:C.text, marginBottom:12, fontWeight:600 }}>🏋️ Workout Breakdown</div>
-              <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                {WORKOUT_TYPES.map(w => (
-                  <div key={w.key} style={{ flex:"1 1 calc(33% - 8px)", background:"#ffffff", borderRadius:12, padding:"12px 6px", textAlign:"center", boxShadow:"0 1px 0 #ffffff inset" }}>
-                    <div style={{ fontSize:18 }}>{w.emoji}</div>
-                    <div style={{ fontFamily:"'Inter',sans-serif", fontSize:22, fontWeight:600, color:C.accent, marginTop:4, letterSpacing:-0.6 }}>{workoutCounts[w.key]||0}</div>
-                    <div style={{ fontSize:9, color:C.textMuted, textTransform:"uppercase", letterSpacing:1, fontWeight:600, marginTop:1 }}>{w.label}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ marginTop:20, paddingTop:20 }}>
-              <div style={S.sectionLabel}>6-month roadmap</div>
-              {MILESTONES.map(m => {
-                const done = (data.pimsleurTotal||0) >= m.pimsleur;
-                return (
-                  <div key={m.month} style={{ display:"flex", alignItems:"center", gap:14, marginBottom:14, opacity: done?1:0.6 }}>
-                    <div style={{ width:36, height:36, borderRadius:"50%", flexShrink:0, background: done?`${C.accent}`:"#ffffff", border:done?"none":`1.5px solid #e7eae3`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, color: done?"#fff":C.textMuted, fontWeight:700, boxShadow:"none" }}>{done?"✓":m.month}</div>
-                    <div>
-                      <div style={{ fontSize:14, color: done?C.greenText:C.text, fontWeight:700, letterSpacing:-0.2 }}>{m.label}</div>
-                      <div style={{ fontSize:11, color:C.textMuted, marginTop:2 }}>Pimsleur {m.pimsleur} · Ear {m.comprehension}% · Inner French {m.innerFrench} eps</div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            {showSession ? renderWorkoutSession() : renderWorkoutPicker()}
           </div>
         );
       };
@@ -3037,7 +3054,6 @@
           {activeTab === "day"      && renderDayTab()}
           {activeTab === "todo"     && renderTodoTab()}
           {activeTab === "workout"  && renderWorkoutTab()}
-          {activeTab === "progress" && renderProgressTab()}
           {activeTab === "year"     && renderYearTab()}
           {activeTab === "history"  && renderHistoryTab()}
           {activeTab === "settings" && renderSettingsTab()}
