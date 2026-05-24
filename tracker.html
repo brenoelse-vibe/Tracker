@@ -416,21 +416,38 @@
     function SwipeRow({ onDelete, children }) {
       const [dx, setDx] = useState(0);          // current translate
       const [open, setOpen] = useState(false);  // delete revealed
-      const start = useRef(null);
+      const startX = useRef(null);
+      const startY = useRef(null);
+      const axis = useRef(null);                // null | "h" | "v" — locked after first decisive move
       const moved = useRef(false);
       const REVEAL = 72;
+      const ENGAGE = 26;                        // px of horizontal travel before the row follows the finger
+      const LOCK = 12;                          // px before we decide scroll vs swipe
+      const RESIST = 0.28;                      // row moves at 28% of finger travel — very heavy
+      const OPEN_AT = REVEAL * 0.62;            // how far the row must travel to lock open
 
-      const begin = x => { start.current = x; moved.current = false; };
-      const move = x => {
-        if (start.current === null) return;
-        const delta = x - start.current + (open ? -REVEAL : 0);
-        if (Math.abs(delta) > 4) moved.current = true;
-        setDx(Math.max(-REVEAL, Math.min(0, delta)));
+      const begin = (x, y) => { startX.current = x; startY.current = y; axis.current = null; moved.current = false; };
+      const move = (x, y) => {
+        if (startX.current === null) return;
+        const adx = Math.abs(x - startX.current);
+        const ady = Math.abs(y - startY.current);
+        // Decide intent once movement is decisive: if mostly vertical, lock to scroll and bail.
+        if (axis.current === null && (adx > LOCK || ady > LOCK)) {
+          axis.current = adx > ady * 1.6 ? "h" : "v";
+        }
+        if (axis.current !== "h") return;       // vertical scroll — leave the row alone
+        moved.current = true;
+        // subtract the engage dead-zone, then apply resistance so the row lags the finger
+        const raw = x - startX.current + (open ? -REVEAL/RESIST : 0);
+        const past = raw < 0 ? Math.min(0, raw + ENGAGE) : Math.max(0, raw - ENGAGE);
+        setDx(Math.max(-REVEAL, Math.min(0, past * RESIST)));
       };
       const end = () => {
-        if (start.current === null) return;
-        start.current = null;
-        const shouldOpen = dx < -REVEAL/2;
+        if (startX.current === null) return;
+        startX.current = null; startY.current = null;
+        if (axis.current !== "h") { axis.current = null; return; }
+        axis.current = null;
+        const shouldOpen = dx < -OPEN_AT;
         setOpen(shouldOpen);
         setDx(shouldOpen ? -REVEAL : 0);
       };
@@ -446,11 +463,11 @@
           </div>
           {/* foreground row */}
           <div
-            onTouchStart={e=>begin(e.touches[0].clientX)}
-            onTouchMove={e=>move(e.touches[0].clientX)}
+            onTouchStart={e=>begin(e.touches[0].clientX, e.touches[0].clientY)}
+            onTouchMove={e=>move(e.touches[0].clientX, e.touches[0].clientY)}
             onTouchEnd={end}
             onClickCapture={e=>{ if (moved.current) { e.stopPropagation(); e.preventDefault(); moved.current=false; } }}
-            style={{ background:C.bg, transform:`translateX(${dx}px)`, transition: start.current===null?"transform 0.2s ease":"none", position:"relative", zIndex:1 }}>
+            style={{ background:C.bg, transform:`translateX(${dx}px)`, transition: startX.current===null?"transform 0.2s ease":"none", position:"relative", zIndex:1 }}>
             {children}
           </div>
         </div>
