@@ -397,6 +397,27 @@
       );
     }
 
+    // Quiet lime count pill. At rest it's just the number; tap to reveal an inline −/+ adjuster.
+    function CountPill({ value, onChange, min=0, max=999, step=1 }) {
+      const [open, setOpen] = useState(false);
+      if (!open) {
+        return (
+          <button onClick={()=>setOpen(true)} style={{
+            fontSize:13, fontWeight:700, color:C.accentDeep, background:C.accentTint,
+            border:"none", borderRadius:7, padding:"5px 11px", cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:-0.2,
+          }}>{value}</button>
+        );
+      }
+      const btn = dir => ({ width:28, height:28, background:"none", border:"none", fontSize:17, fontWeight:700, lineHeight:1, cursor:"pointer", fontFamily:"Inter,sans-serif", color: dir<0?C.textMuted:C.accent, display:"flex", alignItems:"center", justifyContent:"center" });
+      return (
+        <div style={{ display:"flex", alignItems:"center", gap:2, background:C.accentTint, borderRadius:8, padding:"0 2px" }}>
+          <button onClick={()=>onChange(Math.max(min, value-step))} style={btn(-1)}>−</button>
+          <span onClick={()=>setOpen(false)} style={{ fontSize:14, fontWeight:800, minWidth:26, textAlign:"center", color:C.accentDeep, cursor:"pointer", letterSpacing:-0.3 }}>{value}</span>
+          <button onClick={()=>onChange(Math.min(max, value+step))} style={btn(1)}>+</button>
+        </div>
+      );
+    }
+
     // Rounded-square check (rectangular to match bento language)
     function Toggle({ on, onClick, size=28 }) {
       return (
@@ -1716,7 +1737,7 @@
               if (h.key === "workout") return renderWorkoutHabitCard();
               if (h.key === "eartest") return renderEarTestCard();
               const stepper = h.countField
-                ? <NumberStepper value={data[h.countField]||0} onChange={v=>updateCount(h.countField, v)} />
+                ? <CountPill value={data[h.countField]||0} onChange={v=>updateCount(h.countField, v)} />
                 : null;
               return (
                 <HabitCard key={h.key}
