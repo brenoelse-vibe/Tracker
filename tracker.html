@@ -314,7 +314,10 @@
       workoutSessions: {}, customExercises: {}, exerciseOrder: {},
       hiddenPresets: {}, renamedPresets: {},
       todos: [],
+      restTimer: { promptOnCheck: true, defaultSec: 90, sound: true, vibrate: true, visual: true, custom: [] },
     };
+    const REST_PRESETS = [30, 90, 120, 180]; // 0:30 / 1:30 / 2:00 / 3:00
+    const fmtClock = s => `${Math.floor(s/60)}:${String(Math.max(0,s%60)).padStart(2,"0")}`;
 
     // ═══ SHARED STYLES (modern flat) ═════════════════════════════════════════
     const S = {
@@ -604,6 +607,12 @@
       const [chartExpandedFor, setChartExpandedFor] = useState(null); // exercise name
       const [chartMetric, setChartMetric] = useState("volume"); // volume | e1rm | top
       const [forcePicker, setForcePicker] = useState(false); // "back" to picker/breakdown even with a session
+      // Rest timer: endAt is an absolute epoch ms (survives lock/app-switch); duration for the progress bar.
+      const [restEndAt, setRestEndAt] = useState(null);
+      const [restDuration, setRestDuration] = useState(0);
+      const [restNow, setRestNow] = useState(Date.now());
+      const [restDone, setRestDone] = useState(false);   // briefly true when it hits zero (for pulse)
+      const [setPromptFor, setSetPromptFor] = useState(null); // "exId:idx" whose preset chooser is open
 
       // Todo tab state
       const [todoSheetOpen, setTodoSheetOpen] = useState(false);
@@ -683,7 +692,62 @@
         return () => { cancelled = true; };
       }, [activeTab]);
 
-      // ─── Derived values ─────────────────────────────────────────────────
+      // ─── Rest timer ─────────────────────────────────────────────────────
+      // Tick once per second while a timer is running; uses absolute endAt so it
+      // stays accurate across screen-lock / app-switch.
+      useEffect(() => {
+        if (!restEndAt) return;
+        const id = setInterval(() => setRestNow(Date.now()), 250);
+        return () => clearInterval(id);
+      }, [restEndAt]);
+
+      const restRemaining = restEndAt ? Math.max(0, Math.round((restEndAt - restNow)/1000)) : 0;
+
+      const fireRestAlert = () => {
+        const cfg = data.restTimer || DEFAULT_DATA.restTimer;
+        if (cfg.vibrate && navigator.vibrate) { try { navigator.vibrate([200,100,200]); } catch(e){} }
+        if (cfg.sound) {
+          try {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            const ac = new Ctx();
+            [0, 0.25].forEach(t => {
+              const o = ac.createOscillator(), g = ac.createGain();
+              o.frequency.value = 880; o.connect(g); g.connect(ac.destination);
+              g.gain.setValueAtTime(0.0001, ac.currentTime + t);
+              g.gain.exponentialRampToValueAtTime(0.4, ac.currentTime + t + 0.02);
+              g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + t + 0.2);
+              o.start(ac.currentTime + t); o.stop(ac.currentTime + t + 0.22);
+            });
+          } catch(e) {}
+        }
+      };
+
+      // Detect the moment the timer crosses zero.
+      useEffect(() => {
+        if (restEndAt && restRemaining === 0) {
+          fireRestAlert();
+          setRestEndAt(null);
+          const cfg = data.restTimer || DEFAULT_DATA.restTimer;
+          if (cfg.visual) {
+            setRestDone(true);
+            const t = setTimeout(() => setRestDone(false), 2500);
+            return () => clearTimeout(t);
+          }
+        }
+      }, [restRemaining, restEndAt]);
+
+      const startRest = sec => { setRestDone(false); setRestDuration(sec); setRestEndAt(Date.now() + sec*1000); setSetPromptFor(null); };
+      const addRest   = sec => { if (restEndAt) { setRestEndAt(restEndAt + sec*1000); setRestDuration(d => d + sec); } };
+      // Record rest seconds on a specific set, then (if >0) start the countdown.
+      const chooseRest = (exId, idx, sec) => {
+        mapExercises(e => e.id===exId
+          ? { ...e, sets: e.sets.map((st,i) => i===idx ? { ...st, rest: sec } : st) }
+          : e);
+        setSetPromptFor(null);
+        if (sec > 0) startRest(sec); else setRestDone(false);
+      };
+      const skipRest  = () => { setRestEndAt(null); setRestDone(false); };
+
       const hiddenBuiltins = data.hiddenBuiltins || [];
       const activeBuiltins = BUILTIN_HABITS.filter(h => !hiddenBuiltins.includes(h.key));
 
@@ -757,6 +821,7 @@
       };
 
       const updateCount = (field, val) => update({ [field]: val });
+      const updateRestTimer = patch => update({ restTimer: { ...(data.restTimer||DEFAULT_DATA.restTimer), ...patch } });
 
       const addCustomHabit = () => {
         const name = newHabitName.trim();
@@ -898,21 +963,37 @@
           : e);
 
       // Toggle a single set's done flag; exercise.done auto-syncs to "all sets done".
-      const toggleSetDone = (exId, idx) => mapExercises(e => {
-        if (e.id !== exId) return e;
-        const sets = e.sets.map((st,i) => i===idx ? { ...st, done: !st.done } : st);
-        const allDone = sets.length > 0 && sets.every(st => st.done);
-        return { ...e, sets, done: allDone };
-      });
+      const toggleSetDone = (exId, idx) => {
+        let wasDone = false;
+        const cur = (data.workoutSessions||{})[today];
+        const ex = cur && cur.exercises.find(e => e.id===exId);
+        if (ex && ex.sets[idx]) wasDone = !!ex.sets[idx].done;
+        mapExercises(e => {
+          if (e.id !== exId) return e;
+          const sets = e.sets.map((st,i) => i===idx ? { ...st, done: !st.done } : st);
+          const allDone = sets.length > 0 && sets.every(st => st.done);
+          return { ...e, sets, done: allDone };
+        });
+        // Just checked a set ON → offer the rest-timer presets (if enabled in settings).
+        const cfg = data.restTimer || DEFAULT_DATA.restTimer;
+        if (!wasDone && cfg.promptOnCheck) setSetPromptFor(`${exId}:${idx}`);
+      };
+
+      // Most recent prior session's raw exercise object (unfiltered sets) for this exercise.
+      const getPreviousExercise = exName => {
+        const sessions = data.workoutSessions || {};
+        const dates = Object.keys(sessions).filter(d => d < today && (data.logs||{})[d] && data.logs[d].workout).sort();
+        for (let i = dates.length - 1; i >= 0; i--) {
+          const ex = (sessions[dates[i]].exercises || []).find(e => e.name === exName && (e.sets||[]).length > 0);
+          if (ex) return ex;
+        }
+        return null;
+      };
 
       // Look up the same set index from this exercise's most recent prior session.
       const getPreviousSet = (exName, idx) => {
-        const hist = getExerciseHistory(exName);
-        if (hist.length === 0) return null;
-        // most recent session strictly before today (or today's own prior data excluded)
-        const prior = hist.filter(h => h.date < today);
-        const ref = (prior.length ? prior : hist)[ (prior.length ? prior : hist).length - 1 ];
-        return ref && ref.sets[idx] ? ref.sets[idx] : null;
+        const ex = getPreviousExercise(exName);
+        return ex && ex.sets[idx] ? ex.sets[idx] : null;
       };
 
       const updateExerciseNotes = (exId, notes) => mapExercises(e =>
@@ -1172,7 +1253,7 @@
         });
 
         // ─── SHEET 2: Workout Sets (exploded) ─────────────────────────
-        const setsHeader = ["Date", "Day of Week", "Workout Type", "Exercise", "Order", "Set #", "Weight (lb)", "Reps", "Exercise Done", "Notes"];
+        const setsHeader = ["Date", "Day of Week", "Workout Type", "Exercise", "Order", "Set #", "Weight (lb)", "Reps", "Rest (s)", "Set Done", "Exercise Done", "Notes"];
         const setsRows = [setsHeader];
         const sessions = data.workoutSessions || {};
         Object.keys(sessions).sort().forEach(d => {
@@ -1184,13 +1265,15 @@
             if (!ex.sets || ex.sets.length === 0) {
               // include exercises even if no sets logged, so they show up
               if (ex.done || ex.notes) {
-                setsRows.push([d, dow, typeLabel, ex.name, exIdx+1, "", "", "", ex.done?"Yes":"", ex.notes||""]);
+                setsRows.push([d, dow, typeLabel, ex.name, exIdx+1, "", "", "", "", "", ex.done?"Yes":"", ex.notes||""]);
               }
             } else {
               ex.sets.forEach((set, setIdx) => {
                 setsRows.push([
                   d, dow, typeLabel, ex.name, exIdx+1, setIdx+1,
                   set.weight || 0, set.reps || 0,
+                  (set.rest ?? "") === "" ? "" : set.rest,
+                  set.done ? "Yes" : "",
                   ex.done ? "Yes" : "",
                   setIdx === 0 ? (ex.notes||"") : "",
                 ]);
@@ -1528,6 +1611,40 @@
         display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2,
         position:"relative",
       });
+
+      // Floating rest countdown — pinned just above the bottom nav.
+      const renderRestBar = () => {
+        if (!restEndAt && !restDone) return null;
+        const remaining = restRemaining;
+        const progress = restDuration > 0 ? Math.max(0, Math.min(1, remaining/restDuration)) : 0;
+        return (
+          <div style={{
+            position:"fixed", left:10, right:10, zIndex:101,
+            bottom:"calc(78px + env(safe-area-inset-bottom, 0px))",
+            maxWidth:410, margin:"0 auto",
+            display:"flex", alignItems:"center", gap:12,
+            background: restDone ? C.accentBright : C.ink,
+            borderRadius:14, padding:"12px 14px",
+            transition:"background 0.3s ease",
+          }}>
+            {restDone ? (
+              <div style={{ flex:1, color:"#fff", fontSize:15, fontWeight:800, letterSpacing:-0.3 }}>Rest done 💪</div>
+            ) : (
+              <>
+                <div style={{ minWidth:54 }}>
+                  <div style={{ fontSize:22, fontWeight:800, color:"#fff", letterSpacing:-0.5, fontVariantNumeric:"tabular-nums", lineHeight:1 }}>{fmtClock(remaining)}</div>
+                  <div style={{ fontSize:10, color:"rgba(255,255,255,0.6)", fontWeight:600, marginTop:2 }}>Rest</div>
+                </div>
+                <div style={{ flex:1, height:4, background:"rgba(255,255,255,0.18)", borderRadius:2, overflow:"hidden" }}>
+                  <div style={{ height:"100%", width:`${progress*100}%`, background:C.accentBright, borderRadius:2, transition:"width 0.25s linear" }} />
+                </div>
+                <button onClick={()=>addRest(15)} style={{ background:"rgba(255,255,255,0.14)", border:"none", color:"#fff", fontSize:11, fontWeight:700, borderRadius:8, padding:"7px 10px", cursor:"pointer", fontFamily:"Inter,sans-serif" }}>+15s</button>
+                <button onClick={skipRest} style={{ background:"rgba(255,255,255,0.14)", border:"none", color:"#fff", fontSize:11, fontWeight:700, borderRadius:8, padding:"7px 10px", cursor:"pointer", fontFamily:"Inter,sans-serif" }}>Skip</button>
+              </>
+            )}
+          </div>
+        );
+      };
 
       const renderTabs = () => (
         <div style={{
@@ -1913,6 +2030,63 @@
         );
       };
 
+      // Inline rest-preset chooser, shown right after a set is checked.
+      const renderRestPrompt = (exId, idx, exName) => {
+        if (setPromptFor !== `${exId}:${idx}`) return null;
+        const cfg = data.restTimer || DEFAULT_DATA.restTimer;
+        const presets = [...REST_PRESETS, ...((cfg.custom||[]).filter(n => n > 0))];
+        const prevSet = getPreviousSet(exName, idx);
+        const prevRest = prevSet && typeof prevSet.rest === "number" ? prevSet.rest : null;
+
+        const Btn = ({ sec, isZero }) => {
+          const isDefault = !isZero && sec === cfg.defaultSec;
+          const isPrev = prevRest !== null && sec === prevRest;
+          return (
+            <button onClick={()=>chooseRest(exId, idx, sec)} title={isZero?"No rest (logs 0s)":undefined} style={{
+              position:"relative",
+              background: isDefault ? C.accentTint : C.fieldBg,
+              border: isPrev ? `1.5px solid ${C.accentBright}` : "1.5px solid transparent",
+              borderRadius:10, padding:"10px 18px", fontSize:14, fontWeight:800, minWidth:64,
+              color: isZero ? C.mutedGray : (isDefault ? C.accentDeep : C.text),
+              cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:-0.3,
+            }}>
+              {isZero ? "0" : fmtClock(sec)}
+              {isPrev && <span style={{ position:"absolute", top:-5, right:-5, width:15, height:15, borderRadius:"50%", background:C.accentBright, color:"#fff", fontSize:8, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center", border:`1.5px solid ${C.surface}` }} title="Last time's rest">↺</span>}
+            </button>
+          );
+        };
+
+        // Build a centered pyramid: timed presets sorted largest→smallest fill rows that
+        // taper downward; the "0" (no-rest) button is always the single bottom tip.
+        const sorted = [...presets].sort((a,b)=>b-a);
+        let rows = [];
+        if (sorted.length <= 4 && sorted.length > 0) {
+          rows = [sorted];                 // single centered row for few presets
+        } else {
+          let start = 0, w = Math.ceil(sorted.length/2) ; // top row a touch wider
+          // step down by one each row
+          while (start < sorted.length) {
+            const take = Math.min(w, sorted.length - start);
+            rows.push(sorted.slice(start, start+take));
+            start += take; w = Math.max(1, take - 1);
+          }
+        }
+
+        return (
+          <div style={{ padding:"6px 0 14px" }}>
+            <div style={{ fontSize:11, fontWeight:800, letterSpacing:0.4, textTransform:"uppercase", color:C.mutedGray, textAlign:"center", marginBottom:10 }}>Rest</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:8, alignItems:"center" }}>
+              {rows.map((row,ri) => (
+                <div key={ri} style={{ display:"flex", gap:8, justifyContent:"center" }}>
+                  {row.map(sec => <Btn key={sec} sec={sec} />)}
+                </div>
+              ))}
+              <Btn sec={0} isZero />
+            </div>
+          </div>
+        );
+      };
+
       const renderExerciseCard = (ex, exIdx) => {
         const isRenaming = editingExercise && editingExercise.id === ex.id;
         const total = todaySession.exercises.length;
@@ -1920,10 +2094,13 @@
         const chartOpen = chartExpandedFor === ex.name;
 
         // Trend: change in top-set weight between the two most recent prior sessions.
+        // Only meaningful for weighted lifts with ≥2 sessions and an actual change.
         const hist = getExerciseHistory(ex.name).filter(h => h.date < today);
         let trend = null;
-        if (hist.length >= 2) trend = hist[hist.length-1].top - hist[hist.length-2].top;
-        else if (hist.length === 1) trend = 0;
+        if (hist.length >= 2) {
+          const delta = hist[hist.length-1].top - hist[hist.length-2].top;
+          if (delta !== 0) trend = delta;
+        }
 
         return (
           <div key={ex.id} style={{ padding:"18px 0", borderBottom:`1px solid ${C.hair}` }}>
@@ -1942,8 +2119,8 @@
               </div>
               <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
                 {trend !== null && (
-                  <span style={{ fontSize:13, fontWeight:700, color: trend>0?C.accentDeep : trend<0?C.red : C.mutedGray, display:"inline-flex", alignItems:"center", gap:2 }}>
-                    {trend>0?"↑":trend<0?"↓":""}{trend>0?"+":""}{trend}
+                  <span style={{ fontSize:13, fontWeight:700, color: trend>0?C.accentDeep:C.red, display:"inline-flex", alignItems:"center", gap:2 }}>
+                    {trend>0?"↑":"↓"}{trend>0?"+":""}{trend}
                   </span>
                 )}
                 <ReorderArrows
@@ -1951,10 +2128,20 @@
                   onDown={()=>moveExercise(ex.id,1)}
                   canUp={exIdx>0}
                   canDown={exIdx<total-1} />
+                <button onClick={()=>startRest((data.restTimer||DEFAULT_DATA.restTimer).defaultSec)} title="Start rest timer"
+                  style={{ width:30, height:30, borderRadius:9, background:C.fieldBg, border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="13" r="8" stroke={C.accentDeep} strokeWidth="2"/>
+                    <path d="M12 9.5V13l2.4 1.4" stroke={C.accentDeep} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M9.5 2.5h5" stroke={C.accentDeep} strokeWidth="2" strokeLinecap="round"/>
+                  </svg>
+                </button>
                 <button onClick={()=>setChartExpandedFor(chartOpen ? null : ex.name)} title="Progress chart"
                   style={{ width:30, height:30, borderRadius:9, background: chartOpen?C.accentBright:C.fieldBg, border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-                    <path d="M3 17l4-4 3 3 5-6 4 4" stroke={chartOpen?"#fff":C.accentDeep} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <rect x="4" y="13" width="3.4" height="7" rx="1.3" fill={chartOpen?"#fff":C.accentDeep}/>
+                    <rect x="10.3" y="9" width="3.4" height="11" rx="1.3" fill={chartOpen?"#fff":C.accentDeep}/>
+                    <rect x="16.6" y="5" width="3.4" height="15" rx="1.3" fill={chartOpen?"#fff":C.accentDeep}/>
                   </svg>
                 </button>
               </div>
@@ -1970,7 +2157,12 @@
                   <span style={{ textAlign:"center" }}>Reps</span>
                   <span style={{ textAlign:"center" }}>✓</span>
                 </div>
-                {ex.sets.map((st, idx) => renderSetRow(ex.id, ex.name, st, idx))}
+                {ex.sets.map((st, idx) => (
+                  <React.Fragment key={idx}>
+                    {renderSetRow(ex.id, ex.name, st, idx)}
+                    {renderRestPrompt(ex.id, idx, ex.name)}
+                  </React.Fragment>
+                ))}
               </>
             )}
 
@@ -2925,9 +3117,66 @@
         </SectionDivider>
       );
 
-      const renderSettingsTab = () => (
+      const renderSettingsTab = () => {
+        const rt = data.restTimer || DEFAULT_DATA.restTimer;
+        const SettingToggle = ({ label, sub, on, onClick }) => (
+          <div style={{ display:"flex", alignItems:"center", gap:12, padding:"14px 0", borderBottom:`1px solid ${C.hair}` }}>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:15, fontWeight:600, color:C.text, letterSpacing:-0.2 }}>{label}</div>
+              {sub && <div style={{ fontSize:12, color:C.mutedGray, fontWeight:500, marginTop:2 }}>{sub}</div>}
+            </div>
+            <div onClick={onClick} style={{
+              width:46, height:28, borderRadius:14, background: on?C.accentBright:C.border, flexShrink:0,
+              position:"relative", cursor:"pointer", transition:"background 0.2s ease",
+            }}>
+              <div style={{ position:"absolute", top:3, left: on?21:3, width:22, height:22, borderRadius:"50%", background:"#fff", transition:"left 0.2s ease" }} />
+            </div>
+          </div>
+        );
+        return (
         <div style={S.bodyPad}>
-          <div style={S.sectionLabel}>Adjust current progress</div>
+          <div style={S.sectionLabel}>Rest timer</div>
+          <SettingToggle label="Prompt after each set" sub="Show rest options when you check a set" on={rt.promptOnCheck} onClick={()=>updateRestTimer({ promptOnCheck: !rt.promptOnCheck })} />
+          <div style={{ display:"flex", alignItems:"center", gap:12, padding:"14px 0", borderBottom:`1px solid ${C.hair}` }}>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:15, fontWeight:600, color:C.text, letterSpacing:-0.2 }}>Default rest</div>
+              <div style={{ fontSize:12, color:C.mutedGray, fontWeight:500, marginTop:2 }}>Used by the timer button & highlighted preset</div>
+            </div>
+            <div style={{ display:"flex", gap:6 }}>
+              {REST_PRESETS.map(sec => (
+                <button key={sec} onClick={()=>updateRestTimer({ defaultSec: sec })} style={{
+                  background: sec===rt.defaultSec?C.accent:C.fieldBg, border:"none", borderRadius:8,
+                  color: sec===rt.defaultSec?"#fff":C.text, fontSize:12, fontWeight:700, padding:"7px 9px", cursor:"pointer", fontFamily:"Inter,sans-serif",
+                }}>{fmtClock(sec)}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:12, padding:"14px 0", borderBottom:`1px solid ${C.hair}` }}>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:15, fontWeight:600, color:C.text, letterSpacing:-0.2 }}>Custom rest buttons</div>
+              <div style={{ fontSize:12, color:C.mutedGray, fontWeight:500, marginTop:2 }}>Up to 2 extra presets, in seconds (0 = off)</div>
+            </div>
+            <div style={{ display:"flex", gap:6 }}>
+              {[0,1].map(slot => {
+                const val = (rt.custom||[])[slot] || 0;
+                return (
+                  <input key={slot} type="number" min="0" max="900" value={val || ""} placeholder="–"
+                    onChange={e=>{
+                      const next = [ ...(rt.custom||[]) ];
+                      while (next.length < 2) next.push(0);
+                      next[slot] = parseInt(e.target.value) || 0;
+                      updateRestTimer({ custom: next });
+                    }}
+                    style={{ width:56, textAlign:"center", background:C.fieldBg, border:"none", borderRadius:8, padding:"8px 4px", fontSize:14, fontWeight:700, color:C.text, fontFamily:"Inter,sans-serif", outline:"none" }} />
+                );
+              })}
+            </div>
+          </div>
+          <SettingToggle label="Sound alert" sub="Beep when rest ends" on={rt.sound} onClick={()=>updateRestTimer({ sound: !rt.sound })} />
+          <SettingToggle label="Vibrate" sub="Not supported on iPhone — Android only" on={rt.vibrate} onClick={()=>updateRestTimer({ vibrate: !rt.vibrate })} />
+          <SettingToggle label="Visual pulse" sub="Flash the timer bar at zero" on={rt.visual} onClick={()=>updateRestTimer({ visual: !rt.visual })} />
+
+          <div style={{ ...S.sectionLabel, marginTop:24 }}>Adjust current progress</div>
 
           <div style={S.card}>
             <div style={{ fontSize:14, fontWeight:700, color:C.text, marginBottom:4, letterSpacing:-0.2 }}>🎧 Pimsleur</div>
@@ -3085,7 +3334,8 @@
             <button onClick={resetAllData} style={S.dangerBtn}>Reset all data</button>
           </SectionDivider>
         </div>
-      );
+        );
+      };
 
       // ─── Root render ────────────────────────────────────────────────────
       return (
@@ -3100,6 +3350,7 @@
           {activeTab === "settings" && renderSettingsTab()}
           {renderTodoFAB()}
           {renderAddSheet()}
+          {renderRestBar()}
           {renderTabs()}
         </div>
       );
