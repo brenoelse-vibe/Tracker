@@ -197,22 +197,11 @@
     const HEAT = { 0:"#eef2ec", 1:"#d6eebc", 2:"#aadd76", 3:"#7ac943", 4:"#4a8f2f", future:"#ffffff" };
     const MONTH_LABELS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-    const MILESTONES = [
-      { month:1, label:"Month 1",    pimsleur:30,  comprehension:60, innerFrench:12 },
-      { month:2, label:"Month 2",    pimsleur:60,  comprehension:75, innerFrench:24 },
-      { month:3, label:"Month 3",    pimsleur:90,  comprehension:85, innerFrench:36 },
-      { month:6, label:"Exam Ready", pimsleur:180, comprehension:95, innerFrench:72 },
+    const BUILTIN_HABITS = [
+      { key:"workout", emoji:"🏋️", label:"Workout", sublabelFn:()=>"Gym, cardio, recovery…" },
     ];
 
     const EMOJI_PRESETS = ["📌","📚","✍️","💪","🧘","🏃","🚴","🥗","💧","☕","🌱","💊","🧠","💤","🎵","🎨","💼","💰","🙏","❤️","🌅","📖"];
-
-    const BUILTIN_HABITS = [
-      { key:"pimsleur",    emoji:"🎧", label:"Pimsleur",    countField:"pimsleurTotal",    sublabelFn:d=>`Logging lesson ${d.pimsleurTotal||0}` },
-      { key:"anki",        emoji:"🃏", label:"Flash cards", sublabelFn:()=>"20 new cards + reviews" },
-      { key:"innerFrench", emoji:"🎙️", label:"Inner French", countField:"innerFrenchTotal", sublabelFn:d=>`Logging episode ${d.innerFrenchTotal||0}` },
-      { key:"workout",     emoji:"🏋️", label:"Workout",     sublabelFn:()=>"Gym, cardio, recovery…" },
-      { key:"eartest",     emoji:"👂", label:"Ear Test",    sublabelFn:()=>"Inner French audio-only %" },
-    ];
 
     const WORKOUT_TYPES = [
       { key:"push",     label:"Push",     emoji:"👋" },
@@ -308,13 +297,13 @@
     ];
 
     const DEFAULT_DATA = {
-      startDate: "", logs: {}, comprehensionLog: [],
-      pimsleurTotal: 14, innerFrenchTotal: 2,
+      startDate: "", logs: {},
       customHabits: [], hiddenBuiltins: [], habitOrder: [],
       workoutSessions: {}, customExercises: {}, exerciseOrder: {},
       hiddenPresets: {}, renamedPresets: {},
       todos: [],
       restTimer: { promptOnCheck: true, defaultSec: 90, sound: true, vibrate: true, visual: true, custom: [] },
+      userName: "",
     };
     const REST_PRESETS = [30, 90, 120, 180]; // 0:30 / 1:30 / 2:00 / 3:00
     const fmtClock = s => `${Math.floor(s/60)}:${String(Math.max(0,s%60)).padStart(2,"0")}`;
@@ -348,10 +337,9 @@
       return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
     };
     const pct = (cur, tgt) => Math.min(100, Math.round((cur/tgt)*100));
-    const blankLog = () => ({ pimsleur:false, anki:false, innerFrench:false, workout:null, comprehension:"" });
+    const blankLog = () => ({ workout:null });
     const hasAnyHabit = (log, customs) => !!log && (
-      log.pimsleur || log.anki || log.innerFrench || log.workout ||
-      (customs||[]).some(h => log[h.key])
+      log.workout || (customs||[]).some(h => log[h.key])
     );
 
     function getExercisesForType(data, typeKey) {
@@ -388,40 +376,6 @@
     }
 
     // ═══ REUSABLE COMPONENTS ═════════════════════════════════════════════════
-
-    function NumberStepper({ value, onChange, min=0, max=999, step=1 }) {
-      const btn = { width:26, height:26, background:C.fieldBg, border:"none", borderRadius:8, fontSize:15, cursor:"pointer", fontFamily:"Inter,sans-serif", lineHeight:1, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center" };
-      return (
-        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-          <button onClick={()=>onChange(Math.max(min, value-step))} style={{ ...btn, color:C.textMuted }}>−</button>
-          <input type="number" value={value} min={min} max={max}
-            onChange={e=>{ const v=parseInt(e.target.value); if(!isNaN(v)) onChange(Math.min(max,Math.max(min,v))); }}
-            style={{ width:30, textAlign:"center", border:"none", background:"none", fontSize:14, fontWeight:700, color:C.text, fontFamily:"Inter,sans-serif", padding:0, letterSpacing:-0.3 }} />
-          <button onClick={()=>onChange(Math.min(max, value+step))} style={{ ...btn, color:C.accent }}>+</button>
-        </div>
-      );
-    }
-
-    // Quiet lime count pill. At rest it's just the number; tap to reveal an inline −/+ adjuster.
-    function CountPill({ value, onChange, min=0, max=999, step=1 }) {
-      const [open, setOpen] = useState(false);
-      if (!open) {
-        return (
-          <button onClick={()=>setOpen(true)} style={{
-            fontSize:13, fontWeight:700, color:C.accentDeep, background:C.accentTint,
-            border:"none", borderRadius:7, padding:"5px 11px", cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:-0.2,
-          }}>{value}</button>
-        );
-      }
-      const btn = dir => ({ width:28, height:28, background:"none", border:"none", fontSize:17, fontWeight:700, lineHeight:1, cursor:"pointer", fontFamily:"Inter,sans-serif", color: dir<0?C.textMuted:C.accent, display:"flex", alignItems:"center", justifyContent:"center" });
-      return (
-        <div style={{ display:"flex", alignItems:"center", gap:2, background:C.accentTint, borderRadius:8, padding:"0 2px" }}>
-          <button onClick={()=>onChange(Math.max(min, value-step))} style={btn(-1)}>−</button>
-          <span onClick={()=>setOpen(false)} style={{ fontSize:14, fontWeight:800, minWidth:26, textAlign:"center", color:C.accentDeep, cursor:"pointer", letterSpacing:-0.3 }}>{value}</span>
-          <button onClick={()=>onChange(Math.min(max, value+step))} style={btn(1)}>+</button>
-        </div>
-      );
-    }
 
     // Rounded-square check (rectangular to match bento language)
     function Toggle({ on, onClick, size=28 }) {
@@ -593,7 +547,6 @@
       const [saved, setSaved] = useState(false);
 
       // UI flags
-      const [showCompForm, setShowCompForm] = useState(false);
       const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
       const [editingDate, setEditingDate] = useState(null);
       const [newHabitName, setNewHabitName] = useState("");
@@ -621,6 +574,7 @@
       const [todoPriorityOpen, setTodoPriorityOpen] = useState(false);
       const [todoSwipedId, setTodoSwipedId] = useState(null);
       const [todoExpandedId, setTodoExpandedId] = useState(null);
+      const [showAllCompleted, setShowAllCompleted] = useState(false);
       const [todoEditing, setTodoEditing] = useState(null); // {id, field: 'title'|'date'|'priority'|'notes'}
 
       const yearScrollRef = useRef(null);
@@ -665,13 +619,9 @@
       // ─── Sync local todayLog when viewDate changes ──────────────────────
       useEffect(() => {
         const existing = data.logs[viewDate];
-        const compEntry = (data.comprehensionLog||[]).find(e => e.date===viewDate);
-        setTodayLog(existing
-          ? { ...existing, comprehension: compEntry ? String(compEntry.value) : (existing.comprehension||"") }
-          : { ...blankLog(), comprehension: compEntry ? String(compEntry.value) : "" });
-        setShowCompForm(false);
+        setTodayLog(existing ? { ...existing } : { ...blankLog() });
         setShowWorkoutPicker(false);
-      }, [viewDate, data.logs, data.comprehensionLog]);
+      }, [viewDate, data.logs]);
 
       // ─── Year tab auto-scroll ───────────────────────────────────────────
       useEffect(() => {
@@ -782,11 +732,6 @@
         return Math.floor((now - start) / 86400000) + 1;
       }, []);
 
-      const lastComp = useMemo(() => {
-        const log = (data.comprehensionLog||[]).slice().sort((a,b) => a.date.localeCompare(b.date));
-        return log.length ? log[log.length-1].value : null;
-      }, [data.comprehensionLog]);
-
       const selectedWorkout = WORKOUT_TYPES.find(w => w.key === todayLog.workout);
       const todaySession = (data.workoutSessions||{})[today] || null;
 
@@ -804,23 +749,6 @@
         setShowWorkoutPicker(false);
       };
 
-      const logComprehension = () => {
-        const val = parseInt(todayLog.comprehension);
-        if (isNaN(val) || val<0 || val>100) return;
-        update({
-          logs: { ...data.logs, [viewDate]: todayLog },
-          comprehensionLog: [...(data.comprehensionLog||[]).filter(e=>e.date!==viewDate), { date:viewDate, value:val }],
-        });
-        setShowCompForm(false);
-      };
-
-      const clearComprehension = () => {
-        update({ comprehensionLog: (data.comprehensionLog||[]).filter(e => e.date!==viewDate) });
-        setTodayLog({ ...todayLog, comprehension:"" });
-        setShowCompForm(false);
-      };
-
-      const updateCount = (field, val) => update({ [field]: val });
       const updateRestTimer = patch => update({ restTimer: { ...(data.restTimer||DEFAULT_DATA.restTimer), ...patch } });
 
       const addCustomHabit = () => {
@@ -883,10 +811,7 @@
       const deleteDay = date => {
         const newLogs = { ...data.logs };
         delete newLogs[date];
-        update({
-          logs: newLogs,
-          comprehensionLog: (data.comprehensionLog||[]).filter(e => e.date!==date),
-        });
+        update({ logs: newLogs });
         if (date === today) setTodayLog(blankLog());
         setEditingDate(null);
       };
@@ -1195,8 +1120,6 @@
         }
 
         const customs = data.customHabits || [];
-        const compByDate = {};
-        (data.comprehensionLog||[]).forEach(e => { compByDate[e.date] = e.value; });
 
         const dateFmt = (key) => {
           const d = new Date(key+"T12:00:00");
@@ -1205,29 +1128,18 @@
 
         // ─── SHEET 1: Daily Logs ─────────────────────────────────────
         const dailyRows = [];
-        const builtinCols = [
-          { key: "pimsleur",    label: "Pimsleur" },
-          { key: "anki",        label: "Anki" },
-          { key: "innerFrench", label: "Inner French" },
-        ];
         const dailyHeader = [
           "Date", "Day of Week", "ISO Week",
-          ...builtinCols.map(c => c.label),
           "Workout Type",
           ...customs.map(h => h.label),
-          "Ear Test %",
           "Habits Logged", "Total Habits",
         ];
         dailyRows.push(dailyHeader);
 
         const allActiveCount = (() => {
-          // count of habits that are "active" for any given day in the past
-          // simplified: use current built-ins + customs minus hidden
           const hb = (data.hiddenBuiltins||[]);
-          const builtinActive = builtinCols.filter(c => !hb.includes(c.key)).length;
           const workoutActive = hb.includes("workout") ? 0 : 1;
-          const eartestActive = hb.includes("eartest") ? 0 : 1;
-          return builtinActive + customs.length + workoutActive + eartestActive;
+          return customs.length + workoutActive;
         })();
 
         Object.keys(data.logs).sort().forEach(d => {
@@ -1236,18 +1148,12 @@
           const dow = date.toLocaleDateString("en-US",{weekday:"long"});
           const wk = getISOWeek(date);
           const logged =
-            (l.pimsleur?1:0) + (l.anki?1:0) + (l.innerFrench?1:0) +
             (l.workout?1:0) +
-            (compByDate[d] !== undefined ? 1 : 0) +
             customs.reduce((sum,h)=>sum+(l[h.key]?1:0), 0);
           dailyRows.push([
             d, dow, wk,
-            l.pimsleur ? "Yes" : "",
-            l.anki ? "Yes" : "",
-            l.innerFrench ? "Yes" : "",
             l.workout || "",
             ...customs.map(h => l[h.key] ? "Yes" : ""),
-            compByDate[d] !== undefined ? compByDate[d] : "",
             logged, allActiveCount,
           ]);
         });
@@ -1322,10 +1228,6 @@
           ["Day of year", dayCount],
           ["ISO week", getISOWeek(new Date())],
           [],
-          ["Pimsleur lesson", data.pimsleurTotal || 0],
-          ["Inner French episode", data.innerFrenchTotal || 0],
-          ["Latest Ear Test %", lastComp ?? ""],
-          [],
           ["Days logged", Object.keys(data.logs||{}).length],
           ["Workout sessions logged", Object.keys(data.workoutSessions||{}).length],
           ["Active todos", (data.todos||[]).filter(t=>!t.done).length],
@@ -1365,7 +1267,6 @@
         if (user && window.__firebase) window.__firebase.saveData(user.uid, fresh);
         setData(fresh);
         setTodayLog(blankLog());
-        setShowCompForm(false);
         setShowWorkoutPicker(false);
         setSaved(true);
         setTimeout(() => setSaved(false), 1500);
@@ -1385,14 +1286,14 @@
           const log = data.logs[dateKey];
           const customCount = log ? (data.customHabits||[]).filter(h => log[h.key]).length : 0;
           const count = log
-            ? (log.pimsleur?1:0)+(log.anki?1:0)+(log.innerFrench?1:0)+(log.workout?1:0)+customCount
+            ? (log.workout?1:0)+customCount
             : 0;
           const d = cursor.getDate(), m = cursor.getMonth();
           current.push({
             date: dateKey, count, month: m, day: d, year: cursor.getFullYear(),
             isFuture: cursor > todayDate,
             isToday: dateKey === today,
-            hasFrench: log ? !!(log.pimsleur||log.anki||log.innerFrench||customCount>0) : false,
+            hasHabit: log ? customCount>0 : false,
             hasWorkout: log ? !!log.workout : false,
             label: (d===1 && m===0) ? String(cursor.getFullYear()).slice(2) : ([1,10,20,30].includes(d) ? String(d) : ""),
           });
@@ -1413,7 +1314,7 @@
 
       const heatColor = cell => {
         if (cell.isFuture) return HEAT.future;
-        if (cell.hasWorkout && !cell.hasFrench) return C.workoutOnly;
+        if (cell.hasWorkout && !cell.hasHabit) return C.workoutOnly;
         return HEAT[Math.min(cell.count, 4)] || HEAT[0];
       };
 
@@ -1421,7 +1322,7 @@
         const logs = Object.values(data.logs);
         return {
           active: logs.filter(l => hasAnyHabit(l, data.customHabits)).length,
-          full: logs.filter(l => l.pimsleur && l.anki && l.innerFrench && (data.customHabits||[]).every(h => l[h.key])).length,
+          full: logs.filter(l => l.workout && (data.customHabits||[]).length > 0 && (data.customHabits||[]).every(h => l[h.key])).length,
           workouts: logs.filter(l => l.workout).length,
         };
       }, [data.logs, data.customHabits]);
@@ -1727,49 +1628,10 @@
         );
       };
 
-      const renderEarTestCard = () => {
-        const compEntry = (data.comprehensionLog||[]).find(e => e.date===viewDate);
-        const isLogged = !!compEntry;
-        return (
-          <div key="eartest">
-            <div style={{
-              display:"grid", gridTemplateColumns:"30px 1fr auto auto", alignItems:"center", gap:15,
-              padding: isLogged ? "16px 0 16px 18px" : "16px 0",
-              marginLeft: isLogged ? -22 : 0,
-              borderLeft: isLogged ? `4px solid ${C.accentBright}` : "none",
-              borderBottom:`1px solid ${C.hair}`,
-            }}>
-              <div style={{ fontSize:23, textAlign:"center" }}>👂</div>
-              <div style={{ minWidth:0 }}>
-                <div style={{ fontSize:17, fontWeight: isLogged?700:600, color:C.text, letterSpacing:-0.3 }}>Ear Test</div>
-                <div style={{ color:C.mutedGray, fontSize:13, marginTop:2, fontWeight:500 }}>
-                  {isLogged ? `${compEntry.value}% comprehension` : "Inner French audio-only %"}
-                </div>
-              </div>
-              <button onClick={()=>{ if (isLogged) clearComprehension(); else setShowCompForm(!showCompForm); }}
-                style={ isLogged ? S.pillBtnOn : S.pillBtn }>{isLogged ? "CLEAR" : "LOG"}</button>
-              <div style={{ width:0 }} />
-            </div>
-            {showCompForm && !isLogged && (
-              <div style={{ padding:"4px 0 14px", display:"flex", gap:8 }}>
-                <input type="number" min="0" max="100" value={todayLog.comprehension}
-                  onChange={e=>setTodayLog({ ...todayLog, comprehension: e.target.value })}
-                  placeholder="e.g. 65"
-                  style={{ ...S.input, flex:1, fontSize:16, padding:"8px 12px" }} />
-                <button onClick={logComprehension} style={{ ...S.primaryBtn, padding:"8px 16px" }}>SAVE</button>
-              </div>
-            )}
-          </div>
-        );
-      };
-
       const renderDayHero = () => {
         // Today completion ring
         const totalToday = allActiveHabits.length;
-        const doneToday = allActiveHabits.filter(h => {
-          if (h.key === "eartest") return !!(data.comprehensionLog||[]).find(e => e.date === today);
-          return !!(data.logs[today]||{})[h.key];
-        }).length;
+        const doneToday = allActiveHabits.filter(h => !!(data.logs[today]||{})[h.key]).length;
         const pctToday = totalToday > 0 ? Math.round((doneToday/totalToday)*100) : 0;
 
         // Last workout (only count sessions that are still logged and have content)
@@ -1822,7 +1684,7 @@
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end", padding:"18px 0 6px" }}>
               <div>
                 <div style={{ fontSize:13, color:C.textMuted, fontWeight:500, marginBottom:2 }}>{greeting}</div>
-                <div style={{ fontSize:30, fontWeight:800, letterSpacing:-1.2, lineHeight:1, color:C.ink }}>Breno.</div>
+                <div style={{ fontSize:30, fontWeight:800, letterSpacing:-1.2, lineHeight:1, color:C.ink }}>{(data.userName||"").trim() || (user?.displayName||"").split(" ")[0] || "there"}.</div>
               </div>
               <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                 <button onClick={()=>goRel(-1)} style={{ background:"none", border:"none", color:C.mutedGray, cursor:"pointer", fontSize:18, padding:0, lineHeight:1 }}>‹</button>
@@ -1854,20 +1716,26 @@
 
             {allActiveHabits.map(h => {
               if (h.key === "workout") return renderWorkoutHabitCard();
-              if (h.key === "eartest") return renderEarTestCard();
-              const stepper = h.countField
-                ? <CountPill value={data[h.countField]||0} onChange={v=>updateCount(h.countField, v)} />
-                : null;
               return (
                 <HabitCard key={h.key}
                   active={!!todayLog[h.key]}
                   emoji={h.emoji}
                   label={h.label}
-                  sublabel={h.isBuiltin ? h.sublabelFn(data) : "Custom habit"}
+                  sublabel={h.isBuiltin && h.sublabelFn ? h.sublabelFn(data) : ""}
                   onToggle={() => toggleHabit(h.key)}
-                  stepper={stepper} />
+                  stepper={null} />
               );
             })}
+
+            <button onClick={()=>setActiveTab("settings")} style={{
+              display:"flex", alignItems:"center", gap:10, width:"100%", marginTop:14,
+              padding:"14px 16px", borderRadius:12, background:"none",
+              border:`1.5px dashed ${C.border}`, cursor:"pointer", fontFamily:"Inter,sans-serif",
+              color:C.textMuted, fontSize:14, fontWeight:600,
+            }}>
+              <span style={{ fontSize:18, color:C.accent, fontWeight:700, lineHeight:1 }}>+</span>
+              {(data.customHabits||[]).length === 0 ? "Add your first habit" : "Add a habit"}
+            </button>
 
             <SavedToast show={saved} />
           </div>
@@ -2003,12 +1871,22 @@
           MozAppearance:"textfield",
         });
         const hasW = (st.weight||0) > 0, hasR = (st.reps||0) > 0;
+        const hasRest = typeof st.rest === "number";
         return (
           <SwipeRow key={idx} onDelete={()=>removeSet(exId,idx)}>
             <div style={{ display:"grid", gridTemplateColumns:"26px 1fr 56px 50px 30px", gap:8, alignItems:"center", padding:"8px 0" }}>
               <div style={{ fontSize:14, fontWeight:800, textAlign:"center", color: st.done?C.accentDeep:C.text, letterSpacing:-0.3 }}>{idx+1}</div>
-              <div style={{ fontSize:12, color:C.mutedGray, fontWeight:500, paddingLeft:2 }}>
-                {prev ? <span><strong style={{color:C.textMuted, fontWeight:700}}>{prev.weight||0}</strong> × <strong style={{color:C.textMuted, fontWeight:700}}>{prev.reps||0}</strong></span> : <span style={{ fontStyle:"italic" }}>—</span>}
+              <div style={{ minWidth:0, paddingLeft:2 }}>
+                <div style={{ fontSize:12, color:C.mutedGray, fontWeight:500 }}>
+                  {prev ? <span><strong style={{color:C.textMuted, fontWeight:700}}>{prev.weight||0}</strong> × <strong style={{color:C.textMuted, fontWeight:700}}>{prev.reps||0}</strong></span> : <span style={{ fontStyle:"italic" }}>—</span>}
+                </div>
+                <button onClick={()=>setSetPromptFor(`${exId}:${idx}`)} style={{
+                  marginTop:3, display:"inline-flex", alignItems:"center", gap:3, background:"none", border:"none", padding:0, cursor:"pointer",
+                  fontSize:11, fontWeight:700, color: hasRest ? C.accentDeep : C.mutedGray, fontFamily:"Inter,sans-serif",
+                }}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="13" r="8" stroke="currentColor" strokeWidth="2.2"/><path d="M12 9.5V13l2.4 1.4" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/><path d="M9.5 2.5h5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/></svg>
+                  {hasRest ? (st.rest === 0 ? "No rest" : fmtClock(st.rest)) : "Rest"}
+                </button>
               </div>
               <input type="number" step="0.5" value={hasW?st.weight:""} placeholder="—" className="set-field"
                 onChange={e=>setSetValue(exId,idx,"weight",parseFloat(e.target.value)||0)}
@@ -2773,12 +2651,20 @@
             {completed.length > 0 && (
               <div style={{ marginTop:18 }}>
                 <div style={{ display:"flex", alignItems:"baseline", gap:10, padding:"0 6px", marginBottom:10 }}>
-                  <span style={{ fontSize:11, fontWeight:500, color:C.mutedGray, letterSpacing:0.2 }}>Completed</span>
-                  <span style={{ fontSize:11, fontWeight:500, color:C.mutedGray, letterSpacing:0.2 }}>{completed.length}</span>
+                  <span style={{ fontSize:11, fontWeight:700, color:C.mutedGray, letterSpacing:0.2 }}>Completed</span>
+                  <span style={{ fontSize:11, fontWeight:600, color:C.mutedGray, letterSpacing:0.2 }}>{completed.length}</span>
                 </div>
                 <div>
-                  {completed.slice(0,20).map(t => renderTodoCard(t))}
+                  {(showAllCompleted ? completed : completed.slice(0,5)).map(t => renderTodoCard(t))}
                 </div>
+                {completed.length > 5 && (
+                  <button onClick={()=>setShowAllCompleted(v=>!v)} style={{
+                    background:"none", border:"none", color:C.accentDeep, fontSize:13, fontWeight:700,
+                    cursor:"pointer", fontFamily:"Inter,sans-serif", padding:"10px 0 0",
+                  }}>
+                    {showAllCompleted ? "Show less" : `Show all ${completed.length}`}
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -2928,7 +2814,7 @@
       // ─── TAB: HISTORY ───────────────────────────────────────────────────
       const renderHistoryEditor = (date, log) => (
         <div style={{ background:"#ffffff", borderRadius:14, padding:14, marginBottom:12, boxShadow:"none" }}>
-          {[{key:"pimsleur",emoji:"🎧",label:"Pimsleur"},{key:"anki",emoji:"🃏",label:"Flash cards"},{key:"innerFrench",emoji:"🎙️",label:"Inner French"},...(data.customHabits||[])].map(h => (
+          {(data.customHabits||[]).map(h => (
             <div key={h.key} onClick={()=>toggleDayHabit(date,h.key)} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0", cursor:"pointer", borderBottom:`1px solid ${C.border}` }}>
               <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                 <span style={{ fontSize:20 }}>{h.emoji}</span>
@@ -2982,7 +2868,7 @@
                     {isToday && <span style={{ marginLeft:6, fontSize:9, color:C.accent, letterSpacing:1, fontWeight:700 }}>TODAY</span>}
                   </div>
                   <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-                    {[{key:"pimsleur",emoji:"🎧"},{key:"anki",emoji:"🃏"},{key:"innerFrench",emoji:"🎙️"},...(data.customHabits||[])].map(h => (
+                    {(data.customHabits||[]).map(h => (
                       <span key={h.key} style={{ fontSize:16, opacity: log[h.key]?1:0.15 }}>{h.emoji}</span>
                     ))}
                     <span style={{ fontSize:16, opacity: w?1:0.15 }}>{w?w.emoji:"🏋️"}</span>
@@ -3135,6 +3021,17 @@
         );
         return (
         <div style={S.bodyPad}>
+          <div style={S.sectionLabel}>Profile</div>
+          <div style={{ display:"flex", alignItems:"center", gap:12, padding:"14px 0 18px", borderBottom:`1px solid ${C.hair}`, marginBottom:6 }}>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:15, fontWeight:600, color:C.text, letterSpacing:-0.2 }}>Your name</div>
+              <div style={{ fontSize:12, color:C.mutedGray, fontWeight:500, marginTop:2 }}>Shown in your greeting</div>
+            </div>
+            <input type="text" value={data.userName||""} placeholder={(user?.displayName||"").split(" ")[0] || "Name"}
+              onChange={e=>update({ userName: e.target.value })}
+              style={{ width:130, textAlign:"right", background:C.fieldBg, border:"none", borderRadius:8, padding:"9px 12px", fontSize:14, fontWeight:600, color:C.text, fontFamily:"Inter,sans-serif", outline:"none" }} />
+          </div>
+
           <div style={S.sectionLabel}>Rest timer</div>
           <SettingToggle label="Prompt after each set" sub="Show rest options when you check a set" on={rt.promptOnCheck} onClick={()=>updateRestTimer({ promptOnCheck: !rt.promptOnCheck })} />
           <div style={{ display:"flex", alignItems:"center", gap:12, padding:"14px 0", borderBottom:`1px solid ${C.hair}` }}>
@@ -3175,26 +3072,6 @@
           <SettingToggle label="Sound alert" sub="Beep when rest ends" on={rt.sound} onClick={()=>updateRestTimer({ sound: !rt.sound })} />
           <SettingToggle label="Vibrate" sub="Not supported on iPhone — Android only" on={rt.vibrate} onClick={()=>updateRestTimer({ vibrate: !rt.vibrate })} />
           <SettingToggle label="Visual pulse" sub="Flash the timer bar at zero" on={rt.visual} onClick={()=>updateRestTimer({ visual: !rt.visual })} />
-
-          <div style={{ ...S.sectionLabel, marginTop:24 }}>Adjust current progress</div>
-
-          <div style={S.card}>
-            <div style={{ fontSize:14, fontWeight:700, color:C.text, marginBottom:4, letterSpacing:-0.2 }}>🎧 Pimsleur</div>
-            <div style={{ fontSize:12, color:C.textMuted, marginBottom:16, fontWeight:500 }}>Set the lesson number you are currently on</div>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-              <div style={{ color:C.textMuted, fontSize:13, fontWeight:500 }}>Current lesson</div>
-              <NumberStepper value={data.pimsleurTotal||0} onChange={v=>updateCount("pimsleurTotal",v)} min={0} max={180} />
-            </div>
-          </div>
-
-          <div style={S.card}>
-            <div style={{ fontSize:14, fontWeight:700, color:C.text, marginBottom:4, letterSpacing:-0.2 }}>🎙️ Inner French</div>
-            <div style={{ fontSize:12, color:C.textMuted, marginBottom:16, fontWeight:500 }}>Set the episode number you are currently on</div>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-              <div style={{ color:C.textMuted, fontSize:13, fontWeight:500 }}>Current episode</div>
-              <NumberStepper value={data.innerFrenchTotal||0} onChange={v=>updateCount("innerFrenchTotal",v)} min={0} max={200} />
-            </div>
-          </div>
 
           <SavedToast show={saved} />
 
@@ -3360,4 +3237,3 @@
   </script>
 </body>
 </html>
-
