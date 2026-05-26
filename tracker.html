@@ -8,8 +8,8 @@
   <meta name="apple-mobile-web-app-title" content="Tracker" />
   <meta name="color-scheme" content="light" />
   <title>Tracker</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -636,17 +636,25 @@
             return;
           }
           window.__firebase.onAuthStateChanged(async u => {
-            setUser(u);
-            if (u) {
-              setSyncing(true);
-              const loaded = await window.__firebase.loadData(u.uid);
-              if (loaded) {
-                setData(migrateData({ ...DEFAULT_DATA, ...loaded }));
-                if (loaded.logs?.[today]) setTodayLog(loaded.logs[today]);
+            try {
+              setUser(u);
+              if (u) {
+                setSyncing(true);
+                const loaded = await window.__firebase.loadData(u.uid);
+                if (loaded) {
+                  const migrated = migrateData({ ...DEFAULT_DATA, ...loaded });
+                  setData(migrated);
+                  const tl = migrated.logs && migrated.logs[today];
+                  if (tl) setTodayLog(tl);
+                }
+                setSyncing(false);
               }
+              setAuthLoading(false);
+            } catch (err) {
+              console.error("Load error:", err);
+              setAuthLoading(false);
               setSyncing(false);
             }
-            setAuthLoading(false);
           });
         };
         wait();
@@ -3497,4 +3505,3 @@
   </script>
 </body>
 </html>
-
