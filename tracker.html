@@ -353,12 +353,25 @@
       Object.keys(ws).forEach(date => {
         const v = ws[date];
         if (Array.isArray(v)) {
-          // already array — ensure each session has an id
-          migrated[date] = v.map(s => ({ id: s.id || makeSessionId(), startedAt: s.startedAt || null, endedAt: s.endedAt || null, ...s, type: s.type, exercises: s.exercises || [] }));
+          // already array — ensure each session is well-formed
+          const arr = v.filter(Boolean).map(s => ({
+            id: s.id || makeSessionId(),
+            type: s.type || "mix",
+            exercises: Array.isArray(s.exercises) ? s.exercises : [],
+            startedAt: s.startedAt || null,
+            endedAt: s.endedAt || null,
+          }));
+          if (arr.length) migrated[date] = arr;
         } else if (v && typeof v === "object") {
           // legacy single session → wrap in array
-          migrated[date] = [{ id: makeSessionId(), type: v.type, exercises: v.exercises || [], startedAt: null, endedAt: null }];
+          migrated[date] = [{
+            id: makeSessionId(),
+            type: v.type || "mix",
+            exercises: Array.isArray(v.exercises) ? v.exercises : [],
+            startedAt: null, endedAt: null,
+          }];
         }
+        // anything else (null, string) is dropped
       });
       return { ...raw, workoutSessions: migrated };
     };
@@ -3455,7 +3468,25 @@
       );
     }
 
-    ReactDOM.render(<App />, document.getElementById("root"));
+    class ErrorBoundary extends React.Component {
+      constructor(props){ super(props); this.state = { err: null }; }
+      static getDerivedStateFromError(err){ return { err }; }
+      componentDidCatch(err, info){ /* keep info available */ this._info = info; }
+      render(){
+        if (this.state.err) {
+          const e = this.state.err;
+          return React.createElement("div", { style:{ fontFamily:"monospace", padding:"20px", color:"#c44", whiteSpace:"pre-wrap", fontSize:"12px", lineHeight:1.5 } },
+            "Render error:\n\n" + (e && e.stack ? e.stack : String(e)) +
+            (this._info && this._info.componentStack ? "\n\nComponent stack:" + this._info.componentStack : ""));
+        }
+        return this.props.children;
+      }
+    }
+
+    ReactDOM.render(
+      React.createElement(ErrorBoundary, null, React.createElement(App)),
+      document.getElementById("root")
+    );
   </script>
 </body>
 </html>
