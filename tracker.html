@@ -346,6 +346,8 @@
     // array of sessions [{id,type,exercises,startedAt,endedAt}]. Idempotent.
     let _sidCounter = 0;
     const makeSessionId = () => `s_${Date.now().toString(36)}_${(_sidCounter++).toString(36)}`;
+    const asArray = v => Array.isArray(v) ? v : [];
+    const asObject = v => (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
     const migrateData = raw => {
       if (!raw || typeof raw !== "object") return raw;
       const ws = raw.workoutSessions || {};
@@ -353,27 +355,39 @@
       Object.keys(ws).forEach(date => {
         const v = ws[date];
         if (Array.isArray(v)) {
-          // already array — ensure each session is well-formed
           const arr = v.filter(Boolean).map(s => ({
             id: s.id || makeSessionId(),
             type: s.type || "mix",
-            exercises: Array.isArray(s.exercises) ? s.exercises : [],
+            exercises: asArray(s.exercises),
             startedAt: s.startedAt || null,
             endedAt: s.endedAt || null,
           }));
           if (arr.length) migrated[date] = arr;
         } else if (v && typeof v === "object") {
-          // legacy single session → wrap in array
           migrated[date] = [{
             id: makeSessionId(),
             type: v.type || "mix",
-            exercises: Array.isArray(v.exercises) ? v.exercises : [],
+            exercises: asArray(v.exercises),
             startedAt: null, endedAt: null,
           }];
         }
-        // anything else (null, string) is dropped
       });
-      return { ...raw, workoutSessions: migrated };
+      // Coerce every field that the app treats as an array/object so a malformed
+      // stored value (e.g. {} where an array is expected) can't crash a .map/.filter.
+      return {
+        ...raw,
+        workoutSessions: migrated,
+        logs: asObject(raw.logs),
+        customHabits: asArray(raw.customHabits),
+        hiddenBuiltins: asArray(raw.hiddenBuiltins),
+        habitOrder: asArray(raw.habitOrder),
+        customExercises: asObject(raw.customExercises),
+        exerciseOrder: asObject(raw.exerciseOrder),
+        hiddenPresets: asObject(raw.hiddenPresets),
+        renamedPresets: asObject(raw.renamedPresets),
+        todos: asArray(raw.todos),
+        restTimer: { ...DEFAULT_DATA.restTimer, ...asObject(raw.restTimer), custom: asArray(raw.restTimer && raw.restTimer.custom) },
+      };
     };
 
     function getExercisesForType(data, typeKey) {
@@ -742,15 +756,15 @@
       };
       const skipRest  = () => { setRestEndAt(null); setRestDone(false); };
 
-      const hiddenBuiltins = data.hiddenBuiltins || [];
+      const hiddenBuiltins = asArray(data.hiddenBuiltins);
       const activeBuiltins = BUILTIN_HABITS.filter(h => !hiddenBuiltins.includes(h.key));
 
       const allActiveHabits = useMemo(() => {
         const items = [
           ...activeBuiltins.map(h => ({ ...h, isBuiltin:true })),
-          ...(data.customHabits||[]).map(h => ({ ...h, isBuiltin:false })),
+          ...asArray(data.customHabits).map(h => ({ ...h, isBuiltin:false })),
         ];
-        const order = data.habitOrder || [];
+        const order = asArray(data.habitOrder);
         if (!order.length) return items;
         const sorted = order.map(k => items.find(h => h.key===k)).filter(Boolean);
         const remaining = items.filter(h => !order.includes(h.key));
