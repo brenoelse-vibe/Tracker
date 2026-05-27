@@ -393,7 +393,7 @@
       // customHabits → array of well-formed habit defs
       const customHabits = asArray(raw.customHabits)
         .filter(h => h && typeof h === "object" && typeof h.key === "string")
-        .map(h => ({ key: h.key, emoji: typeof h.emoji === "string" ? h.emoji : "✅", label: typeof h.label === "string" ? h.label : "Habit" }));
+        .map(h => ({ key: h.key, emoji: typeof h.emoji === "string" ? h.emoji : "", label: typeof h.label === "string" ? h.label : "Habit" }));
 
       // todos → array of well-formed todos
       const todos = asArray(raw.todos)
@@ -634,7 +634,7 @@
       const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
       const [editingDate, setEditingDate] = useState(null);
       const [newHabitName, setNewHabitName] = useState("");
-      const [newHabitEmoji, setNewHabitEmoji] = useState("📌");
+      const [newHabitEmoji, setNewHabitEmoji] = useState("");
       const [editingEmojiFor, setEditingEmojiFor] = useState(null);
       const [newExerciseName, setNewExerciseName] = useState("");
       const [editingExercise, setEditingExercise] = useState(null);
@@ -878,9 +878,9 @@
         const name = newHabitName.trim();
         if (!name) return;
         const key = "custom_" + name.toLowerCase().replace(/[^a-z0-9]/g,"_") + "_" + Date.now().toString(36);
-        update({ customHabits: [...(data.customHabits||[]), { key, label:name, emoji: newHabitEmoji||"📌" }] });
+        update({ customHabits: [...(data.customHabits||[]), { key, label:name, emoji: (newHabitEmoji||"").trim() }] });
         setNewHabitName("");
-        setNewHabitEmoji("📌");
+        setNewHabitEmoji("");
       };
 
       const updateHabitEmoji = (key, emoji) =>
@@ -3242,7 +3242,7 @@
           <div style={S.card}>
             <div style={S.smallLabel}>Custom</div>
             <div style={{ display:"flex", gap:8, marginBottom:10 }}>
-              <input type="text" value={newHabitEmoji} onChange={e=>setNewHabitEmoji(e.target.value || "📌")} maxLength="4"
+              <input type="text" value={newHabitEmoji} onChange={e=>setNewHabitEmoji(e.target.value)} maxLength="4" placeholder="🙂"
                 style={{ width:54, textAlign:"center", background:"#ffffff", border:`1px solid ${C.border}`, borderRadius:10, fontSize:20, padding:"8px 0", fontFamily:"Inter,sans-serif" }} />
               <input type="text" value={newHabitName} onChange={e=>setNewHabitName(e.target.value)} placeholder="New habit name…"
                 onKeyDown={e=>{ if(e.key==="Enter") addCustomHabit(); }}
@@ -3273,9 +3273,16 @@
                   {isEditing && (
                     <div style={{ display:"flex", flexWrap:"wrap", gap:6, padding:"8px 0 12px" }}>
                       <input type="text" defaultValue={h.emoji}
-                        onBlur={e=>{ updateHabitEmoji(h.key, e.target.value || "📌"); setEditingEmojiFor(null); }}
-                        maxLength="4"
+                        onBlur={e=>{ updateHabitEmoji(h.key, (e.target.value||"").trim()); setEditingEmojiFor(null); }}
+                        maxLength="4" placeholder="🙂"
                         style={{ width:54, textAlign:"center", background:"#ffffff", border:`1px solid ${C.border}`, borderRadius:10, fontSize:18, padding:"6px 0", fontFamily:"Inter,sans-serif" }} />
+                      <button onClick={()=>{ updateHabitEmoji(h.key, ""); setEditingEmojiFor(null); }} style={{
+                        height:34, padding:"0 12px", fontSize:12, fontWeight:700, borderRadius:8,
+                        background: !h.emoji ? `${C.accent}` : "#ffffff",
+                        border: !h.emoji ? "none" : `1px solid ${C.border}`,
+                        color: !h.emoji ? "#fff" : C.textMuted,
+                        cursor:"pointer", fontFamily:"Inter,sans-serif",
+                      }}>None</button>
                       {EMOJI_PRESETS.map(e => (
                         <button key={e} onClick={()=>{ updateHabitEmoji(h.key, e); setEditingEmojiFor(null); }} style={{
                           width:34, height:34, fontSize:18, borderRadius:8,
