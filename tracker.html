@@ -221,7 +221,7 @@
       legs:    ["Back Squat","Romanian Deadlift","Leg Press","Walking Lunge","Leg Curl","Leg Extension","Calf Raise","Hip Thrust","Bulgarian Split Squat"],
       upper:   ["Bench Press","Overhead Press","Pull-ups","Barbell Row","Dumbbell Curl","Tricep Extension"],
       lower:   ["Back Squat","Deadlift","Leg Press","Walking Lunge","Calf Raise","Hip Thrust"],
-      cardio:  ["Running","Cycling","Rowing","Stairmaster","Incline Walk"],
+      cardio:  [],
       recovery:["Foam Rolling","Stretching","Yoga","Walk","Mobility Drills"],
       mix:     [],
     };
@@ -2304,6 +2304,12 @@
             </div>
 
             {sess.exercises.map((ex, exIdx) => renderExerciseCard(ex, exIdx))}
+
+            {sess.exercises.length === 0 && (
+              <div style={{ textAlign:"center", color:C.mutedGray, fontSize:13, fontWeight:500, padding:"24px 0 8px", lineHeight:1.5 }}>
+                No exercises yet.<br/>Add one below — it'll carry forward to future {WORKOUT_TYPES.find(t=>t.key===sess.type)?.label || ""} workouts.
+              </div>
+            )}
 
             <div style={{ display:"flex", gap:8, margin:"16px 0 12px" }}>
               <input type="text" value={newExerciseName} onChange={e=>setNewExerciseName(e.target.value)} placeholder="Add custom exercise…"
