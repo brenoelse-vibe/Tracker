@@ -681,6 +681,25 @@
 
       // ─── Auth ───────────────────────────────────────────────────────────
       useEffect(() => {
+        let settled = false;
+        const finish = () => { if (!settled) { settled = true; setAuthLoading(false); } };
+
+        // Fallback: if Firebase never initializes (script blocked, offline, slow),
+        // give up after 5s, load whatever is in localStorage, and show the app anyway.
+        const fallbackTimer = setTimeout(() => {
+          if (settled) return;
+          try {
+            const local = localStorage.getItem(STORAGE_KEY);
+            if (local) {
+              const migrated = migrateData({ ...DEFAULT_DATA, ...JSON.parse(local) });
+              setData(migrated);
+              const tl = migrated.logs && migrated.logs[today];
+              if (tl) setTodayLog(tl);
+            }
+          } catch (e) { console.error("Local fallback error:", e); }
+          finish();
+        }, 5000);
+
         const wait = () => {
           if (!window.__firebase) {
             window.addEventListener("firebaseReady", wait, { once:true });
@@ -700,15 +719,18 @@
                 }
                 setSyncing(false);
               }
-              setAuthLoading(false);
+              clearTimeout(fallbackTimer);
+              finish();
             } catch (err) {
               console.error("Load error:", err);
-              setAuthLoading(false);
               setSyncing(false);
+              clearTimeout(fallbackTimer);
+              finish();
             }
           });
         };
         wait();
+        return () => clearTimeout(fallbackTimer);
       }, [today]);
 
       // ─── Sync local todayLog when viewDate changes ──────────────────────
@@ -3334,7 +3356,13 @@
               style={{ width:130, textAlign:"right", background:C.fieldBg, border:"none", borderRadius:8, padding:"9px 12px", fontSize:14, fontWeight:600, color:C.text, fontFamily:"Inter,sans-serif", outline:"none" }} />
           </div>
 
-          <div style={S.sectionLabel}>Rest timer</div>
+          {/* Habits — most-used: manage what you track */}
+          {renderSettingsHabits()}
+          {renderSettingsHabitOrder()}
+
+          {/* Workout — rest timer settings live here, clearly scoped to workouts */}
+          <SectionDivider>
+          <div style={S.sectionLabel}>Workout · Rest timer</div>
           <SettingToggle label="Prompt after each set" sub="Show rest options when you check a set" on={rt.promptOnCheck} onClick={()=>updateRestTimer({ promptOnCheck: !rt.promptOnCheck })} />
           <div style={{ display:"flex", alignItems:"center", gap:12, padding:"14px 0", borderBottom:`1px solid ${C.hair}` }}>
             <div style={{ flex:1 }}>
@@ -3374,11 +3402,9 @@
           <SettingToggle label="Sound alert" sub="Beep when rest ends" on={rt.sound} onClick={()=>updateRestTimer({ sound: !rt.sound })} />
           <SettingToggle label="Vibrate" sub="Not supported on iPhone — Android only" on={rt.vibrate} onClick={()=>updateRestTimer({ vibrate: !rt.vibrate })} />
           <SettingToggle label="Visual pulse" sub="Flash the timer bar at zero" on={rt.visual} onClick={()=>updateRestTimer({ visual: !rt.visual })} />
+          </SectionDivider>
 
           <SavedToast show={saved} />
-
-          {renderSettingsHabits()}
-          {renderSettingsHabitOrder()}
 
           {(() => {
             // Linked accounts section
@@ -3427,7 +3453,7 @@
 
             return (
               <SectionDivider>
-                <div style={S.sectionLabel}>Sign-in methods</div>
+                <div style={S.sectionLabel}>Account · Sign-in methods</div>
                 <div style={S.card}>
                   <div style={{ fontSize:12, color:C.textMuted, marginBottom:14, lineHeight:1.5, fontWeight:500 }}>
                     Add a second way to sign in so you can access this same data even if one login stops working. Methods you link here all open this same account.
@@ -3499,7 +3525,7 @@
           })()}
 
           <SectionDivider>
-            <div style={S.sectionLabel}>Export</div>
+            <div style={S.sectionLabel}>Data · Export</div>
             <div style={S.card}>
               <div style={{ fontSize:13, color:C.textMuted, marginBottom:12, lineHeight:1.5, fontWeight:500 }}>Download everything as an Excel workbook with 5 sheets: Summary, Daily Logs, Workout Sets, Workout Sessions, and Todos.</div>
               <button onClick={exportCSV} style={{ width:"100%", padding:"14px", borderRadius:12, background:`${C.accent}`, border:"none", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:1 }}>
@@ -3509,7 +3535,7 @@
           </SectionDivider>
 
           <SectionDivider>
-            <div style={S.sectionLabel}>Danger zone</div>
+            <div style={S.sectionLabel}>Data · Danger zone</div>
             <button onClick={resetAllData} style={S.dangerBtn}>Reset all data</button>
           </SectionDivider>
         </div>
