@@ -1039,6 +1039,14 @@
         writeSessions(today, next);
       };
 
+      // Remove an exercise from the CURRENT session only (library/presets unaffected).
+      const removeExerciseFromSession = exId => {
+        if (!activeSession) return;
+        const next = todaySessions.map(s =>
+          s.id === activeSession.id ? { ...s, exercises: s.exercises.filter(e => e.id !== exId) } : s);
+        writeSessions(today, next);
+      };
+
       const addSet = exId => mapExercises(e =>
         e.id===exId ? { ...e, sets: [...e.sets, { weight:0, reps:0 }] } : e);
 
@@ -1119,12 +1127,19 @@
       const addCustomExercise = (typeKey, name) => {
         const trimmed = name.trim();
         if (!trimmed) return;
+        // Don't add a duplicate if it's already in the current session.
+        if (activeSession && activeSession.type === typeKey &&
+            (activeSession.exercises||[]).some(e => e.name.toLowerCase() === trimmed.toLowerCase())) return;
         const cur = (data.customExercises||{})[typeKey] || [];
-        if (cur.includes(trimmed) || (EXERCISE_PRESETS[typeKey]||[]).includes(trimmed)) return;
-        const patch = { customExercises: { ...(data.customExercises||{}), [typeKey]: [...cur, trimmed] } };
-        const ns = sessionsWithActivePatched(typeKey, exs => [...exs, { id:`${typeKey}_custom_${Date.now()}`, name:trimmed, sets:[], notes:"", done:false }]);
+        const isKnown = cur.includes(trimmed) || (EXERCISE_PRESETS[typeKey]||[]).includes(trimmed);
+        // Only register it as a new custom library entry if it isn't already known.
+        const patch = isKnown
+          ? {}
+          : { customExercises: { ...(data.customExercises||{}), [typeKey]: [...cur, trimmed] } };
+        // Always add it to the active session (this is the part that was being skipped).
+        const ns = sessionsWithActivePatched(typeKey, exs => [...exs, { id:`${typeKey}_ex_${Date.now()}`, name:trimmed, sets:[], notes:"", done:false }]);
         if (ns) patch.workoutSessions = { ...(data.workoutSessions||{}), [today]: ns };
-        update(patch);
+        if (Object.keys(patch).length) update(patch);
       };
 
       const renameExercise = (typeKey, oldName, newName) => {
@@ -2181,6 +2196,8 @@
                     <rect x="16.6" y="5" width="3.4" height="15" rx="1.3" fill={chartOpen?"#fff":C.accentDeep}/>
                   </svg>
                 </button>
+                <button onClick={()=>{ if (window.confirm(`Remove "${ex.name}" from this workout? Other sessions are unaffected.`)) removeExerciseFromSession(ex.id); }} title="Remove from this workout"
+                  style={{ width:30, height:30, borderRadius:9, background:C.fieldBg, border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0, color:C.mutedGray, fontSize:18, lineHeight:1, fontFamily:"Inter,sans-serif" }}>×</button>
               </div>
             </div>
 
