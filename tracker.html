@@ -2960,14 +2960,14 @@
 
       // ─── Workout history helpers ────────────────────────────────────────
       // Flatten all sessions across all dates → [{date, sess}], newest first.
-      const allSessionsFlattened = useMemo(() => {
+      const allSessionsFlattened = (() => {
         const out = [];
         Object.keys(data.workoutSessions||{}).forEach(date => {
           (data.workoutSessions[date]||[]).forEach(sess => out.push({ date, sess }));
         });
         out.sort((a,b) => b.date.localeCompare(a.date) || ((b.sess.startedAt||0) - (a.sess.startedAt||0)));
         return out;
-      }, [data.workoutSessions]);
+      })();
 
       const sessionVolume = sess => (sess.exercises||[]).reduce((a,e)=>a+(e.sets||[]).reduce((s,st)=>s+(st.weight||0)*(st.reps||0),0),0);
       const sessionSets = sess => (sess.exercises||[]).reduce((a,e)=>a+(e.sets||[]).length,0);
@@ -3556,4 +3556,5 @@
   </script>
 </body>
 </html>
+
 
