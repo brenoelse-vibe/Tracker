@@ -349,44 +349,80 @@
     const asArray = v => Array.isArray(v) ? v : [];
     const asObject = v => (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
     const migrateData = raw => {
-      if (!raw || typeof raw !== "object") return raw;
-      const ws = raw.workoutSessions || {};
+      if (!raw || typeof raw !== "object") return { ...DEFAULT_DATA };
+
+      // workoutSessions → object of arrays of well-formed sessions
+      const wsRaw = asObject(raw.workoutSessions);
       const migrated = {};
-      Object.keys(ws).forEach(date => {
-        const v = ws[date];
+      Object.keys(wsRaw).forEach(date => {
+        const v = wsRaw[date];
+        const sanitizeSession = s => ({
+          id: (s && s.id) || makeSessionId(),
+          type: (s && s.type) || "mix",
+          exercises: asArray(s && s.exercises).filter(e => e && typeof e === "object").map(e => ({
+            id: e.id || `ex_${Math.random().toString(36).slice(2,8)}`,
+            name: typeof e.name === "string" ? e.name : "Exercise",
+            sets: asArray(e.sets).filter(st => st && typeof st === "object"),
+            notes: typeof e.notes === "string" ? e.notes : "",
+            done: !!e.done,
+          })),
+          startedAt: (s && s.startedAt) || null,
+          endedAt: (s && s.endedAt) || null,
+        });
         if (Array.isArray(v)) {
-          const arr = v.filter(Boolean).map(s => ({
-            id: s.id || makeSessionId(),
-            type: s.type || "mix",
-            exercises: asArray(s.exercises),
-            startedAt: s.startedAt || null,
-            endedAt: s.endedAt || null,
-          }));
+          const arr = v.filter(s => s && typeof s === "object").map(sanitizeSession);
           if (arr.length) migrated[date] = arr;
         } else if (v && typeof v === "object") {
-          migrated[date] = [{
-            id: makeSessionId(),
-            type: v.type || "mix",
-            exercises: asArray(v.exercises),
-            startedAt: null, endedAt: null,
-          }];
+          migrated[date] = [sanitizeSession(v)];
         }
       });
-      // Coerce every field that the app treats as an array/object so a malformed
-      // stored value (e.g. {} where an array is expected) can't crash a .map/.filter.
+
+      // logs → object of well-formed log entries (each must be a plain object)
+      const logsRaw = asObject(raw.logs);
+      const logs = {};
+      Object.keys(logsRaw).forEach(date => {
+        const l = logsRaw[date];
+        if (l && typeof l === "object" && !Array.isArray(l)) {
+          const clean = { workout: typeof l.workout === "string" ? l.workout : null };
+          // preserve any custom-habit boolean flags
+          Object.keys(l).forEach(k => { if (k !== "workout" && typeof l[k] === "boolean") clean[k] = l[k]; });
+          logs[date] = clean;
+        }
+      });
+
+      // customHabits → array of well-formed habit defs
+      const customHabits = asArray(raw.customHabits)
+        .filter(h => h && typeof h === "object" && typeof h.key === "string")
+        .map(h => ({ key: h.key, emoji: typeof h.emoji === "string" ? h.emoji : "✅", label: typeof h.label === "string" ? h.label : "Habit" }));
+
+      // todos → array of well-formed todos
+      const todos = asArray(raw.todos)
+        .filter(t => t && typeof t === "object")
+        .map(t => ({
+          id: t.id || `todo_${Math.random().toString(36).slice(2,8)}`,
+          title: typeof t.title === "string" ? t.title : "",
+          done: !!t.done, doneAt: t.doneAt || null,
+          createdAt: t.createdAt || Date.now(),
+          dueDate: t.dueDate || null, priority: t.priority || null,
+          notes: typeof t.notes === "string" ? t.notes : "",
+        }));
+
       return {
+        ...DEFAULT_DATA,
         ...raw,
+        startDate: typeof raw.startDate === "string" && raw.startDate ? raw.startDate : DEFAULT_DATA.startDate,
+        userName: typeof raw.userName === "string" ? raw.userName : "",
         workoutSessions: migrated,
-        logs: asObject(raw.logs),
-        customHabits: asArray(raw.customHabits),
-        hiddenBuiltins: asArray(raw.hiddenBuiltins),
-        habitOrder: asArray(raw.habitOrder),
+        logs,
+        customHabits,
+        hiddenBuiltins: asArray(raw.hiddenBuiltins).filter(x => typeof x === "string"),
+        habitOrder: asArray(raw.habitOrder).filter(x => typeof x === "string"),
         customExercises: asObject(raw.customExercises),
         exerciseOrder: asObject(raw.exerciseOrder),
         hiddenPresets: asObject(raw.hiddenPresets),
         renamedPresets: asObject(raw.renamedPresets),
-        todos: asArray(raw.todos),
-        restTimer: { ...DEFAULT_DATA.restTimer, ...asObject(raw.restTimer), custom: asArray(raw.restTimer && raw.restTimer.custom) },
+        todos,
+        restTimer: { ...DEFAULT_DATA.restTimer, ...asObject(raw.restTimer), custom: asArray(raw.restTimer && raw.restTimer.custom).filter(n => typeof n === "number") },
       };
     };
 
@@ -3502,6 +3538,7 @@
             React.createElement("div", { style:{ fontSize:18, fontWeight:800, marginBottom:8, letterSpacing:-0.3 } }, "Something went wrong"),
             React.createElement("div", { style:{ fontSize:14, color:"#5e6e62", marginBottom:20, lineHeight:1.5 } }, "The app hit an unexpected error. Your data is safe. Try reloading."),
             React.createElement("button", { onClick:()=>location.reload(), style:{ background:"#4a8f2f", color:"#fff", border:"none", borderRadius:10, padding:"12px 24px", fontSize:14, fontWeight:700, cursor:"pointer", fontFamily:"Inter, sans-serif" } }, "Reload"),
+            React.createElement("button", { onClick:()=>{ try{ localStorage.removeItem("tef_tracker_v2"); }catch(e){} location.reload(); }, style:{ display:"block", margin:"14px auto 0", background:"none", color:"#8a978d", border:"none", fontSize:12, textDecoration:"underline", cursor:"pointer", fontFamily:"Inter, sans-serif" } }, "Reset local data & start fresh"),
             React.createElement("details", { style:{ marginTop:24, textAlign:"left" } },
               React.createElement("summary", { style:{ fontSize:11, color:"#8a978d", cursor:"pointer" } }, "Technical details"),
               React.createElement("pre", { style:{ fontSize:10, color:"#8a978d", whiteSpace:"pre-wrap", marginTop:8, fontFamily:"monospace" } }, (e && e.stack ? e.stack : String(e)))
