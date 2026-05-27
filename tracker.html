@@ -210,10 +210,14 @@
       { key:"legs",     label:"Legs",     emoji:"🏋️‍♂️" },
       { key:"upper",    label:"Upper",    emoji:"⬆️" },
       { key:"lower",    label:"Lower",    emoji:"⬇️" },
-      { key:"cardio",   label:"Cardio",   emoji:"🏊‍♂️" },
+      { key:"running",  label:"Running",  emoji:"🏃", timed:"stopwatch" },
+      { key:"swimming", label:"Swimming", emoji:"🏊‍♂️", timed:"duration" },
+      { key:"cycling",  label:"Cycling",  emoji:"🚴", timed:"duration" },
       { key:"recovery", label:"Recovery", emoji:"🧘" },
       { key:"mix",      label:"Mix",      emoji:"✖️" },
     ];
+    // Types whose session is a simple time log (no sets/reps). "stopwatch" = live count-up timer; "duration" = manual minutes entry.
+    const TIMED_TYPES = { running:"stopwatch", swimming:"duration", cycling:"duration" };
 
     const EXERCISE_PRESETS = {
       push:    ["Bench Press","Overhead Press","Incline Dumbbell Press","Push-ups","Tricep Pushdown","Lateral Raise","Dips","Chest Fly"],
@@ -221,7 +225,9 @@
       legs:    ["Back Squat","Romanian Deadlift","Leg Press","Walking Lunge","Leg Curl","Leg Extension","Calf Raise","Hip Thrust","Bulgarian Split Squat"],
       upper:   ["Bench Press","Overhead Press","Pull-ups","Barbell Row","Dumbbell Curl","Tricep Extension"],
       lower:   ["Back Squat","Deadlift","Leg Press","Walking Lunge","Calf Raise","Hip Thrust"],
-      cardio:  [],
+      running: [],
+      swimming:[],
+      cycling: [],
       recovery:["Foam Rolling","Stretching","Yoga","Walk","Mobility Drills"],
       mix:     [],
     };
@@ -359,7 +365,7 @@
         const v = wsRaw[date];
         const sanitizeSession = s => ({
           id: (s && s.id) || makeSessionId(),
-          type: (s && s.type) || "mix",
+          type: ((s && s.type) === "cardio") ? "running" : ((s && s.type) || "mix"),
           exercises: asArray(s && s.exercises).filter(e => e && typeof e === "object").map(e => ({
             id: e.id || `ex_${Math.random().toString(36).slice(2,8)}`,
             name: typeof e.name === "string" ? e.name : "Exercise",
@@ -433,7 +439,7 @@
         const mixHidden = new Set((data.hiddenPresets||{}).mix || []);
         const seen = new Set();
         const all = [];
-        ["push","pull","legs","upper","lower","cardio","recovery"].forEach(t => {
+        ["push","pull","legs","upper","lower","running","swimming","cycling","recovery"].forEach(t => {
           getExercisesForType(data, t).forEach(name => {
             if (!seen.has(name) && !mixHidden.has(name)) { seen.add(name); all.push(name); }
           });
@@ -658,6 +664,7 @@
       const [runExId, setRunExId] = useState(null);       // which exercise's run timer is active
       const [runStartAt, setRunStartAt] = useState(null); // epoch ms the run began
       const [runNow, setRunNow] = useState(Date.now());   // ticking clock
+      const [durationInput, setDurationInput] = useState(""); // manual minutes entry for swimming/cycling
 
       // Todo tab state
       const [todoSheetOpen, setTodoSheetOpen] = useState(false);
@@ -844,6 +851,32 @@
       };
       const cancelRun = () => { setRunStartAt(null); setRunExId(null); };
       const fmtStopwatch = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
+      const fmtDuration = s => {
+        const m = Math.round(s/60);
+        if (m < 60) return `${m} min`;
+        const h = Math.floor(m/60), rm = m%60;
+        return rm ? `${h}h ${rm}m` : `${h}h`;
+      };
+
+      // ─── Timed-session helpers (Running / Swimming / Cycling) ───────────
+      // Each bout is stored as one entry in the session's exercises array:
+      //   { id, name:<type label>, sets:[{ duration: seconds, done:true }], done:true }
+      const SESSION_RUN_ID = "__session_timer__";
+      const logSessionBout = seconds => {
+        if (!activeSession || seconds <= 0) return;
+        const w = WORKOUT_TYPES.find(t => t.key === activeSession.type);
+        const entry = { id:`bout_${Date.now()}`, name:(w?w.label:"Session"), sets:[{ duration: seconds, done:true }], notes:"", done:true };
+        const next = todaySessions.map(s => s.id===activeSession.id ? { ...s, exercises:[...(s.exercises||[]), entry] } : s);
+        writeSessions(today, next);
+      };
+      const deleteSessionBout = boutId => {
+        if (!activeSession) return;
+        const next = todaySessions.map(s => s.id===activeSession.id ? { ...s, exercises:(s.exercises||[]).filter(e => e.id!==boutId) } : s);
+        writeSessions(today, next);
+      };
+      // Session-level stopwatch (for Running) — reuses run timer state with a sentinel id.
+      const startSessionRun = () => { setRunExId(SESSION_RUN_ID); setRunNow(Date.now()); setRunStartAt(Date.now()); };
+      const stopSessionRun = () => { const secs = runElapsed; if (secs > 0) logSessionBout(secs); setRunStartAt(null); setRunExId(null); };
 
 
       const hiddenBuiltins = asArray(data.hiddenBuiltins);
@@ -2303,6 +2336,8 @@
                 style={{ background:"rgba(255,255,255,0.12)", border:"none", borderRadius:9, color:"#fff", fontSize:10, padding:"7px 11px", letterSpacing:0.4, fontFamily:"Inter,sans-serif", cursor:"pointer", fontWeight:700 }}>DELETE</button>
             </div>
 
+            {TIMED_TYPES[sess.type] ? renderTimedSession(sess) : (
+            <>
             {sess.exercises.map((ex, exIdx) => renderExerciseCard(ex, exIdx))}
 
             {sess.exercises.length === 0 && (
@@ -2330,8 +2365,73 @@
                 ))}
               </div>
             )}
+            </>
+            )}
 
             <SavedToast show={saved} />
+          </>
+        );
+      };
+
+      // Timed session UI: stopwatch (running) or manual duration entry (swimming/cycling).
+      const renderTimedSession = sess => {
+        const mode = TIMED_TYPES[sess.type];
+        const w = WORKOUT_TYPES.find(t => t.key === sess.type);
+        const bouts = (sess.exercises||[]).flatMap(e => (e.sets||[]).filter(s => s.duration > 0).map(s => ({ boutId:e.id, secs:s.duration })));
+        const totalSecs = bouts.reduce((a,b) => a + b.secs, 0);
+        const isRunning = runExId === SESSION_RUN_ID && runStartAt;
+
+        return (
+          <>
+            {mode === "stopwatch" ? (
+              isRunning ? (
+                <div style={{ background:C.pinkTint, borderRadius:16, padding:"28px 16px", textAlign:"center", marginBottom:14 }}>
+                  <div style={{ fontSize:54, fontWeight:800, color:C.pinkDeep, letterSpacing:-1.5, fontVariantNumeric:"tabular-nums", lineHeight:1 }}>{fmtStopwatch(runElapsed)}</div>
+                  <div style={{ fontSize:12, fontWeight:700, letterSpacing:1.5, textTransform:"uppercase", color:C.pink, marginTop:8 }}>{w?w.label:"Running"}</div>
+                  <div style={{ display:"flex", gap:8, marginTop:18, justifyContent:"center" }}>
+                    <button onClick={stopSessionRun} style={{ flex:1, maxWidth:180, padding:"14px", borderRadius:12, background:C.pink, border:"none", color:"#fff", fontSize:15, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.3 }}>Stop &amp; save</button>
+                    <button onClick={cancelRun} style={{ padding:"14px 18px", borderRadius:12, background:"#fff", border:`1px solid ${C.pink}`, color:C.pinkDeep, fontSize:15, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif" }}>Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={startSessionRun} disabled={!!runStartAt} style={{
+                  display:"flex", alignItems:"center", justifyContent:"center", gap:10, width:"100%",
+                  padding:"18px", borderRadius:14, background: runStartAt ? C.fieldBg : C.pink, border:"none",
+                  color: runStartAt ? C.mutedGray : "#fff", fontSize:16, fontWeight:700, cursor: runStartAt?"not-allowed":"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.3, marginBottom:14,
+                }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="9" stroke={runStartAt?C.mutedGray:"#fff"} strokeWidth="2"/>
+                    <path d="M10 8.5l6 3.5-6 3.5z" fill={runStartAt?C.mutedGray:"#fff"}/>
+                  </svg>
+                  Start {w?w.label.toLowerCase():"running"}
+                </button>
+              )
+            ) : (
+              <div style={{ background:C.pinkTint, borderRadius:16, padding:"18px 16px", marginBottom:14 }}>
+                <div style={{ fontSize:12, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:C.pink, marginBottom:10, textAlign:"center" }}>Log {w?w.label.toLowerCase():"session"} time</div>
+                <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                  <input type="number" min="1" max="600" value={durationInput} onChange={e=>setDurationInput(e.target.value)} placeholder="Minutes"
+                    style={{ flex:1, textAlign:"center", background:"#fff", border:`1px solid ${C.pink}`, borderRadius:11, padding:"14px", fontSize:20, fontWeight:800, color:C.pinkDeep, fontFamily:"Inter,sans-serif", outline:"none" }} />
+                  <button onClick={()=>{ const m=parseInt(durationInput); if(m>0){ logSessionBout(m*60); setDurationInput(""); } }}
+                    style={{ padding:"14px 20px", borderRadius:11, background:C.pink, border:"none", color:"#fff", fontSize:15, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif" }}>Log</button>
+                </div>
+              </div>
+            )}
+
+            {bouts.length > 0 && (
+              <div style={{ marginBottom:8 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:8 }}>
+                  <span style={{ fontSize:12, fontWeight:800, color:C.ink, letterSpacing:-0.2 }}>This session</span>
+                  <span style={{ fontSize:12, fontWeight:700, color:C.pinkDeep }}>{fmtDuration(totalSecs)} total</span>
+                </div>
+                {bouts.map((b,i) => (
+                  <div key={i} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"11px 0", borderBottom:`1px solid ${C.hair}` }}>
+                    <span style={{ fontSize:14, fontWeight:700, color:C.text }}>{w?w.emoji:"⏱️"} {mode==="stopwatch" ? fmtStopwatch(b.secs) : fmtDuration(b.secs)}</span>
+                    <button onClick={()=>deleteSessionBout(b.boutId)} style={{ background:"none", border:"none", color:C.mutedGray, fontSize:18, cursor:"pointer", fontFamily:"Inter,sans-serif", lineHeight:1, padding:"0 4px" }}>×</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         );
       };
