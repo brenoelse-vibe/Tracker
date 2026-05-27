@@ -640,6 +640,7 @@
       const [editingExercise, setEditingExercise] = useState(null);
       const [historyView, setHistoryView] = useState("workouts"); // workouts | daily
       const [expandedFeedId, setExpandedFeedId] = useState(null);
+      const [calMonthOffset, setCalMonthOffset] = useState(0); // 0 = current month, -1 = last month, etc.
       const [libraryExpanded, setLibraryExpanded] = useState(false);
       const [libraryNewByType, setLibraryNewByType] = useState({});
       const [chartExpandedFor, setChartExpandedFor] = useState(null); // exercise name
@@ -3075,41 +3076,49 @@
       const renderWorkoutCalendar = () => {
         const byDate = {};
         Object.keys(data.workoutSessions||{}).forEach(d => { byDate[d] = (data.workoutSessions[d]||[]).length; });
-        // show last 4 months
-        const months = [];
-        const base = new Date();
-        for (let m=3; m>=0; m--) { const dt = new Date(base.getFullYear(), base.getMonth()-m, 1); months.push(dt); }
         const dayColor = n => n===0 ? HEAT[0] : n===1 ? HEAT[2] : n===2 ? HEAT[3] : HEAT[4];
+
+        const base = new Date();
+        const mDate = new Date(base.getFullYear(), base.getMonth() + calMonthOffset, 1);
+        const year = mDate.getFullYear(), month = mDate.getMonth();
+        const daysInMonth = new Date(year, month+1, 0).getDate();
+        const startDow = mDate.getDay();
+        const cells = [];
+        for (let i=0;i<startDow;i++) cells.push(null);
+        for (let d=1; d<=daysInMonth; d++) cells.push(d);
+        const atCurrent = calMonthOffset >= 0;
+
+        const navBtn = (dir, disabled) => ({
+          width:34, height:34, borderRadius:9, border:"none",
+          background: disabled ? "transparent" : C.fieldBg,
+          color: disabled ? C.border : C.ink,
+          fontSize:18, fontWeight:700, lineHeight:1, cursor: disabled?"default":"pointer",
+          fontFamily:"Inter,sans-serif", display:"flex", alignItems:"center", justifyContent:"center",
+        });
+
         return (
           <div>
-            <div style={{ fontSize:13, fontWeight:800, color:C.ink, letterSpacing:-0.2, margin:"4px 0 12px" }}>Workout calendar</div>
-            {months.map((mDate, mi) => {
-              const year = mDate.getFullYear(), month = mDate.getMonth();
-              const first = new Date(year, month, 1);
-              const daysInMonth = new Date(year, month+1, 0).getDate();
-              const startDow = first.getDay();
-              const cells = [];
-              for (let i=0;i<startDow;i++) cells.push(null);
-              for (let d=1; d<=daysInMonth; d++) cells.push(d);
-              return (
-                <div key={mi} style={{ marginBottom:18 }}>
-                  <div style={{ fontSize:11, fontWeight:700, color:C.textMuted, marginBottom:6 }}>{MONTH_LABELS[month]} {year}</div>
-                  <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:4 }}>
-                    {["S","M","T","W","T","F","S"].map((d,i)=>(<div key={"h"+i} style={{ fontSize:8, color:C.mutedGray, textAlign:"center", fontWeight:700 }}>{d}</div>))}
-                    {cells.map((d,i) => {
-                      if (d===null) return <div key={"e"+i} />;
-                      const key = `${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-                      const n = byDate[key]||0;
-                      const isToday = key===today;
-                      return (
-                        <div key={key} style={{ aspectRatio:"1", borderRadius:5, background:dayColor(n), display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontWeight:700, color: n>=2?"#fff":C.mutedGray, border: isToday?`1.5px solid ${C.ink}`:"none", boxSizing:"border-box" }}>{d}</div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6, fontSize:9, color:C.mutedGray, fontWeight:700, letterSpacing:1 }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", margin:"4px 0 12px" }}>
+              <div style={{ fontSize:13, fontWeight:800, color:C.ink, letterSpacing:-0.2 }}>Workout calendar</div>
+              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                <button onClick={()=>setCalMonthOffset(o=>o-1)} style={navBtn(-1, false)}>‹</button>
+                <div style={{ fontSize:13, fontWeight:700, color:C.ink, minWidth:96, textAlign:"center" }}>{MONTH_LABELS[month]} {year}</div>
+                <button onClick={()=>!atCurrent && setCalMonthOffset(o=>o+1)} style={navBtn(1, atCurrent)} disabled={atCurrent}>›</button>
+              </div>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:4 }}>
+              {["S","M","T","W","T","F","S"].map((d,i)=>(<div key={"h"+i} style={{ fontSize:8, color:C.mutedGray, textAlign:"center", fontWeight:700, marginBottom:2 }}>{d}</div>))}
+              {cells.map((d,i) => {
+                if (d===null) return <div key={"e"+i} />;
+                const key = `${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+                const n = byDate[key]||0;
+                const isToday = key===today;
+                return (
+                  <div key={key} style={{ aspectRatio:"1", borderRadius:7, background:dayColor(n), display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700, color: n>=2?"#fff":C.mutedGray, border: isToday?`2px solid ${C.ink}`:"none", boxSizing:"border-box" }}>{d}</div>
+                );
+              })}
+            </div>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6, fontSize:9, color:C.mutedGray, fontWeight:700, letterSpacing:1, marginTop:14 }}>
               <span>NONE</span>
               {[0,2,3,4].map(n=><div key={n} style={{ width:11, height:11, borderRadius:2, background: n===0?HEAT[0]:n===2?HEAT[2]:n===3?HEAT[3]:HEAT[4] }}/>)}
               <span>MORE</span>
@@ -3556,5 +3565,3 @@
   </script>
 </body>
 </html>
-
-
