@@ -1917,9 +1917,133 @@
         );
       };
 
+      // ─── Gap diagram ────────────────────────────────────────────────────
+      // Renders a radar-style polygon: each habit is an axis at an equal angle.
+      // Held habits push the actual shape to the outer (ideal) radius;
+      // missed habits pull that vertex toward ~30% of the radius, producing
+      // a visible "gap" segment from the actual vertex out to the ideal.
+      const renderGapDiagram = () => {
+        const axes = allActiveHabits.map(h => ({
+          key: h.key, label: h.label,
+          held: !!todayLog[h.key],
+        }));
+        const n = axes.length;
+        if (n < 3) return null; // a polygon needs three points; below that we just show the habits.
+
+        const size = 280;             // svg viewBox is size x size
+        const cx = size/2, cy = size/2 + 4;
+        const R = 96;                 // ideal radius (outer)
+        const rMiss = R * 0.30;       // where a missed apex lands
+        const heldCount = axes.filter(a => a.held).length;
+        const closedPct = Math.round((heldCount / n) * 100);
+        const allHeld = heldCount === n;
+
+        // start at 12 o'clock and go clockwise
+        const angleFor = i => -Math.PI/2 + (i * 2*Math.PI / n);
+        const pt = (i, r) => ({ x: cx + r*Math.cos(angleFor(i)), y: cy + r*Math.sin(angleFor(i)) });
+        const idealPts = axes.map((_,i) => pt(i, R));
+        const actualPts = axes.map((a,i) => pt(i, a.held ? R : rMiss));
+
+        const poly = pts => pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+
+        // Label radius — push axis labels outside the ideal radius
+        const labelFor = (i) => {
+          const a = angleFor(i);
+          const r = R + 22;
+          return { x: cx + r*Math.cos(a), y: cy + r*Math.sin(a), a };
+        };
+        // Anchor labels based on angle so they don't collide with the shape
+        const anchorFor = a => {
+          const cosA = Math.cos(a);
+          if (cosA > 0.3) return "start";
+          if (cosA < -0.3) return "end";
+          return "middle";
+        };
+
+        // Gap-percentage label position: midpoint of (actual → ideal), nudged perpendicular
+        const gapLabelFor = (i) => {
+          const a = angleFor(i);
+          const r = (rMiss + R) / 2;
+          // small perpendicular nudge so the % doesn't sit on the dashed line
+          const perpA = a - Math.PI/2;
+          const nx = Math.cos(perpA) * 9, ny = Math.sin(perpA) * 9;
+          return { x: cx + r*Math.cos(a) + nx, y: cy + r*Math.sin(a) + ny };
+        };
+
+        const gapPctPerMiss = Math.round(100 / n);
+
+        return (
+          <div style={{
+            background: "#f5efe4",
+            borderRadius: 14,
+            padding: "16px 12px 12px",
+            margin: "14px 0 6px",
+          }}>
+            <svg viewBox={`0 0 ${size} ${size}`} width="100%" height="auto" style={{ display:"block" }}>
+              {/* faint cross axes */}
+              <line x1={cx} y1={cy-R-2} x2={cx} y2={cy+R+2} stroke="#dbd0bc" strokeWidth="1"/>
+              <line x1={cx-R-2} y1={cy} x2={cx+R+2} y2={cy} stroke="#dbd0bc" strokeWidth="1"/>
+
+              {/* IDEAL — only when there's a gap to show */}
+              {!allHeld && (
+                <polygon points={poly(idealPts)} fill="none" stroke="#c9a880" strokeWidth="1.6" strokeDasharray="4 5"/>
+              )}
+
+              {/* ACTUAL */}
+              <polygon points={poly(actualPts)} fill={C.accentBright} fillOpacity="0.18" stroke={C.accentDeep} strokeWidth="2.2" strokeLinejoin="round"/>
+
+              {/* per-axis: dashed gap segment, missed-vertex marker, gap % */}
+              {axes.map((a, i) => {
+                if (a.held) return null;
+                const inner = actualPts[i], outer = idealPts[i];
+                const lbl = gapLabelFor(i);
+                return (
+                  <g key={"gap-"+i}>
+                    <line x1={inner.x} y1={inner.y} x2={outer.x} y2={outer.y}
+                          stroke="#c9a880" strokeWidth="1.4" strokeDasharray="2 4"/>
+                    <circle cx={outer.x} cy={outer.y} r="5" fill="none" stroke="#c9a880" strokeWidth="1.6"/>
+                    <text x={lbl.x} y={lbl.y} textAnchor="middle"
+                          style={{ fontFamily:"Georgia, 'Times New Roman', serif", fontStyle:"italic", fontSize:"16px", fill:"#9a7b5a", fontWeight:500 }}>
+                      {gapPctPerMiss}%
+                    </text>
+                  </g>
+                );
+              })}
+
+              {/* held vertex markers (drawn on top of actual polygon) */}
+              {axes.map((a, i) => a.held ? (
+                <circle key={"hv-"+i} cx={actualPts[i].x} cy={actualPts[i].y} r="6" fill={C.accentDeep}/>
+              ) : (
+                <circle key={"mv-"+i} cx={actualPts[i].x} cy={actualPts[i].y} r="6" fill="#c9a880"/>
+              ))}
+
+              {/* center closed % — tucked slightly to a quiet position */}
+              <text x={cx + (allHeld ? 0 : 24)} y={cy + (allHeld ? 4 : -6)}
+                    textAnchor={allHeld ? "middle" : "start"}
+                    style={{ fontFamily:"Georgia, 'Times New Roman', serif", fontWeight:600, fill:C.accentDeep, fontSize: allHeld ? "30px" : "26px" }}>
+                {closedPct}<tspan style={{ fontSize:"13px", fill:"#a99f8e" }}>%</tspan>
+              </text>
+
+              {/* axis labels */}
+              {axes.map((a, i) => {
+                const l = labelFor(i);
+                return (
+                  <text key={"lab-"+i} x={l.x} y={l.y} textAnchor={anchorFor(l.a)}
+                        style={{ fontFamily:"Inter, sans-serif", fontSize:"12.5px", fontWeight:500, fill:"#6b6357", letterSpacing:"0.2px" }}
+                        dominantBaseline="middle">
+                    {a.label}
+                  </text>
+                );
+              })}
+            </svg>
+          </div>
+        );
+      };
+
       const renderDayTab = () => {
         return (
           <div style={{ padding:"0 20px 16px" }}>
+            {renderGapDiagram()}
             <div style={{ fontSize:12, fontWeight:700, color:C.ink, margin:"22px 0 0", letterSpacing:-0.2 }}>Habits</div>
 
             {allActiveHabits.map(h => {
@@ -3795,3 +3919,4 @@
   </script>
 </body>
 </html>
+
