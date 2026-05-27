@@ -192,6 +192,7 @@
       accentLight:"#7ac943",
       green:"#7ac943", greenDark:"#4a8f2f", greenText:"#3c7a26",
       red:"#d4453f",
+      pink:"#ec4899", pinkDeep:"#be185d", pinkTint:"#fce7f3",
       workoutOnly:"#4a8f2f",
     };
     const HEAT = { 0:"#eef2ec", 1:"#d6eebc", 2:"#aadd76", 3:"#7ac943", 4:"#4a8f2f", future:"#ffffff" };
@@ -653,6 +654,10 @@
       const [restNow, setRestNow] = useState(Date.now());
       const [restDone, setRestDone] = useState(false);   // briefly true when it hits zero (for pulse)
       const [setPromptFor, setSetPromptFor] = useState(null); // "exId:idx" whose preset chooser is open
+      // Run timer (count-UP stopwatch for cardio). runStartAt = absolute epoch ms when started; null = stopped.
+      const [runExId, setRunExId] = useState(null);       // which exercise's run timer is active
+      const [runStartAt, setRunStartAt] = useState(null); // epoch ms the run began
+      const [runNow, setRunNow] = useState(Date.now());   // ticking clock
 
       // Todo tab state
       const [todoSheetOpen, setTodoSheetOpen] = useState(false);
@@ -814,6 +819,32 @@
         if (sec > 0) startRest(sec); else setRestDone(false);
       };
       const skipRest  = () => { setRestEndAt(null); setRestDone(false); };
+
+      // ─── Run timer (count-up stopwatch) ─────────────────────────────────
+      useEffect(() => {
+        if (!runStartAt) return;
+        const id = setInterval(() => setRunNow(Date.now()), 250);
+        return () => clearInterval(id);
+      }, [runStartAt]);
+
+      const runElapsed = runStartAt ? Math.max(0, Math.floor((runNow - runStartAt)/1000)) : 0;
+
+      const startRun = exId => { setRunExId(exId); setRunNow(Date.now()); setRunStartAt(Date.now()); };
+      const stopRun = () => {
+        const secs = runElapsed;
+        if (runExId && secs > 0) {
+          // Record the run as a set: store seconds in a `duration` field on a new/first set.
+          mapExercises(e => {
+            if (e.id !== runExId) return e;
+            const sets = [ ...(e.sets||[]), { duration: secs, weight:0, reps:0, done:true } ];
+            return { ...e, sets, done:true };
+          });
+        }
+        setRunStartAt(null); setRunExId(null);
+      };
+      const cancelRun = () => { setRunStartAt(null); setRunExId(null); };
+      const fmtStopwatch = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
+
 
       const hiddenBuiltins = asArray(data.hiddenBuiltins);
       const activeBuiltins = BUILTIN_HABITS.filter(h => !hiddenBuiltins.includes(h.key));
@@ -2153,8 +2184,49 @@
               </div>
             </div>
 
+            {/* Running stopwatch — pink-toned count-up timer for the Running exercise */}
+            {ex.name.trim().toLowerCase() === "running" && (() => {
+              const isRunning = runExId === ex.id && runStartAt;
+              const completedRuns = (ex.sets||[]).filter(s => s.duration > 0);
+              return (
+                <div style={{ marginBottom:14 }}>
+                  {isRunning ? (
+                    <div style={{ background:C.pinkTint, borderRadius:14, padding:"18px 16px", textAlign:"center" }}>
+                      <div style={{ fontSize:42, fontWeight:800, color:C.pinkDeep, letterSpacing:-1, fontVariantNumeric:"tabular-nums", lineHeight:1 }}>{fmtStopwatch(runElapsed)}</div>
+                      <div style={{ fontSize:11, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:C.pink, marginTop:6 }}>Running</div>
+                      <div style={{ display:"flex", gap:8, marginTop:14, justifyContent:"center" }}>
+                        <button onClick={stopRun} style={{ flex:1, maxWidth:160, padding:"12px", borderRadius:11, background:C.pink, border:"none", color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.3 }}>Stop & save</button>
+                        <button onClick={cancelRun} style={{ padding:"12px 16px", borderRadius:11, background:"#fff", border:`1px solid ${C.pink}`, color:C.pinkDeep, fontSize:14, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif" }}>Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={()=>startRun(ex.id)} disabled={!!runStartAt} style={{
+                      display:"flex", alignItems:"center", justifyContent:"center", gap:10, width:"100%",
+                      padding:"14px", borderRadius:12, background: runStartAt ? C.fieldBg : C.pink, border:"none",
+                      color: runStartAt ? C.mutedGray : "#fff", fontSize:15, fontWeight:700, cursor: runStartAt?"not-allowed":"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.3,
+                    }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="9" stroke={runStartAt?C.mutedGray:"#fff"} strokeWidth="2"/>
+                        <path d="M10 8.5l6 3.5-6 3.5z" fill={runStartAt?C.mutedGray:"#fff"}/>
+                      </svg>
+                      Start running
+                    </button>
+                  )}
+                  {completedRuns.length > 0 && !isRunning && (
+                    <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginTop:10 }}>
+                      {completedRuns.map((s,i) => (
+                        <span key={i} style={{ fontSize:12, fontWeight:700, color:C.pinkDeep, background:C.pinkTint, borderRadius:8, padding:"5px 10px", fontVariantNumeric:"tabular-nums" }}>
+                          🏃 {fmtStopwatch(s.duration)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* table */}
-            {ex.sets.length > 0 && (
+            {ex.sets.filter(s => !(s.duration > 0)).length > 0 && (
               <>
                 <div style={{ display:"grid", gridTemplateColumns:"26px 1fr 56px 50px 30px", gap:8, padding:"0 0 8px", fontSize:10, letterSpacing:0.4, textTransform:"uppercase", fontWeight:700, color:C.mutedGray, borderBottom:`1px solid ${C.hair}` }}>
                   <span style={{ textAlign:"center" }}>Set</span>
@@ -2164,10 +2236,12 @@
                   <span style={{ textAlign:"center" }}>✓</span>
                 </div>
                 {ex.sets.map((st, idx) => (
+                  (st.duration > 0) ? null : (
                   <React.Fragment key={idx}>
                     {renderSetRow(ex.id, ex.name, st, idx)}
                     {renderRestPrompt(ex.id, idx, ex.name)}
                   </React.Fragment>
+                  )
                 ))}
               </>
             )}
@@ -3598,3 +3672,4 @@
   </script>
 </body>
 </html>
+
