@@ -473,33 +473,34 @@
     // ═══ REUSABLE COMPONENTS ═════════════════════════════════════════════════
 
     // Rounded-square check (rectangular to match bento language)
+    // ── Animated check: spring + ripple + haptic, driven by STATE TRANSITION
+    //    (off→on) so it fires whether the user tapped check, name, or emoji.
     function Toggle({ on, onClick, size=28 }) {
+      const [pop, setPop] = useState(false);
       const [ripple, setRipple] = useState(false);
-      const wasOn = useRef(on);
-      useEffect(() => { wasOn.current = on; }, [on]);
-      const handle = () => {
-        // fire ripple + haptic only when turning ON
-        if (!wasOn.current) {
-          setRipple(false);
-          requestAnimationFrame(() => setRipple(true));
+      const prev = useRef(on);
+      useEffect(() => {
+        if (on && !prev.current) {
+          setPop(false); setRipple(false);
+          requestAnimationFrame(() => { setPop(true); setRipple(true); });
           if (navigator.vibrate) { try { navigator.vibrate(12); } catch(e){} }
         }
-        onClick && onClick();
-      };
+        prev.current = on;
+      }, [on]);
       return (
-        <div style={{ position:"relative", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+        <div onClick={onClick} style={{ position:"relative", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, cursor:"pointer", width:size, height:size }}>
           {ripple && (
             <span className="chk-ripple" onAnimationEnd={()=>setRipple(false)} style={{
               position:"absolute", width:size, height:size, borderRadius:8,
               border:`2px solid ${C.accent}`, pointerEvents:"none",
             }}/>
           )}
-          <div onClick={handle} className={on ? "chk-pop" : ""} style={{
+          <div className={pop?"chk-pop":""} onAnimationEnd={()=>setPop(false)} style={{
             width:size, height:size, borderRadius:8,
             background: on ? C.accent : "transparent",
             border: on ? `1.5px solid ${C.accent}` : `1.5px solid #d9d3c8`,
             display:"flex", alignItems:"center", justifyContent:"center",
-            cursor:"pointer", transition:"background 0.18s ease, border-color 0.18s ease",
+            transition:"background 0.18s ease, border-color 0.18s ease",
           }}>
             <svg width={Math.round(size*0.5)} height={Math.round(size*0.5)} viewBox="0 0 24 24" fill="none" style={{
               opacity: on ? 1 : 0,
@@ -511,6 +512,63 @@
           </div>
         </div>
       );
+    }
+
+    // ── Animated count-up number for the gap %. Hides at 0 but reserves height
+    //    so the layout never jumps.
+    function CountUp({ value, hide }) {
+      const [shown, setShown] = useState(value);
+      const raf = useRef(0);
+      const fromVal = useRef(value);
+      useEffect(() => {
+        cancelAnimationFrame(raf.current);
+        fromVal.current = shown;
+        const start = performance.now();
+        const dur = 450;
+        const tick = (t) => {
+          const k = Math.min(1, (t - start) / dur);
+          const eased = 1 - Math.pow(1 - k, 3);
+          setShown(Math.round(fromVal.current + (value - fromVal.current) * eased));
+          if (k < 1) raf.current = requestAnimationFrame(tick);
+        };
+        raf.current = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(raf.current);
+      }, [value]);
+      return (
+        <div style={{ textAlign:"center", height:46, display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <span style={{ fontFamily:"'Source Serif 4', Georgia, serif", fontWeight:600, fontSize:30, color:C.accentDeep, opacity: hide ? 0 : 1, transition:"opacity 0.25s ease" }}>
+            {shown}<span style={{ fontSize:15, color:"#b0aaa0", fontWeight:400 }}>%</span>
+          </span>
+        </div>
+      );
+    }
+
+    // ── Polygon whose vertex coordinates animate (rAF interpolation, not CSS
+    //    transition on the `points` attribute — that's browser-flaky).
+    function AnimatedPolygon({ targetPts, fill, fillOpacity, stroke, strokeWidth }) {
+      const [pts, setPts] = useState(targetPts);
+      const fromRef = useRef(targetPts);
+      const raf = useRef(0);
+      useEffect(() => {
+        cancelAnimationFrame(raf.current);
+        fromRef.current = pts;
+        const start = performance.now();
+        const dur = 480;
+        const tick = (t) => {
+          const k = Math.min(1, (t - start) / dur);
+          const eased = 1 - Math.pow(1 - k, 3);
+          const next = targetPts.map((p, i) => {
+            const f = fromRef.current[i] || p;
+            return { x: f.x + (p.x - f.x) * eased, y: f.y + (p.y - f.y) * eased };
+          });
+          setPts(next);
+          if (k < 1) raf.current = requestAnimationFrame(tick);
+        };
+        raf.current = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(raf.current);
+      }, [JSON.stringify(targetPts)]);
+      const str = pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+      return <polygon points={str} fill={fill} fillOpacity={fillOpacity} stroke={stroke} strokeWidth={strokeWidth} strokeLinejoin="round"/>;
     }
 
     // Swipe-to-delete row. Drag left (touch or mouse) to reveal a delete button;
@@ -1994,8 +2052,7 @@
 
               {/* ACTUAL filled shape — hidden when nothing is held (no sad blob) */}
               {!noneHeld && (
-                <polygon points={poly(actualPts)} fill={C.accentBright} fillOpacity="0.16" stroke={C.accentDeep} strokeWidth="2.2" strokeLinejoin="round"
-                         style={{ transition:"all 0.5s cubic-bezier(.34,1.4,.5,1)" }}/>
+                <AnimatedPolygon targetPts={actualPts} fill={C.accentBright} fillOpacity={0.16} stroke={C.accentDeep} strokeWidth={2.2}/>
               )}
 
               {/* dashed gap segments on missed axes */}
@@ -2023,14 +2080,8 @@
               })}
             </svg>
 
-            {/* closed % — serif, calm, below the shape. Omitted entirely at 0. */}
-            {closedPct > 0 && (
-              <div style={{ textAlign:"center", marginTop:2 }}>
-                <span style={{ fontFamily:"'Source Serif 4', Georgia, serif", fontWeight:600, fontSize:30, color:C.accentDeep }}>
-                  {closedPct}<span style={{ fontSize:15, color:"#b0aaa0", fontWeight:400 }}>%</span>
-                </span>
-              </div>
-            )}
+            {/* closed % — animated count-up, hidden at 0 but height reserved. */}
+            <CountUp value={closedPct} hide={closedPct === 0} />
           </div>
         );
       };
@@ -3917,3 +3968,4 @@
   </script>
 </body>
 </html>
+
