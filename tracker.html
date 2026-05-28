@@ -16,13 +16,17 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background: #faf8f3;
+      background: #fdfdfc;
       background-attachment: fixed;
       font-family: 'Inter', -apple-system, system-ui, sans-serif;
       color: #35322c;
       -webkit-font-smoothing: antialiased;
       letter-spacing: -0.01em;
     }
+    @keyframes chkPop { 0%{transform:scale(1)} 30%{transform:scale(1.18)} 60%{transform:scale(.94)} 100%{transform:scale(1)} }
+    @keyframes chkRipple { 0%{opacity:.5;transform:scale(1)} 100%{opacity:0;transform:scale(2.1)} }
+    .chk-pop { animation: chkPop .42s cubic-bezier(.34,1.6,.5,1); }
+    .chk-ripple { animation: chkRipple .5s ease-out; }
     input:focus { outline: 2px solid #7ac943; }
     input.set-field:focus { outline: none; border-bottom-color: #7ac943 !important; }
     input.set-field::placeholder { color: #c2ccc4; }
@@ -470,15 +474,42 @@
 
     // Rounded-square check (rectangular to match bento language)
     function Toggle({ on, onClick, size=28 }) {
+      const [ripple, setRipple] = useState(false);
+      const wasOn = useRef(on);
+      useEffect(() => { wasOn.current = on; }, [on]);
+      const handle = () => {
+        // fire ripple + haptic only when turning ON
+        if (!wasOn.current) {
+          setRipple(false);
+          requestAnimationFrame(() => setRipple(true));
+          if (navigator.vibrate) { try { navigator.vibrate(12); } catch(e){} }
+        }
+        onClick && onClick();
+      };
       return (
-        <div onClick={onClick} style={{
-          width:size, height:size, borderRadius:9,
-          background: on ? C.accentBright : "transparent",
-          border: on ? `2px solid ${C.accentBright}` : `2px solid ${C.border}`,
-          boxShadow: "none",
-          display:"flex", alignItems:"center", justifyContent:"center",
-          fontSize:15, color:"#fff", fontWeight:800, cursor:"pointer", flexShrink:0,
-        }}>{on?"✓":""}</div>
+        <div style={{ position:"relative", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+          {ripple && (
+            <span className="chk-ripple" onAnimationEnd={()=>setRipple(false)} style={{
+              position:"absolute", width:size, height:size, borderRadius:8,
+              border:`2px solid ${C.accent}`, pointerEvents:"none",
+            }}/>
+          )}
+          <div onClick={handle} className={on ? "chk-pop" : ""} style={{
+            width:size, height:size, borderRadius:8,
+            background: on ? C.accent : "transparent",
+            border: on ? `1.5px solid ${C.accent}` : `1.5px solid #d9d3c8`,
+            display:"flex", alignItems:"center", justifyContent:"center",
+            cursor:"pointer", transition:"background 0.18s ease, border-color 0.18s ease",
+          }}>
+            <svg width={Math.round(size*0.5)} height={Math.round(size*0.5)} viewBox="0 0 24 24" fill="none" style={{
+              opacity: on ? 1 : 0,
+              transform: on ? "scale(1)" : "scale(0.4)",
+              transition:"opacity 0.16s ease, transform 0.22s cubic-bezier(.34,1.8,.5,1)",
+            }}>
+              <path d="M5 12.5l4.5 4.5L19 7" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+        </div>
       );
     }
 
@@ -570,8 +601,8 @@
             padding:"17px 0",
             borderBottom:`1px solid ${C.hair}`,
           }}>
-            <div style={{ fontSize:20, textAlign:"center" }}>{emoji}</div>
-            <div style={{ minWidth:0 }}>
+            <div onClick={onToggle} style={{ fontSize:20, textAlign:"center", cursor:"pointer" }}>{emoji}</div>
+            <div onClick={onToggle} style={{ minWidth:0, cursor:"pointer", userSelect:"none" }}>
               <div style={{ fontFamily:"'Source Serif 4', Georgia, serif", color: active?C.accentDeep:C.ink, fontSize:20, fontWeight: active?600:500, letterSpacing:-0.2 }}>{label}</div>
               {sublabel ? <div style={{ color:C.faint||"#b0aaa0", fontSize:12, marginTop:2, fontWeight:450 }}>{sublabel}</div> : null}
             </div>
@@ -1963,7 +1994,8 @@
 
               {/* ACTUAL filled shape — hidden when nothing is held (no sad blob) */}
               {!noneHeld && (
-                <polygon points={poly(actualPts)} fill={C.accentBright} fillOpacity="0.16" stroke={C.accentDeep} strokeWidth="2.2" strokeLinejoin="round"/>
+                <polygon points={poly(actualPts)} fill={C.accentBright} fillOpacity="0.16" stroke={C.accentDeep} strokeWidth="2.2" strokeLinejoin="round"
+                         style={{ transition:"all 0.5s cubic-bezier(.34,1.4,.5,1)" }}/>
               )}
 
               {/* dashed gap segments on missed axes */}
@@ -1991,12 +2023,14 @@
               })}
             </svg>
 
-            {/* closed % — serif, calm, below the shape */}
-            <div style={{ textAlign:"center", marginTop:2 }}>
-              <span style={{ fontFamily:"'Source Serif 4', Georgia, serif", fontWeight:600, fontSize:30, color:C.accentDeep }}>
-                {closedPct}<span style={{ fontSize:15, color:"#b0aaa0", fontWeight:400 }}>%</span>
-              </span>
-            </div>
+            {/* closed % — serif, calm, below the shape. Omitted entirely at 0. */}
+            {closedPct > 0 && (
+              <div style={{ textAlign:"center", marginTop:2 }}>
+                <span style={{ fontFamily:"'Source Serif 4', Georgia, serif", fontWeight:600, fontSize:30, color:C.accentDeep }}>
+                  {closedPct}<span style={{ fontSize:15, color:"#b0aaa0", fontWeight:400 }}>%</span>
+                </span>
+              </div>
+            )}
           </div>
         );
       };
@@ -3836,7 +3870,7 @@
 
       // ─── Root render ────────────────────────────────────────────────────
       return (
-        <div style={{ fontFamily:"Inter,sans-serif", minHeight:"100vh", color:C.text, maxWidth:430, margin:"0 auto", background:"#faf8f3", paddingBottom:"calc(96px + env(safe-area-inset-bottom, 0px))" }}>
+        <div style={{ fontFamily:"Inter,sans-serif", minHeight:"100vh", color:C.text, maxWidth:430, margin:"0 auto", background:"#fdfdfc", paddingBottom:"calc(96px + env(safe-area-inset-bottom, 0px))" }}>
           {renderHeader()}
           {activeTab === "day" && renderDayHero()}
           {activeTab === "day"      && renderDayTab()}
