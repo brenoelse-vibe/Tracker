@@ -12,14 +12,14 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700;800;900&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background: #ffffff;
+      background: #faf8f3;
       background-attachment: fixed;
       font-family: 'Inter', -apple-system, system-ui, sans-serif;
-      color: #15231a;
+      color: #35322c;
       -webkit-font-smoothing: antialiased;
       letter-spacing: -0.01em;
     }
@@ -566,16 +566,14 @@
       return (
         <div>
           <div style={{
-            display:"grid", gridTemplateColumns:"30px 1fr auto auto", alignItems:"center", gap:15,
-            padding: active ? "16px 0 16px 18px" : "16px 0",
-            marginLeft: active ? -22 : 0,
-            borderLeft: active ? `4px solid ${C.accentBright}` : "none",
+            display:"grid", gridTemplateColumns:"28px 1fr auto auto", alignItems:"center", gap:15,
+            padding:"17px 0",
             borderBottom:`1px solid ${C.hair}`,
           }}>
-            <div style={{ fontSize:23, textAlign:"center" }}>{emoji}</div>
+            <div style={{ fontSize:20, textAlign:"center" }}>{emoji}</div>
             <div style={{ minWidth:0 }}>
-              <div style={{ color:C.text, fontSize:17, fontWeight: active?700:600, letterSpacing:-0.3 }}>{label}</div>
-              <div style={{ color:C.mutedGray, fontSize:13, marginTop:2, fontWeight:500 }}>{sublabel}</div>
+              <div style={{ fontFamily:"'Source Serif 4', Georgia, serif", color: active?C.accentDeep:C.ink, fontSize:20, fontWeight: active?600:500, letterSpacing:-0.2 }}>{label}</div>
+              {sublabel ? <div style={{ color:C.faint||"#b0aaa0", fontSize:12, marginTop:2, fontWeight:450 }}>{sublabel}</div> : null}
             </div>
             <div style={{ display:"flex", alignItems:"center" }}>{stepper}</div>
             <Toggle on={active} onClick={onToggle} />
@@ -1799,16 +1797,14 @@
         return (
         <div key="workout">
           <div style={{
-            display:"grid", gridTemplateColumns:"30px 1fr auto auto", alignItems:"center", gap:15,
-            padding: on ? "16px 0 16px 18px" : "16px 0",
-            marginLeft: on ? -22 : 0,
-            borderLeft: on ? `4px solid ${C.accentBright}` : "none",
+            display:"grid", gridTemplateColumns:"28px 1fr auto auto", alignItems:"center", gap:15,
+            padding:"17px 0",
             borderBottom:`1px solid ${C.hair}`,
           }}>
-            <div style={{ fontSize:23, textAlign:"center" }}>🏋️</div>
+            <div style={{ fontSize:20, textAlign:"center" }}>🏋️</div>
             <div style={{ minWidth:0 }}>
-              <div style={{ color:C.text, fontSize:17, fontWeight: on?700:600, letterSpacing:-0.3 }}>Workout</div>
-              <div style={{ color:C.mutedGray, fontSize:13, marginTop:2, fontWeight:500 }}>
+              <div style={{ fontFamily:"'Source Serif 4', Georgia, serif", color: on?C.accentDeep:C.ink, fontSize:20, fontWeight: on?600:500, letterSpacing:-0.2 }}>Workout</div>
+              <div style={{ color:"#b0aaa0", fontSize:12, marginTop:2, fontWeight:450 }}>
                 {selectedWorkout ? `${selectedWorkout.emoji} ${selectedWorkout.label}` : "Tap to log"}
               </div>
             </div>
@@ -1893,31 +1889,17 @@
         );
 
         return (
-          <div style={{ padding:"2px 20px 0" }}>
+          <div style={{ padding:"2px 24px 0" }}>
             {/* greeting + date scrubber */}
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end", padding:"18px 0 6px" }}>
-              <div>
-                <div style={{ fontSize:13, color:C.textMuted, fontWeight:500, marginBottom:2 }}>{greeting}</div>
-                <div style={{ fontSize:30, fontWeight:800, letterSpacing:-1.2, lineHeight:1, color:C.ink }}>{(data.userName||"").trim() || (user?.displayName||"").split(" ")[0] || "there"}.</div>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", padding:"16px 0 6px" }}>
+              <div style={{ fontFamily:"'Source Serif 4', Georgia, serif", fontSize:31, fontWeight:600, letterSpacing:-0.5, lineHeight:1.12, color:C.ink, paddingRight:12 }}>
+                {greeting.replace(/,$/,"")}, {(data.userName||"").trim() || (user?.displayName||"").split(" ")[0] || "there"}
               </div>
-              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0, marginTop:6 }}>
                 <button onClick={()=>goRel(-1)} style={{ background:"none", border:"none", color:C.mutedGray, cursor:"pointer", fontSize:18, padding:0, lineHeight:1 }}>‹</button>
-                <span onClick={()=>setViewDate(today)} style={{ fontSize:12, fontWeight:600, color:C.textMuted, cursor: isToday?"default":"pointer", minWidth:54, textAlign:"center" }}>{scrubLabel}</span>
+                <span onClick={()=>setViewDate(today)} style={{ fontSize:12, fontWeight:600, color:C.textMuted, cursor: isToday?"default":"pointer", minWidth:50, textAlign:"center" }}>{scrubLabel}</span>
                 <button onClick={()=>{ if (viewDate<today) goRel(1); }} style={{ background:"none", border:"none", color:C.mutedGray, cursor:"pointer", fontSize:18, padding:0, lineHeight:1, opacity: viewDate>=today?0.35:1 }}>›</button>
               </div>
-            </div>
-
-            {/* stat grid */}
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", padding:"22px 0 18px", borderBottom:`1px solid ${C.hair}` }}>
-              <StatCol n={doneToday} unit={`/${totalToday}`} label="Habits done" />
-              <StatCol n={streak} label="Day streak" />
-              <StatCol n={pctToday} unit="%" label="Today" />
-            </div>
-
-            {/* meta line — aligned to same 3-col grid */}
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", padding:"14px 0 0", fontSize:12, color:C.textMuted, fontWeight:500 }}>
-              <span style={{ whiteSpace:"nowrap" }}>Day <strong style={{color:C.ink, fontWeight:700}}>{dayCount}</strong> · Wk <strong style={{color:C.ink, fontWeight:700}}>{todayWeek}</strong></span>
-              <span style={{ gridColumn:3, textAlign:"right", whiteSpace:"nowrap" }}>Last: <strong style={{color:C.ink, fontWeight:700}}>{lastWorkout ? `${lastWorkoutType?.emoji||""} ${lastWorkoutType?.label||lastWorkout.type}` : "—"}</strong></span>
             </div>
           </div>
         );
@@ -1966,35 +1948,35 @@
         };
 
         return (
-          <div style={{ background:"#f5efe4", borderRadius:14, padding:"18px 10px 12px", margin:"14px 0 6px" }}>
+          <div style={{ background:"transparent", padding:"14px 4px 6px", margin:"6px 0 0" }}>
             <svg viewBox={`0 0 ${W} ${H}`} width="100%" height="auto" style={{ display:"block", overflow:"visible" }}>
               {/* faint reference ring */}
-              <circle cx={cx} cy={cy} r={R*0.5} fill="none" stroke="#e7dccb" strokeWidth="1" strokeDasharray="1 3"/>
+              <circle cx={cx} cy={cy} r={R*0.5} fill="none" stroke="#ece6db" strokeWidth="1" strokeDasharray="1 3"/>
               {/* faint cross axes */}
-              <line x1={cx} y1={cy-R} x2={cx} y2={cy+R} stroke="#e3d9c6" strokeWidth="1"/>
-              <line x1={cx-R} y1={cy} x2={cx+R} y2={cy} stroke="#e3d9c6" strokeWidth="1"/>
+              <line x1={cx} y1={cy-R} x2={cx} y2={cy+R} stroke="#ece6db" strokeWidth="1"/>
+              <line x1={cx-R} y1={cy} x2={cx+R} y2={cy} stroke="#ece6db" strokeWidth="1"/>
 
               {/* IDEAL — dashed brass, only while there's a gap */}
               {!allHeld && (
-                <polygon points={poly(idealPts)} fill="none" stroke="#c9a880" strokeWidth="1.3" strokeDasharray="3 5" opacity="0.75"/>
+                <polygon points={poly(idealPts)} fill="none" stroke="#d3bf9f" strokeWidth="1.2" strokeDasharray="3 5" opacity="0.7"/>
               )}
 
               {/* ACTUAL filled shape — hidden when nothing is held (no sad blob) */}
               {!noneHeld && (
-                <polygon points={poly(actualPts)} fill={C.accentBright} fillOpacity="0.18" stroke={C.accentDeep} strokeWidth="2.2" strokeLinejoin="round"/>
+                <polygon points={poly(actualPts)} fill={C.accentBright} fillOpacity="0.16" stroke={C.accentDeep} strokeWidth="2.2" strokeLinejoin="round"/>
               )}
 
-              {/* dashed gap segments on missed axes (no per-segment %, the header says it) */}
+              {/* dashed gap segments on missed axes */}
               {!noneHeld && axes.map((a, i) => a.held ? null : (
                 <line key={"gap-"+i} x1={actualPts[i].x} y1={actualPts[i].y} x2={idealPts[i].x} y2={idealPts[i].y}
-                      stroke="#c9a880" strokeWidth="1.3" strokeDasharray="2 4"/>
+                      stroke="#d3bf9f" strokeWidth="1.2" strokeDasharray="2 4"/>
               ))}
 
               {/* vertex markers: solid green = held, open brass ring = missed */}
               {axes.map((a, i) => a.held ? (
                 <circle key={"v-"+i} cx={actualPts[i].x} cy={actualPts[i].y} r="6" fill={C.accentDeep}/>
               ) : (
-                <circle key={"v-"+i} cx={idealPts[i].x} cy={idealPts[i].y} r="4.5" fill="none" stroke="#c9a880" strokeWidth="1.4"/>
+                <circle key={"v-"+i} cx={idealPts[i].x} cy={idealPts[i].y} r="4.5" fill="none" stroke="#d3bf9f" strokeWidth="1.4"/>
               ))}
 
               {/* axis labels */}
@@ -2002,17 +1984,17 @@
                 const l = labelFor(i);
                 return (
                   <text key={"lab-"+i} x={l.x} y={l.y} textAnchor={l.anchor} dominantBaseline="middle"
-                        style={{ fontFamily:"Inter, sans-serif", fontSize:"12px", fontWeight:500, fill: a.held ? C.accentDeep : "#6b6357", letterSpacing:"0.1px" }}>
+                        style={{ fontFamily:"Inter, sans-serif", fontSize:"12px", fontWeight:500, fill: a.held ? C.accentDeep : "#74706a", letterSpacing:"0.1px" }}>
                     {a.label}
                   </text>
                 );
               })}
             </svg>
 
-            {/* closed % — calm header above the shape, no "CLOSED" label */}
+            {/* closed % — serif, calm, below the shape */}
             <div style={{ textAlign:"center", marginTop:2 }}>
-              <span style={{ fontFamily:"Georgia, 'Times New Roman', serif", fontWeight:600, fontSize:30, color:C.accentDeep }}>
-                {closedPct}<span style={{ fontSize:15, color:"#a99f8e", fontWeight:500 }}>%</span>
+              <span style={{ fontFamily:"'Source Serif 4', Georgia, serif", fontWeight:600, fontSize:30, color:C.accentDeep }}>
+                {closedPct}<span style={{ fontSize:15, color:"#b0aaa0", fontWeight:400 }}>%</span>
               </span>
             </div>
           </div>
@@ -2021,9 +2003,8 @@
 
       const renderDayTab = () => {
         return (
-          <div style={{ padding:"0 20px 16px" }}>
+          <div style={{ padding:"0 24px 16px" }}>
             {renderGapDiagram()}
-            <div style={{ fontSize:12, fontWeight:700, color:C.ink, margin:"22px 0 0", letterSpacing:-0.2 }}>Habits</div>
 
             {allActiveHabits.map(h => {
               if (h.key === "workout") return renderWorkoutHabitCard();
@@ -3855,7 +3836,7 @@
 
       // ─── Root render ────────────────────────────────────────────────────
       return (
-        <div style={{ fontFamily:"Inter,sans-serif", minHeight:"100vh", color:C.text, maxWidth:430, margin:"0 auto", paddingBottom:"calc(96px + env(safe-area-inset-bottom, 0px))" }}>
+        <div style={{ fontFamily:"Inter,sans-serif", minHeight:"100vh", color:C.text, maxWidth:430, margin:"0 auto", background:"#faf8f3", paddingBottom:"calc(96px + env(safe-area-inset-bottom, 0px))" }}>
           {renderHeader()}
           {activeTab === "day" && renderDayHero()}
           {activeTab === "day"      && renderDayTab()}
