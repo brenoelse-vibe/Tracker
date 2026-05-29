@@ -750,6 +750,51 @@
       );
     }
 
+    // Workout picker list with "settle" press animation: the chosen row scales up
+    // and goes green, the others part vertically and fade, and onPick fires at the
+    // motion peak (~120ms) so the session screen overlaps the tail — no perceived wait.
+    function WorkoutSettleList({ types, onPick, C }) {
+      const [active, setActive] = useState(null); // index being pressed
+      const lockRef = useRef(false);              // sync guard vs React's async batching
+
+      const press = (idx, key) => {
+        if (lockRef.current) return;
+        lockRef.current = true;
+        setActive(idx);
+        if (navigator.vibrate) { try { navigator.vibrate(12); } catch (e) {} }
+        setTimeout(() => onPick(key), 120);
+        setTimeout(() => { setActive(null); lockRef.current = false; }, 260);
+      };
+
+      return (
+        <div>
+          {types.map((w, i) => {
+            const isActive = active === i;
+            const isOther  = active !== null && active !== i;
+            const dir = active !== null ? (i < active ? -1 : 1) : 0;
+            return (
+              <div key={w.key} onClick={() => press(i, w.key)} style={{
+                display:"grid", gridTemplateColumns:"30px 1fr auto", alignItems:"center", gap:16,
+                padding:"16px 2px", borderBottom:`1px solid ${C.hair}`, cursor:"pointer", userSelect:"none",
+                transform: isActive ? "scale(1.04)" : isOther ? `translateY(${dir*14}px)` : "none",
+                opacity: isOther ? 0.2 : 1,
+                transition: "transform 0.22s cubic-bezier(0.22,1,0.36,1), opacity 0.22s ease",
+                willChange: "transform",
+              }}>
+                <div style={{ fontSize:21, textAlign:"center", opacity:0.9 }}>{w.emoji}</div>
+                <div style={{
+                  fontFamily:"'Source Serif 4', Georgia, serif", fontSize:20, fontWeight:500,
+                  letterSpacing:-0.2, color: isActive ? C.accentDeep : C.ink,
+                  transition:"color 0.2s ease",
+                }}>{w.label}</div>
+                <div style={{ color:"#cfc7b8", fontSize:19, fontFamily:"'Source Serif 4', Georgia, serif" }}>›</div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
     // Minimal habit row: emoji column, name/sub, optional stepper, square check.
     // Done state B: thick lime left edge + check halo. Bigger type.
     function HabitCard({ active, emoji, label, sublabel, onToggle, stepper, children }) {
@@ -2661,104 +2706,13 @@
       };
 
       const renderWorkoutPicker = () => {
-        // ── Rotation suggestion: after any of push/pull/legs, suggest 50/50 the other two.
-        //    Date-seeded so the 50/50 is stable through the day but flips fresh tomorrow.
-        const PPL = ["push","pull","legs"];
-        // find most recent PPL session by scanning sessions newest→oldest
-        const allDates = Object.keys(data.workoutSessions||{}).sort((a,b)=>b.localeCompare(a));
-        let lastPPL = null;
-        for (const d of allDates) {
-          for (const s of (data.workoutSessions[d]||[]).slice().reverse()) {
-            if (PPL.includes(s.type)) { lastPPL = s.type; break; }
-          }
-          if (lastPPL) break;
-        }
-        // deterministic 50/50 seeded by today's date
-        const dateSeed = today.split("-").reduce((acc,n)=>acc*31 + parseInt(n,10), 7);
-        const coin = dateSeed % 2;
-        let suggestedKey;
-        if (!lastPPL) {
-          suggestedKey = "push";
-        } else {
-          const others = PPL.filter(k => k !== lastPPL);
-          suggestedKey = others[coin];
-        }
-        const suggested = WORKOUT_TYPES.find(w => w.key === suggestedKey) || WORKOUT_TYPES[0];
-
-        // days-since-last per type for the hero meta
-        const daysSince = (typeKey) => {
-          for (const d of allDates) {
-            if ((data.workoutSessions[d]||[]).some(s => s.type === typeKey)) {
-              const dt = new Date(d+"T12:00:00"), now = new Date(today+"T12:00:00");
-              const diff = Math.round((now - dt) / 86400000);
-              if (diff === 0) return "today";
-              if (diff === 1) return "yesterday";
-              return `${diff} days ago`;
-            }
-          }
-          return "never";
-        };
-
-        // day-name label for the list (null = never done, no sublabel shown)
-        const lastDoneLabel = (typeKey) => {
-          for (const d of allDates) {
-            if ((data.workoutSessions[d]||[]).some(s => s.type === typeKey)) {
-              const dt = new Date(d+"T12:00:00"), now = new Date(today+"T12:00:00");
-              const diff = Math.round((now - dt) / 86400000);
-              if (diff === 0) return "today";
-              if (diff === 1) return "yesterday";
-              return new Date(d+"T12:00:00").toLocaleDateString("en-US",{weekday:"long"});
-            }
-          }
-          return null;
-        };
-
-        const restTypes = WORKOUT_TYPES.filter(w => w.key !== suggested.key);
-
+        // Flat, equal list of every workout type in natural order (Push→Mix),
+        // anchored low so the rows sit in the thumb zone. Pressing a row plays the
+        // "settle" animation and opens the session. No suggestion, no Start button.
         return (
           <>
-            {/* Hero — Option C flat suggestion */}
-            <div style={{ padding:"6px 0 22px" }}>
-              <div style={{
-                fontFamily:"'Source Serif 4', Georgia, serif",
-                fontSize:54, fontWeight:600, letterSpacing:-1.5, lineHeight:1, color:C.ink,
-              }}>{suggested.label}</div>
-              <div style={{
-                fontFamily:"'Source Serif 4', Georgia, serif", fontStyle:"italic",
-                fontSize:14, color:C.textMuted, marginTop:12, lineHeight:1.5,
-              }}>
-                {daysSince(suggested.key) === "never"
-                  ? "first time — let's start"
-                  : `${daysSince(suggested.key)} since your last`}
-              </div>
-              <button onClick={()=>openOrStartSession(suggested.key)} style={{
-                display:"block", width:"100%", marginTop:20,
-                background:C.ink, color:"#fff", border:"none", borderRadius:14,
-                padding:16, cursor:"pointer", letterSpacing:-0.1,
-                fontFamily:"'Source Serif 4', Georgia, serif", fontWeight:600, fontSize:18,
-              }}>
-                Start
-              </button>
-            </div>
-
-            {/* Or another */}
-            <div style={{ borderTop:`1px solid ${C.hair}`, paddingTop:6 }}>
-              {restTypes.map(w => {
-                const sub = lastDoneLabel(w.key);
-                return (
-                  <div key={w.key} onClick={()=>openOrStartSession(w.key)} style={{
-                    display:"grid", gridTemplateColumns:"30px 1fr auto", alignItems:"center", gap:15,
-                    padding:"13px 0", borderBottom:`1px solid ${C.hair}`, cursor:"pointer",
-                  }}>
-                    <div style={{ fontSize:19, textAlign:"center", opacity:0.85 }}>{w.emoji}</div>
-                    <div>
-                      <div style={{ fontFamily:"'Source Serif 4', Georgia, serif", fontSize:17, fontWeight:500, letterSpacing:-0.15, color:C.ink }}>{w.label}</div>
-                      {sub && <div style={{ fontFamily:"'Source Serif 4', Georgia, serif", fontStyle:"italic", fontSize:11.5, color:"#a39c8d", marginTop:1, letterSpacing:0.1 }}>{sub}</div>}
-                    </div>
-                    <div style={{ color:"#cfc7b8", fontSize:18, fontFamily:"'Source Serif 4', Georgia, serif" }}>›</div>
-                  </div>
-                );
-              })}
+            <div style={{ minHeight:"58vh", display:"flex", flexDirection:"column", justifyContent:"flex-end" }}>
+              <WorkoutSettleList types={WORKOUT_TYPES} onPick={openOrStartSession} C={C} />
             </div>
 
             {/* EXERCISE LIBRARY */}
