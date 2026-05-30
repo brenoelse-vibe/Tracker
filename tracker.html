@@ -2550,43 +2550,42 @@
       };
 
       // ─── TAB: WORKOUT ───────────────────────────────────────────────────
-      const renderSetRow = (exId, exName, st, idx) => {
+      const renderSetRow = (exId, exName, st, idx, isFirst) => {
         const hasW = (st.weight||0) > 0, hasR = (st.reps||0) > 0;
-        const valStyle = {
-          width:"100%", background:"transparent", border:"none",
-          borderBottom: st.done ? "2px solid transparent" : `2px solid ${C.border}`, borderRadius:0,
-          padding:"10px 2px", fontSize:21, fontWeight:600, textAlign:"center",
-          fontFamily:"Inter,sans-serif", color: st.done?C.textMuted:C.ink, outline:"none",
-          MozAppearance:"textfield",
+        const fieldStyle = {
+          width:"100%", background:"transparent", border:"none", borderBottom:`1.5px solid ${C.border}`, borderRadius:0,
+          padding:"6px 0", fontSize:21, fontWeight:600, textAlign:"center",
+          fontFamily:"Georgia,serif", color:C.ink, outline:"none", MozAppearance:"textfield",
         };
+        const valStyle = { fontSize:19, fontWeight:600, textAlign:"center", color: st.done?C.textMuted:C.ink, fontFamily:"Georgia,serif", fontVariantNumeric:"tabular-nums" };
+        const chk = (
+          <div onClick={()=>toggleSetDone(exId,idx)} style={{
+            width:27, height:27, borderRadius:8,
+            background: st.done?C.accent:"transparent",
+            border: st.done?`1.5px solid ${C.accent}`:`1.5px solid ${C.border}`,
+            display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer",
+          }}>
+            {st.done && <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+          </div>
+        );
         return (
-          <SwipeRow key={idx} onDelete={()=>removeSet(exId,idx)}>
-            <div style={{ display:"grid", gridTemplateColumns:"30px 1fr 1fr 40px", gap:16, alignItems:"center", padding:"7px 0" }}>
-              <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:15, fontWeight:600, textAlign:"center", color:C.mutedGray }}>{idx+1}</div>
-              {st.done ? (
-                <>
-                  <div style={{ fontSize:21, fontWeight:600, textAlign:"center", color:C.textMuted, fontFamily:"Inter,sans-serif" }}>{hasW?st.weight:"—"}</div>
-                  <div style={{ fontSize:21, fontWeight:600, textAlign:"center", color:C.textMuted, fontFamily:"Inter,sans-serif" }}>{hasR?st.reps:"—"}</div>
-                </>
-              ) : (
-                <>
-                  <input type="number" step="0.5" value={hasW?st.weight:""} placeholder="—" className="set-field"
-                    onChange={e=>setSetValue(exId,idx,"weight",parseFloat(e.target.value)||0)} style={valStyle} />
-                  <input type="number" step="1" value={hasR?st.reps:""} placeholder="—" className="set-field"
-                    onChange={e=>setSetValue(exId,idx,"reps",parseFloat(e.target.value)||0)} style={valStyle} />
-                </>
-              )}
-              <div style={{ display:"flex", justifyContent:"center" }}>
-                <div onClick={()=>toggleSetDone(exId,idx)} style={{
-                  width:30, height:30, borderRadius:9,
-                  background: st.done?C.accentBright:"transparent",
-                  border: st.done?`2px solid ${C.accentBright}`:`2px solid ${C.border}`,
-                  display:"flex", alignItems:"center", justifyContent:"center",
-                  fontSize:15, color:"#fff", fontWeight:800, cursor:"pointer",
-                }}>{st.done?"✓":""}</div>
-              </div>
-            </div>
-          </SwipeRow>
+          <div key={idx} style={{ display:"grid", gridTemplateColumns:"26px 1fr 1fr auto", gap:12, alignItems:"center", padding:"10px 0", borderTop: isFirst ? "none" : `1px solid ${C.hair}` }}>
+            <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:13, textAlign:"center", color:C.mutedGray }}>{idx+1}</div>
+            {st.done ? (
+              <>
+                <div style={valStyle}>{hasW?st.weight:"—"}</div>
+                <div style={valStyle}>{hasR?st.reps:"—"}</div>
+              </>
+            ) : (
+              <>
+                <input type="number" step="0.5" value={hasW?st.weight:""} placeholder="—" className="set-field"
+                  onChange={e=>setSetValue(exId,idx,"weight",parseFloat(e.target.value)||0)} style={fieldStyle} />
+                <input type="number" step="1" value={hasR?st.reps:""} placeholder="—" className="set-field"
+                  onChange={e=>setSetValue(exId,idx,"reps",parseFloat(e.target.value)||0)} style={fieldStyle} />
+              </>
+            )}
+            <div style={{ display:"flex", justifyContent:"flex-end", paddingLeft:8 }}>{chk}</div>
+          </div>
         );
       };
 
@@ -2704,9 +2703,11 @@
               <div style={{ fontSize:13, color:C.mutedGray, fontStyle:"italic", fontFamily:"Georgia,serif", padding:"4px 0" }}>Use the Running screen to start a run.</div>
             ) : (
               <>
-                {workSets.length > 0 && ex.sets.map((st, idx) => (
-                  (st.duration > 0) ? null : <React.Fragment key={idx}>{renderSetRow(ex.id, ex.name, st, idx)}</React.Fragment>
-                ))}
+                {workSets.length > 0 && (() => { let shown=-1; return ex.sets.map((st, idx) => {
+                  if (st.duration > 0) return null;
+                  shown++;
+                  return <React.Fragment key={idx}>{renderSetRow(ex.id, ex.name, st, idx, shown===0)}</React.Fragment>;
+                }); })()}
 
                 <button onClick={()=>addSet(ex.id)}
                   style={{ background:"none", border:"none", color:C.accentDeep, fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"Georgia,serif", fontStyle:"italic", padding:"14px 0 2px" }}>+ add set</button>
