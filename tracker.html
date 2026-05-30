@@ -680,6 +680,7 @@
       const axis = useRef(null);                // null | "h" | "v" — locked after first decisive move
       const moved = useRef(false);
       const isTodo = variant === "todo";
+      const isFlat = variant === "flat";
       const REVEAL = isTodo ? 80 : 72;
       const ENGAGE = 26;                        // px of horizontal travel before the row follows the finger
       const LOCK = 12;                          // px before we decide scroll vs swipe
@@ -729,7 +730,7 @@
             onTouchMove={e=>move(e.touches[0].clientX, e.touches[0].clientY)}
             onTouchEnd={end}
             onClickCapture={e=>{ if (moved.current) { e.stopPropagation(); e.preventDefault(); moved.current=false; } }}
-            style={{ background: isTodo ? "#fdfdfc" : C.bg, transform:`translateX(${dx}px)`, transition: startX.current===null?"transform 0.2s ease":"none", position:"relative", zIndex:1 }}>
+            style={{ background: isTodo ? "#fdfdfc" : (isFlat ? "transparent" : C.bg), transform:`translateX(${dx}px)`, transition: startX.current===null?"transform 0.2s ease":"none", position:"relative", zIndex:1 }}>
             {children}
           </div>
         </div>
@@ -2550,17 +2551,16 @@
       };
 
       // ─── TAB: WORKOUT ───────────────────────────────────────────────────
-      const renderSetRow = (exId, exName, st, idx, isFirst) => {
+      // Mirrors push-day-live exactly: grid 26px·1fr·1fr·auto, serif, done values
+      // muted, mini-chk (27px/8r/1.5 border, flat green). Not-done rows show a
+      // faint underline field to invite input; done rows are clean text. No
+      // hairlines between rows. Swipe a row left to delete it (transparent fg).
+      const renderSetRow = (exId, exName, st, idx) => {
         const hasW = (st.weight||0) > 0, hasR = (st.reps||0) > 0;
-        const fieldStyle = {
-          width:"100%", background:"transparent", border:"none", borderBottom:`1.5px solid ${C.border}`, borderRadius:0,
-          padding:"6px 0", fontSize:21, fontWeight:600, textAlign:"center",
-          fontFamily:"Georgia,serif", color:C.ink, outline:"none", MozAppearance:"textfield",
-        };
-        const valStyle = { fontSize:19, fontWeight:600, textAlign:"center", color: st.done?C.textMuted:C.ink, fontFamily:"Georgia,serif", fontVariantNumeric:"tabular-nums" };
+        const num = <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:13, textAlign:"center", color:C.mutedGray }}>{idx+1}</div>;
         const chk = (
           <div onClick={()=>toggleSetDone(exId,idx)} style={{
-            width:27, height:27, borderRadius:8,
+            width:27, height:27, borderRadius:8, flexShrink:0,
             background: st.done?C.accent:"transparent",
             border: st.done?`1.5px solid ${C.accent}`:`1.5px solid ${C.border}`,
             display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer",
@@ -2568,25 +2568,28 @@
             {st.done && <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/></svg>}
           </div>
         );
-        return (
-          <div key={idx} style={{ display:"grid", gridTemplateColumns:"26px 1fr 1fr auto", gap:12, alignItems:"center", padding:"10px 0", borderTop: isFirst ? "none" : `1px solid ${C.hair}` }}>
-            <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:13, textAlign:"center", color:C.mutedGray }}>{idx+1}</div>
+        const cell = (
+          <div style={{ display:"grid", gridTemplateColumns:"26px 1fr 1fr auto", gap:12, alignItems:"center", padding:"9px 0" }}>
+            {num}
             {st.done ? (
               <>
-                <div style={valStyle}>{hasW?st.weight:"—"}</div>
-                <div style={valStyle}>{hasR?st.reps:"—"}</div>
+                <div style={{ fontFamily:"Georgia,serif", fontSize:19, fontWeight:600, textAlign:"center", color:C.textMuted, fontVariantNumeric:"tabular-nums" }}>{hasW?st.weight:"—"}</div>
+                <div style={{ fontFamily:"Georgia,serif", fontSize:19, fontWeight:600, textAlign:"center", color:C.textMuted, fontVariantNumeric:"tabular-nums" }}>{hasR?st.reps:"—"}</div>
               </>
             ) : (
               <>
                 <input type="number" step="0.5" value={hasW?st.weight:""} placeholder="—" className="set-field"
-                  onChange={e=>setSetValue(exId,idx,"weight",parseFloat(e.target.value)||0)} style={fieldStyle} />
+                  onChange={e=>setSetValue(exId,idx,"weight",parseFloat(e.target.value)||0)}
+                  style={{ width:"100%", border:"none", borderBottom:`1.5px solid ${C.border}`, background:"transparent", textAlign:"center", fontFamily:"Georgia,serif", fontSize:21, fontWeight:600, color:C.ink, padding:"6px 0", fontVariantNumeric:"tabular-nums", outline:"none", MozAppearance:"textfield" }} />
                 <input type="number" step="1" value={hasR?st.reps:""} placeholder="—" className="set-field"
-                  onChange={e=>setSetValue(exId,idx,"reps",parseFloat(e.target.value)||0)} style={fieldStyle} />
+                  onChange={e=>setSetValue(exId,idx,"reps",parseFloat(e.target.value)||0)}
+                  style={{ width:"100%", border:"none", borderBottom:`1.5px solid ${C.border}`, background:"transparent", textAlign:"center", fontFamily:"Georgia,serif", fontSize:21, fontWeight:600, color:C.ink, padding:"6px 0", fontVariantNumeric:"tabular-nums", outline:"none", MozAppearance:"textfield" }} />
               </>
             )}
-            <div style={{ display:"flex", justifyContent:"flex-end", paddingLeft:8 }}>{chk}</div>
+            <div style={{ display:"flex", justifyContent:"flex-end", paddingLeft:6 }}>{chk}</div>
           </div>
         );
+        return <SwipeRow key={idx} variant="flat" onDelete={()=>removeSet(exId,idx)}>{cell}</SwipeRow>;
       };
 
       // (legacy inline preset chooser kept out of the new flow)
@@ -2703,11 +2706,9 @@
               <div style={{ fontSize:13, color:C.mutedGray, fontStyle:"italic", fontFamily:"Georgia,serif", padding:"4px 0" }}>Use the Running screen to start a run.</div>
             ) : (
               <>
-                {workSets.length > 0 && (() => { let shown=-1; return ex.sets.map((st, idx) => {
-                  if (st.duration > 0) return null;
-                  shown++;
-                  return <React.Fragment key={idx}>{renderSetRow(ex.id, ex.name, st, idx, shown===0)}</React.Fragment>;
-                }); })()}
+                {workSets.length > 0 && ex.sets.map((st, idx) => (
+                  (st.duration > 0) ? null : <React.Fragment key={idx}>{renderSetRow(ex.id, ex.name, st, idx)}</React.Fragment>
+                ))}
 
                 <button onClick={()=>addSet(ex.id)}
                   style={{ background:"none", border:"none", color:C.accentDeep, fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"Georgia,serif", fontStyle:"italic", padding:"14px 0 2px" }}>+ add set</button>
