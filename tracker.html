@@ -24,6 +24,7 @@
       letter-spacing: -0.01em;
     }
     @keyframes chkPop { 0%{transform:scale(1)} 30%{transform:scale(1.18)} 60%{transform:scale(.94)} 100%{transform:scale(1)} }
+    @keyframes restBreathe { 0%,100%{opacity:1} 50%{opacity:0.66} }
     @keyframes chkRipple { 0%{opacity:.5;transform:scale(1)} 100%{opacity:0;transform:scale(2.1)} }
     @keyframes flashWash { 0%{background:rgba(82,176,51,0)} 20%{background:rgba(82,176,51,0.28)} 55%{background:rgba(82,176,51,0.28)} 100%{background:rgba(82,176,51,0)} }
     .chk-pop { animation: chkPop .42s cubic-bezier(.34,1.6,.5,1); }
@@ -862,6 +863,71 @@
       );
     }
 
+    // Rest timer: idle "rest" button → tap reveals a settable timer (↕ hint inside
+    // the ring, number breathing) → scrub up/down (heavy) to set → tap to start the
+    // clockwise countdown → scrub still adjusts mid-rest. Reset returns to set state.
+    function RestTimer({ prefill, C }) {
+      const STEP=52, R=22, CIRC=2*Math.PI*22;
+      const [phase,setPhase]=useState('idle'); // idle|set|run|done
+      const durRef=useRef(prefill||120), remainRef=useRef(prefill||120), totalRef=useRef(prefill||120);
+      const rafRef=useRef(null), lastRef=useRef(0);
+      const [,force]=useState(0); const bump=()=>force(x=>x+1);
+      const fmt=s=>{s=Math.max(0,Math.round(s));return Math.floor(s/60)+":"+String(s%60).padStart(2,'0');};
+      const vib=p=>{try{navigator.vibrate&&navigator.vibrate(p);}catch(e){}};
+
+      const tick=(now)=>{ const dt=(now-lastRef.current)/1000; lastRef.current=now; remainRef.current-=dt;
+        if(remainRef.current<=0){ remainRef.current=0; setPhase('done'); vib([30,50,30]); bump(); return; }
+        bump(); rafRef.current=requestAnimationFrame(tick); };
+      useEffect(()=>()=>cancelAnimationFrame(rafRef.current),[]);
+
+      const reveal=()=>{ setPhase('set'); durRef.current=prefill||120; vib(12); bump(); };
+      const startCountdown=()=>{ totalRef.current=remainRef.current=durRef.current; setPhase('run'); lastRef.current=performance.now(); vib(16); rafRef.current=requestAnimationFrame(tick); };
+      const reset=()=>{ cancelAnimationFrame(rafRef.current); remainRef.current=durRef.current; setPhase('set'); vib(12); bump(); };
+      const adjust=(sec)=>{ if(phase==='set'){ durRef.current=Math.max(15,durRef.current+sec); } else if(phase==='run'){ remainRef.current=Math.max(5,remainRef.current+sec); totalRef.current=Math.max(totalRef.current,remainRef.current); } else return; vib(sec>0?[22,14,22]:18); bump(); };
+
+      const dragRef=useRef({on:false,moved:false,y:0,acc:0});
+      const onDown=e=>{ if(phase==='idle'||phase==='done')return; const d=dragRef.current; d.on=true; d.moved=false; d.y=(e.touches?e.touches[0]:e).clientY; d.acc=0; };
+      const onMove=e=>{ const d=dragRef.current; if(!d.on)return; const y=(e.touches?e.touches[0]:e).clientY; const dy=d.y-y; if(Math.abs(dy)>6)d.moved=true; const st=Math.trunc((dy-d.acc)/STEP); if(st!==0){ adjust(st*15); d.acc+=st*STEP; } if(e.cancelable)e.preventDefault(); };
+      const onUp=()=>{ const d=dragRef.current; if(!d.on)return; d.on=false; if(!d.moved && phase==='set') startCountdown(); };
+
+      if(phase==='idle'){
+        return (
+          <button onClick={reveal} style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:15, color:C.textMuted, background:"transparent", border:`1px solid ${C.border}`, borderRadius:14, padding:"11px 20px", cursor:"pointer", marginTop:4 }}>rest</button>
+        );
+      }
+      const dur=durRef.current, remain=remainRef.current, total=totalRef.current;
+      const settable=phase==='set';
+      const frac=phase==='run'? (total>0?remain/total:0) : 1;
+      const num = settable ? fmt(dur) : fmt(remain);
+      return (
+        <div style={{ position:"relative", display:"flex", alignItems:"center", gap:30, marginTop:6, touchAction:"none" }}
+             onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}
+             onMouseDown={onDown} onMouseMove={e=>dragRef.current.on&&onMove(e)} onMouseUp={onUp}>
+          <div style={{ position:"relative", width:60, height:60, flexShrink:0 }}>
+            <svg width="60" height="60" viewBox="0 0 60 60" style={{ position:"absolute", inset:0, transform:"scale(-1,1)" }}>
+              <circle cx="30" cy="30" r={R} fill="none" stroke={C.hair} strokeWidth="4"/>
+              <circle cx="30" cy="30" r={R} fill="none" stroke={settable?"#cbd8c0":C.accent} strokeWidth="4" strokeLinecap="round"
+                strokeDasharray={CIRC} strokeDashoffset={CIRC*(1-frac)} transform="rotate(-90 30 30)"/>
+            </svg>
+            {settable && (
+              <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", opacity:0.5 }}>
+                <svg width="11" height="26" viewBox="0 0 11 26" fill="none"><path d="M5.5 2.5V23.5" stroke="#8a978d" strokeWidth="1.4" strokeLinecap="round"/><path d="M2 6L5.5 2.5L9 6" stroke="#8a978d" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/><path d="M2 20L5.5 23.5L9 20" stroke="#8a978d" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </div>
+            )}
+          </div>
+          <div style={{ paddingRight:8 }}>
+            <div style={{ fontFamily:"Georgia,serif", fontSize:24, fontWeight:600, color: phase==='done'?C.accentDeep:C.ink, fontVariantNumeric:"tabular-nums", letterSpacing:-0.5, lineHeight:1, animation: settable?"restBreathe 2.4s ease-in-out infinite":"none" }}>{num}</div>
+            <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:12, color:C.mutedGray, marginTop:3 }}>
+              {settable?"set rest · tap to start":phase==='run'?"resting":"rest done"}
+            </div>
+          </div>
+          <button onClick={(e)=>{ e.stopPropagation(); reset(); }} title="reset" style={{ marginLeft:"auto", width:32, height:32, borderRadius:9, border:`1px solid ${C.border}`, background:"transparent", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer" }}>
+            <svg width="15" height="15" viewBox="0 0 18 18" fill="none"><path d="M3.5 9a5.5 5.5 0 1 1 1.7 4" stroke={C.textMuted} strokeWidth="1.6" strokeLinecap="round"/><path d="M5 16.5L5.2 12L9.5 12.2" stroke={C.textMuted} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </button>
+        </div>
+      );
+    }
+
     // Workout picker list with "settle" press animation: the chosen row scales up
     // and goes green, the others part vertically and fade, and onPick fires at the
     // motion peak (~120ms) so the session screen overlaps the tail — no perceived wait.
@@ -1461,8 +1527,6 @@
           const allDone = sets.length > 0 && sets.every(st => st.done);
           return { ...e, sets, done: allDone };
         });
-        const cfg = data.restTimer || DEFAULT_DATA.restTimer;
-        if (!wasDone && cfg.promptOnCheck) setSetPromptFor(`${exId}:${idx}`);
       };
 
       // Most recent prior session's raw exercise object (unfiltered sets) for this exercise.
@@ -2454,32 +2518,18 @@
 
       // ─── TAB: WORKOUT ───────────────────────────────────────────────────
       const renderSetRow = (exId, exName, st, idx) => {
-        const prev = getPreviousSet(exName, idx);
         const inputStyle = filled => ({
           width:"100%", background:"transparent", border:"none",
           borderBottom: `2px solid ${filled ? C.accentBright : C.border}`, borderRadius:0,
-          padding:"7px 2px", fontSize:15, fontWeight:700, textAlign:"center",
+          padding:"9px 2px", fontSize:19, fontWeight:700, textAlign:"center",
           fontFamily:"Inter,sans-serif", color: filled?C.accentDeep:C.text, outline:"none",
           MozAppearance:"textfield",
         });
         const hasW = (st.weight||0) > 0, hasR = (st.reps||0) > 0;
-        const hasRest = typeof st.rest === "number";
         return (
           <SwipeRow key={idx} onDelete={()=>removeSet(exId,idx)}>
-            <div style={{ display:"grid", gridTemplateColumns:"26px 1fr 56px 50px 30px", gap:8, alignItems:"center", padding:"8px 0" }}>
-              <div style={{ fontSize:14, fontWeight:800, textAlign:"center", color: st.done?C.accentDeep:C.text, letterSpacing:-0.3 }}>{idx+1}</div>
-              <div style={{ minWidth:0, paddingLeft:2 }}>
-                <div style={{ fontSize:12, color:C.mutedGray, fontWeight:500 }}>
-                  {prev ? <span><strong style={{color:C.textMuted, fontWeight:700}}>{prev.weight||0}</strong> × <strong style={{color:C.textMuted, fontWeight:700}}>{prev.reps||0}</strong></span> : <span style={{ fontStyle:"italic" }}>—</span>}
-                </div>
-                <button onClick={()=>setSetPromptFor(`${exId}:${idx}`)} style={{
-                  marginTop:3, display:"inline-flex", alignItems:"center", gap:3, background:"none", border:"none", padding:0, cursor:"pointer",
-                  fontSize:11, fontWeight:700, color: hasRest ? C.accentDeep : C.mutedGray, fontFamily:"Inter,sans-serif",
-                }}>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="13" r="8" stroke="currentColor" strokeWidth="2.2"/><path d="M12 9.5V13l2.4 1.4" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/><path d="M9.5 2.5h5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/></svg>
-                  {hasRest ? (st.rest === 0 ? "No rest" : fmtClock(st.rest)) : "Rest"}
-                </button>
-              </div>
+            <div style={{ display:"grid", gridTemplateColumns:"26px 1fr 1fr 34px", gap:14, alignItems:"center", padding:"6px 0" }}>
+              <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:14, fontWeight:600, textAlign:"center", color: st.done?C.accentDeep:C.mutedGray }}>{idx+1}</div>
               <input type="number" step="0.5" value={hasW?st.weight:""} placeholder="—" className="set-field"
                 onChange={e=>setSetValue(exId,idx,"weight",parseFloat(e.target.value)||0)}
                 style={inputStyle(hasW && st.done)} />
@@ -2488,11 +2538,11 @@
                 style={inputStyle(hasR && st.done)} />
               <div style={{ display:"flex", justifyContent:"center" }}>
                 <div onClick={()=>toggleSetDone(exId,idx)} style={{
-                  width:26, height:26, borderRadius:8,
+                  width:27, height:27, borderRadius:8,
                   background: st.done?C.accentBright:"transparent",
                   border: st.done?`2px solid ${C.accentBright}`:`2px solid ${C.border}`,
                   display:"flex", alignItems:"center", justifyContent:"center",
-                  fontSize:12, color:"#fff", fontWeight:800, cursor:"pointer",
+                  fontSize:13, color:"#fff", fontWeight:800, cursor:"pointer",
                 }}>{st.done?"✓":""}</div>
               </div>
             </div>
@@ -2500,62 +2550,7 @@
         );
       };
 
-      // Inline rest-preset chooser, shown right after a set is checked.
-      const renderRestPrompt = (exId, idx, exName) => {
-        if (setPromptFor !== `${exId}:${idx}`) return null;
-        const cfg = data.restTimer || DEFAULT_DATA.restTimer;
-        const presets = [...REST_PRESETS, ...((cfg.custom||[]).filter(n => n > 0))];
-        const prevSet = getPreviousSet(exName, idx);
-        const prevRest = prevSet && typeof prevSet.rest === "number" ? prevSet.rest : null;
-
-        const Btn = ({ sec, isZero }) => {
-          const isDefault = !isZero && sec === cfg.defaultSec;
-          const isPrev = prevRest !== null && sec === prevRest;
-          return (
-            <button onClick={()=>chooseRest(exId, idx, sec)} title={isZero?"No rest (logs 0s)":undefined} style={{
-              position:"relative",
-              background: isDefault ? C.accentTint : C.fieldBg,
-              border: isPrev ? `1.5px solid ${C.accentBright}` : "1.5px solid transparent",
-              borderRadius:10, padding:"10px 18px", fontSize:14, fontWeight:800, minWidth:64,
-              color: isZero ? C.mutedGray : (isDefault ? C.accentDeep : C.text),
-              cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:-0.3,
-            }}>
-              {isZero ? "0" : fmtClock(sec)}
-              {isPrev && <span style={{ position:"absolute", top:-5, right:-5, width:15, height:15, borderRadius:"50%", background:C.accentBright, color:"#fff", fontSize:8, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center", border:`1.5px solid ${C.surface}` }} title="Last time's rest">↺</span>}
-            </button>
-          );
-        };
-
-        // Build a centered pyramid: timed presets sorted largest→smallest fill rows that
-        // taper downward; the "0" (no-rest) button is always the single bottom tip.
-        const sorted = [...presets].sort((a,b)=>b-a);
-        let rows = [];
-        if (sorted.length <= 4 && sorted.length > 0) {
-          rows = [sorted];                 // single centered row for few presets
-        } else {
-          let start = 0, w = Math.ceil(sorted.length/2) ; // top row a touch wider
-          // step down by one each row
-          while (start < sorted.length) {
-            const take = Math.min(w, sorted.length - start);
-            rows.push(sorted.slice(start, start+take));
-            start += take; w = Math.max(1, take - 1);
-          }
-        }
-
-        return (
-          <div style={{ padding:"6px 0 14px" }}>
-            <div style={{ fontSize:11, fontWeight:800, letterSpacing:0.4, textTransform:"uppercase", color:C.mutedGray, textAlign:"center", marginBottom:10 }}>Rest</div>
-            <div style={{ display:"flex", flexDirection:"column", gap:8, alignItems:"center" }}>
-              {rows.map((row,ri) => (
-                <div key={ri} style={{ display:"flex", gap:8, justifyContent:"center" }}>
-                  {row.map(sec => <Btn key={sec} sec={sec} />)}
-                </div>
-              ))}
-              <Btn sec={0} isZero />
-            </div>
-          </div>
-        );
-      };
+      // (legacy inline preset chooser kept out of the new flow)
 
       const renderExerciseCard = (ex, exIdx) => {
         const isRenaming = editingExercise && editingExercise.id === ex.id;
@@ -2598,14 +2593,6 @@
                   onDown={()=>moveExercise(ex.id,1)}
                   canUp={exIdx>0}
                   canDown={exIdx<total-1} />
-                <button onClick={()=>startRest((data.restTimer||DEFAULT_DATA.restTimer).defaultSec)} title="Start rest timer"
-                  style={{ width:30, height:30, borderRadius:9, background:C.fieldBg, border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-                    <circle cx="12" cy="13" r="8" stroke={C.accentDeep} strokeWidth="2"/>
-                    <path d="M12 9.5V13l2.4 1.4" stroke={C.accentDeep} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    <path d="M9.5 2.5h5" stroke={C.accentDeep} strokeWidth="2" strokeLinecap="round"/>
-                  </svg>
-                </button>
                 <button onClick={()=>setChartExpandedFor(chartOpen ? null : ex.name)} title="Progress chart"
                   style={{ width:30, height:30, borderRadius:9, background: chartOpen?C.accentBright:C.fieldBg, border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
@@ -2663,9 +2650,8 @@
             {/* table */}
             {ex.sets.filter(s => !(s.duration > 0)).length > 0 && (
               <>
-                <div style={{ display:"grid", gridTemplateColumns:"26px 1fr 56px 50px 30px", gap:8, padding:"0 0 8px", fontSize:10, letterSpacing:0.4, textTransform:"uppercase", fontWeight:700, color:C.mutedGray, borderBottom:`1px solid ${C.hair}` }}>
+                <div style={{ display:"grid", gridTemplateColumns:"26px 1fr 1fr 34px", gap:14, padding:"0 0 8px", fontSize:10, letterSpacing:0.4, textTransform:"uppercase", fontWeight:700, color:C.mutedGray, borderBottom:`1px solid ${C.hair}` }}>
                   <span style={{ textAlign:"center" }}>Set</span>
-                  <span style={{ paddingLeft:2 }}>Previous</span>
                   <span style={{ textAlign:"center" }}>Lb</span>
                   <span style={{ textAlign:"center" }}>Reps</span>
                   <span style={{ textAlign:"center" }}>✓</span>
@@ -2674,7 +2660,6 @@
                   (st.duration > 0) ? null : (
                   <React.Fragment key={idx}>
                     {renderSetRow(ex.id, ex.name, st, idx)}
-                    {renderRestPrompt(ex.id, idx, ex.name)}
                   </React.Fragment>
                   )
                 ))}
@@ -2682,7 +2667,14 @@
             )}
 
             <button onClick={()=>addSet(ex.id)}
-              style={{ background:"none", border:"none", color:C.accentDeep, fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif", padding:"12px 0 0" }}>+ Add set</button>
+              style={{ background:"none", border:"none", color:C.accentDeep, fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif", padding:"12px 0 2px" }}>+ Add set</button>
+
+            {/* Rest timer — scrub to set, tap to start */}
+            {ex.name.trim().toLowerCase() !== "running" && (
+              <div style={{ marginTop:8 }}>
+                <RestTimer prefill={(data.restTimer||DEFAULT_DATA.restTimer).defaultSec} C={C} />
+              </div>
+            )}
 
             <textarea value={ex.notes||""} onChange={e=>updateExerciseNotes(ex.id, e.target.value)} placeholder="Add a note…" rows="1"
               style={{ width:"100%", marginTop:6, fontSize:13, color:C.textMuted, padding:(ex.notes||"").trim() ? "6px 0 6px 12px" : "6px 0", background:"transparent", border:"none", borderLeft:(ex.notes||"").trim() ? `3px solid ${C.accentBright}` : "none", fontFamily:"Inter,sans-serif", resize:"none", lineHeight:1.4, outline:"none" }} />
@@ -2750,6 +2742,16 @@
                 ))}
               </div>
             )}
+
+            {/* footer: finish (primary) + discard (quiet, left) */}
+            <div style={{ marginTop:24 }}>
+              <button onClick={()=>setActiveSessionId(null)}
+                style={{ width:"100%", background:C.ink, color:"#fff", border:"none", borderRadius:15, padding:16, fontFamily:"Georgia,serif", fontWeight:600, fontSize:17, cursor:"pointer", letterSpacing:-0.2 }}>Finish workout</button>
+              <div style={{ paddingTop:14, paddingLeft:2 }}>
+                <button onClick={()=>{ if(window.confirm("Discard this workout? Its sets will be lost.")) deleteSession(today, sess.id); }}
+                  style={{ background:"transparent", border:"none", fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:12, color:C.mutedGray, cursor:"pointer" }}>discard workout</button>
+              </div>
+            </div>
             </>
             )}
 
