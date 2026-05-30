@@ -672,7 +672,7 @@
 
     // Swipe-to-delete row. Drag left (touch or mouse) to reveal a delete button;
     // tap it to confirm. Works reliably in mobile Safari (no native slider needed).
-    function SwipeRow({ onDelete, children, variant }) {
+    function SwipeRow({ onDelete, children, variant, bg }) {
       const [dx, setDx] = useState(0);          // current translate
       const [open, setOpen] = useState(false);  // delete revealed
       const startX = useRef(null);
@@ -716,10 +716,10 @@
       return (
         <div style={{ position:"relative", overflow:"hidden" }}>
           {/* delete action behind the row */}
-          <div style={{ position:"absolute", top:0, right:0, bottom:0, width:REVEAL, display:"flex", alignItems:"center", justifyContent:"center", background: isTodo ? "#a85542" : C.red, borderRadius: isTodo ? 0 : 8 }}>
+          <div style={{ position:"absolute", top:0, right:0, bottom:0, width:REVEAL, display:"flex", alignItems:"center", justifyContent:"center", background: (isTodo||isFlat) ? "#a85542" : C.red, borderRadius: (isTodo||isFlat) ? 0 : 8 }}>
             <button onClick={()=>{ setOpen(false); setDx(0); onDelete(); }}
-              style={{ background:"none", border:"none", color:"#fff", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", width:"100%", height:"100%", padding:0, fontFamily: isTodo ? "'Source Serif 4', Georgia, serif" : "Inter, sans-serif", fontStyle: isTodo ? "italic" : "normal", fontSize: isTodo ? 14 : 13, letterSpacing: isTodo ? 0.3 : 0 }}>
-              {isTodo ? "delete" : (
+              style={{ background:"none", border:"none", color:"#fff", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", width:"100%", height:"100%", padding:0, fontFamily: (isTodo||isFlat) ? "'Source Serif 4', Georgia, serif" : "Inter, sans-serif", fontStyle: (isTodo||isFlat) ? "italic" : "normal", fontSize: (isTodo||isFlat) ? 14 : 13, letterSpacing: (isTodo||isFlat) ? 0.3 : 0 }}>
+              {(isTodo||isFlat) ? "delete" : (
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M5 7h14M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
               )}
             </button>
@@ -730,7 +730,7 @@
             onTouchMove={e=>move(e.touches[0].clientX, e.touches[0].clientY)}
             onTouchEnd={end}
             onClickCapture={e=>{ if (moved.current) { e.stopPropagation(); e.preventDefault(); moved.current=false; } }}
-            style={{ background: isTodo ? "#fdfdfc" : (isFlat ? "transparent" : C.bg), transform:`translateX(${dx}px)`, transition: startX.current===null?"transform 0.2s ease":"none", position:"relative", zIndex:1 }}>
+            style={{ background: isTodo ? "#fdfdfc" : (isFlat ? (bg || C.surface) : C.bg), transform:`translateX(${dx}px)`, transition: startX.current===null?"transform 0.2s ease":"none", position:"relative", zIndex:1 }}>
             {children}
           </div>
         </div>
@@ -2555,7 +2555,7 @@
       // muted, mini-chk (27px/8r/1.5 border, flat green). Not-done rows show a
       // faint underline field to invite input; done rows are clean text. No
       // hairlines between rows. Swipe a row left to delete it (transparent fg).
-      const renderSetRow = (exId, exName, st, idx) => {
+      const renderSetRow = (exId, exName, st, idx, rowBg) => {
         const hasW = (st.weight||0) > 0, hasR = (st.reps||0) > 0;
         const num = <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:13, textAlign:"center", color:C.mutedGray }}>{idx+1}</div>;
         const chk = (
@@ -2589,7 +2589,7 @@
             <div style={{ display:"flex", justifyContent:"flex-end", paddingLeft:6 }}>{chk}</div>
           </div>
         );
-        return <SwipeRow key={idx} variant="flat" onDelete={()=>removeSet(exId,idx)}>{cell}</SwipeRow>;
+        return <SwipeRow key={idx} variant="flat" bg={rowBg} onDelete={()=>removeSet(exId,idx)}>{cell}</SwipeRow>;
       };
 
       // (legacy inline preset chooser kept out of the new flow)
@@ -2707,7 +2707,7 @@
             ) : (
               <>
                 {workSets.length > 0 && ex.sets.map((st, idx) => (
-                  (st.duration > 0) ? null : <React.Fragment key={idx}>{renderSetRow(ex.id, ex.name, st, idx)}</React.Fragment>
+                  (st.duration > 0) ? null : <React.Fragment key={idx}>{renderSetRow(ex.id, ex.name, st, idx, isActive ? C.cardActive : "#fdfdfc")}</React.Fragment>
                 ))}
 
                 <button onClick={()=>addSet(ex.id)}
