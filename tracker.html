@@ -1056,6 +1056,7 @@
       const [editingEmojiFor, setEditingEmojiFor] = useState(null);
       const [newExerciseName, setNewExerciseName] = useState("");
       const [editingExercise, setEditingExercise] = useState(null);
+      const [controlsFor, setControlsFor] = useState(null); // exId whose controls (reorder/chart/remove) are revealed
       const [historyView, setHistoryView] = useState("workouts"); // workouts | daily
       const [expandedFeedId, setExpandedFeedId] = useState(null);
       const [calMonthOffset, setCalMonthOffset] = useState(0); // 0 = current month, -1 = last month, etc.
@@ -2518,31 +2519,38 @@
 
       // ─── TAB: WORKOUT ───────────────────────────────────────────────────
       const renderSetRow = (exId, exName, st, idx) => {
-        const inputStyle = filled => ({
-          width:"100%", background:"transparent", border:"none",
-          borderBottom: `2px solid ${filled ? C.accentBright : C.border}`, borderRadius:0,
-          padding:"9px 2px", fontSize:19, fontWeight:700, textAlign:"center",
-          fontFamily:"Inter,sans-serif", color: filled?C.accentDeep:C.text, outline:"none",
-          MozAppearance:"textfield",
-        });
         const hasW = (st.weight||0) > 0, hasR = (st.reps||0) > 0;
+        const valStyle = {
+          width:"100%", background:"transparent", border:"none",
+          borderBottom: st.done ? "2px solid transparent" : `2px solid ${C.border}`, borderRadius:0,
+          padding:"10px 2px", fontSize:21, fontWeight:600, textAlign:"center",
+          fontFamily:"Inter,sans-serif", color: st.done?C.textMuted:C.ink, outline:"none",
+          MozAppearance:"textfield",
+        };
         return (
           <SwipeRow key={idx} onDelete={()=>removeSet(exId,idx)}>
-            <div style={{ display:"grid", gridTemplateColumns:"26px 1fr 1fr 34px", gap:14, alignItems:"center", padding:"6px 0" }}>
-              <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:14, fontWeight:600, textAlign:"center", color: st.done?C.accentDeep:C.mutedGray }}>{idx+1}</div>
-              <input type="number" step="0.5" value={hasW?st.weight:""} placeholder="—" className="set-field"
-                onChange={e=>setSetValue(exId,idx,"weight",parseFloat(e.target.value)||0)}
-                style={inputStyle(hasW && st.done)} />
-              <input type="number" step="1" value={hasR?st.reps:""} placeholder="—" className="set-field"
-                onChange={e=>setSetValue(exId,idx,"reps",parseFloat(e.target.value)||0)}
-                style={inputStyle(hasR && st.done)} />
+            <div style={{ display:"grid", gridTemplateColumns:"30px 1fr 1fr 40px", gap:16, alignItems:"center", padding:"7px 0" }}>
+              <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:15, fontWeight:600, textAlign:"center", color:C.mutedGray }}>{idx+1}</div>
+              {st.done ? (
+                <>
+                  <div style={{ fontSize:21, fontWeight:600, textAlign:"center", color:C.textMuted, fontFamily:"Inter,sans-serif" }}>{hasW?st.weight:"—"}</div>
+                  <div style={{ fontSize:21, fontWeight:600, textAlign:"center", color:C.textMuted, fontFamily:"Inter,sans-serif" }}>{hasR?st.reps:"—"}</div>
+                </>
+              ) : (
+                <>
+                  <input type="number" step="0.5" value={hasW?st.weight:""} placeholder="—" className="set-field"
+                    onChange={e=>setSetValue(exId,idx,"weight",parseFloat(e.target.value)||0)} style={valStyle} />
+                  <input type="number" step="1" value={hasR?st.reps:""} placeholder="—" className="set-field"
+                    onChange={e=>setSetValue(exId,idx,"reps",parseFloat(e.target.value)||0)} style={valStyle} />
+                </>
+              )}
               <div style={{ display:"flex", justifyContent:"center" }}>
                 <div onClick={()=>toggleSetDone(exId,idx)} style={{
-                  width:27, height:27, borderRadius:8,
+                  width:30, height:30, borderRadius:9,
                   background: st.done?C.accentBright:"transparent",
                   border: st.done?`2px solid ${C.accentBright}`:`2px solid ${C.border}`,
                   display:"flex", alignItems:"center", justifyContent:"center",
-                  fontSize:13, color:"#fff", fontWeight:800, cursor:"pointer",
+                  fontSize:15, color:"#fff", fontWeight:800, cursor:"pointer",
                 }}>{st.done?"✓":""}</div>
               </div>
             </div>
@@ -2552,134 +2560,68 @@
 
       // (legacy inline preset chooser kept out of the new flow)
 
-      const renderExerciseCard = (ex, exIdx) => {
+      const ctrlBtn = (C) => ({ background:C.fieldBg, border:"none", borderRadius:8, padding:"6px 12px", fontSize:12, fontWeight:600, color:C.textMuted, cursor:"pointer", fontFamily:"Georgia,serif", fontStyle:"italic" });
+
+      const renderExerciseCard = (ex, exIdx, isActive) => {
         const isRenaming = editingExercise && editingExercise.id === ex.id;
         const total = activeSession.exercises.length;
-        const typeLabel = WORKOUT_TYPES.find(t=>t.key===activeSession.type)?.label || activeSession.type;
         const chartOpen = chartExpandedFor === ex.name;
-
-        // Trend: change in top-set weight between the two most recent prior sessions.
-        // Only meaningful for weighted lifts with ≥2 sessions and an actual change.
-        const hist = getExerciseHistory(ex.name).filter(h => h.date < today);
-        let trend = null;
-        if (hist.length >= 2) {
-          const delta = hist[hist.length-1].top - hist[hist.length-2].top;
-          if (delta !== 0) trend = delta;
-        }
+        const controlsOpen = controlsFor === ex.id;
+        const isRunningEx = ex.name.trim().toLowerCase() === "running";
+        const workSets = ex.sets.filter(s => !(s.duration > 0));
 
         return (
-          <div key={ex.id} style={{ padding:"18px 0", borderBottom:`1px solid ${C.hair}` }}>
-            {/* header: name on left, reorder + chart on right (vertically centered) */}
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14, gap:10 }}>
-              <div style={{ minWidth:0, flex:1 }}>
-                {isRenaming ? (
-                  <input type="text" defaultValue={ex.name} autoFocus
-                    onBlur={e=>{ renameExercise(activeSession.type, ex.name, e.target.value); setEditingExercise(null); }}
-                    onKeyDown={e=>{ if(e.key==="Enter") e.target.blur(); if(e.key==="Escape") setEditingExercise(null); }}
-                    style={{ width:"100%", background:C.fieldBg, border:`1px solid ${C.accentBright}`, borderRadius:8, padding:"6px 10px", fontSize:16, fontWeight:700, color:C.text, fontFamily:"Inter,sans-serif" }} />
-                ) : (
-                  <div onClick={()=>setEditingExercise({ id: ex.id })}
-                    style={{ fontSize:16, fontWeight:700, color:C.text, cursor:"pointer", letterSpacing:-0.3 }}>{ex.name}</div>
-                )}
-              </div>
-              <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
-                {trend !== null && (
-                  <span style={{ fontSize:13, fontWeight:700, color: trend>0?C.accentDeep:C.red, display:"inline-flex", alignItems:"center", gap:2 }}>
-                    {trend>0?"↑":"↓"}{trend>0?"+":""}{trend}
-                  </span>
-                )}
-                <ReorderArrows
-                  onUp={()=>moveExercise(ex.id,-1)}
-                  onDown={()=>moveExercise(ex.id,1)}
-                  canUp={exIdx>0}
-                  canDown={exIdx<total-1} />
-                <button onClick={()=>setChartExpandedFor(chartOpen ? null : ex.name)} title="Progress chart"
-                  style={{ width:30, height:30, borderRadius:9, background: chartOpen?C.accentBright:C.fieldBg, border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-                    <rect x="4" y="13" width="3.4" height="7" rx="1.3" fill={chartOpen?"#fff":C.accentDeep}/>
-                    <rect x="10.3" y="9" width="3.4" height="11" rx="1.3" fill={chartOpen?"#fff":C.accentDeep}/>
-                    <rect x="16.6" y="5" width="3.4" height="15" rx="1.3" fill={chartOpen?"#fff":C.accentDeep}/>
-                  </svg>
-                </button>
-                <button onClick={()=>{ if (window.confirm(`Remove "${ex.name}" from this workout? Other sessions are unaffected.`)) removeExerciseFromSession(ex.id); }} title="Remove from this workout"
-                  style={{ width:30, height:30, borderRadius:9, background:C.fieldBg, border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0, color:C.mutedGray, fontSize:18, lineHeight:1, fontFamily:"Inter,sans-serif" }}>×</button>
-              </div>
+          <div key={ex.id} style={{
+            margin:"0 -16px", padding:"22px 24px",
+            background: isActive ? C.cardActive : "transparent",
+            borderBottom:`1px solid ${C.hair}`,
+          }}>
+            {/* name — tap to reveal controls; tap again on name in controls mode to rename */}
+            <div style={{ marginBottom:16 }}>
+              {isRenaming ? (
+                <input type="text" defaultValue={ex.name} autoFocus
+                  onBlur={e=>{ renameExercise(activeSession.type, ex.name, e.target.value); setEditingExercise(null); }}
+                  onKeyDown={e=>{ if(e.key==="Enter") e.target.blur(); if(e.key==="Escape") setEditingExercise(null); }}
+                  style={{ width:"100%", background:C.surface, border:`1px solid ${C.accentBright}`, borderRadius:8, padding:"7px 10px", fontSize:20, fontWeight:600, color:C.ink, fontFamily:"Georgia,serif" }} />
+              ) : (
+                <div onClick={()=>setControlsFor(controlsOpen ? null : ex.id)}
+                  style={{ fontFamily:"Georgia,serif", fontSize:20, fontWeight:600, color:C.ink, cursor:"pointer", letterSpacing:-0.3 }}>{ex.name}</div>
+              )}
+              {/* revealed controls */}
+              {controlsOpen && !isRenaming && (
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:10 }}>
+                  <button onClick={()=>{ setEditingExercise({ id: ex.id }); }} style={ctrlBtn(C)}>rename</button>
+                  <ReorderArrows onUp={()=>moveExercise(ex.id,-1)} onDown={()=>moveExercise(ex.id,1)} canUp={exIdx>0} canDown={exIdx<total-1} />
+                  <button onClick={()=>setChartExpandedFor(chartOpen ? null : ex.name)} style={{ ...ctrlBtn(C), background:chartOpen?C.accentBright:C.fieldBg, color:chartOpen?"#fff":C.accentDeep }}>progress</button>
+                  <button onClick={()=>{ if (window.confirm(`Remove "${ex.name}" from this workout?`)) removeExerciseFromSession(ex.id); }} style={{ ...ctrlBtn(C), color:C.mutedGray }}>remove</button>
+                </div>
+              )}
             </div>
 
-            {/* Running stopwatch — pink-toned count-up timer for the Running exercise */}
-            {ex.name.trim().toLowerCase() === "running" && (() => {
-              const isRunning = runExId === ex.id && runStartAt;
-              const completedRuns = (ex.sets||[]).filter(s => s.duration > 0);
-              return (
-                <div style={{ marginBottom:14 }}>
-                  {isRunning ? (
-                    <div style={{ background:C.pinkTint, borderRadius:14, padding:"18px 16px", textAlign:"center" }}>
-                      <div style={{ fontSize:42, fontWeight:800, color:C.pinkDeep, letterSpacing:-1, fontVariantNumeric:"tabular-nums", lineHeight:1 }}>{fmtStopwatch(runElapsed)}</div>
-                      <div style={{ fontSize:11, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:C.pink, marginTop:6 }}>Running</div>
-                      <div style={{ display:"flex", gap:8, marginTop:14, justifyContent:"center" }}>
-                        <button onClick={stopRun} style={{ flex:1, maxWidth:160, padding:"12px", borderRadius:11, background:C.pink, border:"none", color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.3 }}>Stop & save</button>
-                        <button onClick={cancelRun} style={{ padding:"12px 16px", borderRadius:11, background:"#fff", border:`1px solid ${C.pink}`, color:C.pinkDeep, fontSize:14, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif" }}>Cancel</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <button onClick={()=>startRun(ex.id)} disabled={!!runStartAt} style={{
-                      display:"flex", alignItems:"center", justifyContent:"center", gap:10, width:"100%",
-                      padding:"14px", borderRadius:12, background: runStartAt ? C.fieldBg : C.pink, border:"none",
-                      color: runStartAt ? C.mutedGray : "#fff", fontSize:15, fontWeight:700, cursor: runStartAt?"not-allowed":"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.3,
-                    }}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                        <circle cx="12" cy="12" r="9" stroke={runStartAt?C.mutedGray:"#fff"} strokeWidth="2"/>
-                        <path d="M10 8.5l6 3.5-6 3.5z" fill={runStartAt?C.mutedGray:"#fff"}/>
-                      </svg>
-                      Start running
-                    </button>
-                  )}
-                  {completedRuns.length > 0 && !isRunning && (
-                    <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginTop:10 }}>
-                      {completedRuns.map((s,i) => (
-                        <span key={i} style={{ fontSize:12, fontWeight:700, color:C.pinkDeep, background:C.pinkTint, borderRadius:8, padding:"5px 10px", fontVariantNumeric:"tabular-nums" }}>
-                          🏃 {fmtStopwatch(s.duration)}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-
-            {/* table */}
-            {ex.sets.filter(s => !(s.duration > 0)).length > 0 && (
+            {/* Running uses the growing-tree timer elsewhere; here just the start shortcut */}
+            {isRunningEx ? (
+              <div style={{ fontSize:13, color:C.mutedGray, fontStyle:"italic", fontFamily:"Georgia,serif", padding:"4px 0" }}>Use the Running screen to start a run.</div>
+            ) : (
               <>
-                <div style={{ display:"grid", gridTemplateColumns:"26px 1fr 1fr 34px", gap:14, padding:"0 0 8px", fontSize:10, letterSpacing:0.4, textTransform:"uppercase", fontWeight:700, color:C.mutedGray, borderBottom:`1px solid ${C.hair}` }}>
-                  <span style={{ textAlign:"center" }}>Set</span>
-                  <span style={{ textAlign:"center" }}>Lb</span>
-                  <span style={{ textAlign:"center" }}>Reps</span>
-                  <span style={{ textAlign:"center" }}>✓</span>
-                </div>
-                {ex.sets.map((st, idx) => (
-                  (st.duration > 0) ? null : (
-                  <React.Fragment key={idx}>
-                    {renderSetRow(ex.id, ex.name, st, idx)}
-                  </React.Fragment>
-                  )
+                {workSets.length > 0 && ex.sets.map((st, idx) => (
+                  (st.duration > 0) ? null : <React.Fragment key={idx}>{renderSetRow(ex.id, ex.name, st, idx)}</React.Fragment>
                 ))}
+
+                <button onClick={()=>addSet(ex.id)}
+                  style={{ background:"none", border:"none", color:C.accentDeep, fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"Georgia,serif", fontStyle:"italic", padding:"14px 0 2px" }}>+ add set</button>
+
+                <div style={{ marginTop:8 }}>
+                  <RestTimer prefill={(data.restTimer||DEFAULT_DATA.restTimer).defaultSec} C={C} />
+                </div>
+
+                {(ex.notes||"").trim() || controlsOpen ? (
+                  <textarea value={ex.notes||""} onChange={e=>updateExerciseNotes(ex.id, e.target.value)} placeholder="Add a note…" rows="1"
+                    style={{ width:"100%", marginTop:12, fontSize:13, color:C.textMuted, padding:(ex.notes||"").trim() ? "6px 0 6px 12px" : "6px 0", background:"transparent", border:"none", borderLeft:(ex.notes||"").trim() ? `3px solid ${C.accentBright}` : "none", fontFamily:"Inter,sans-serif", resize:"none", lineHeight:1.4, outline:"none" }} />
+                ) : null}
+
+                {chartOpen && <ExerciseChart exName={ex.name} />}
               </>
             )}
-
-            <button onClick={()=>addSet(ex.id)}
-              style={{ background:"none", border:"none", color:C.accentDeep, fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif", padding:"12px 0 2px" }}>+ Add set</button>
-
-            {/* Rest timer — scrub to set, tap to start */}
-            {ex.name.trim().toLowerCase() !== "running" && (
-              <div style={{ marginTop:8 }}>
-                <RestTimer prefill={(data.restTimer||DEFAULT_DATA.restTimer).defaultSec} C={C} />
-              </div>
-            )}
-
-            <textarea value={ex.notes||""} onChange={e=>updateExerciseNotes(ex.id, e.target.value)} placeholder="Add a note…" rows="1"
-              style={{ width:"100%", marginTop:6, fontSize:13, color:C.textMuted, padding:(ex.notes||"").trim() ? "6px 0 6px 12px" : "6px 0", background:"transparent", border:"none", borderLeft:(ex.notes||"").trim() ? `3px solid ${C.accentBright}` : "none", fontFamily:"Inter,sans-serif", resize:"none", lineHeight:1.4, outline:"none" }} />
-
-            {chartOpen && <ExerciseChart exName={ex.name} />}
           </div>
         );
       };
@@ -2694,28 +2636,29 @@
 
         return (
           <>
-            <button onClick={()=>setActiveSessionId(null)}
-              style={{ display:"flex", alignItems:"center", gap:6, background:"none", border:"none", padding:"0 0 12px", cursor:"pointer", fontFamily:"Inter,sans-serif", color:C.accentDeep, fontSize:13, fontWeight:700 }}>
-              <span style={{ fontSize:16, lineHeight:1 }}>‹</span> All workouts
-            </button>
-            <div style={{ display:"flex", alignItems:"center", gap:12, background:C.ink, borderRadius:16, padding:14, marginBottom:10 }}>
-              <div style={{
-                width:42, height:42, borderRadius:11,
-                background:"rgba(255,255,255,0.12)",
-                display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:22, flexShrink:0,
-              }}>{w?w.emoji:"🏋️"}</div>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:16, fontWeight:800, color:"#fff", letterSpacing:-0.3 }}>{w?w.label:"Workout"}</div>
-                <div style={{ fontSize:11, color:"rgba(255,255,255,0.6)", marginTop:1, fontWeight:500 }}>{timeStr ? timeStr+" · " : ""}{doneCount} of {totalCount} done</div>
-              </div>
-              <button onClick={()=>{ if(window.confirm("Delete this workout session? Its sets will be lost.")) deleteSession(today, sess.id); }}
-                style={{ background:"rgba(255,255,255,0.12)", border:"none", borderRadius:9, color:"#fff", fontSize:10, padding:"7px 11px", letterSpacing:0.4, fontFamily:"Inter,sans-serif", cursor:"pointer", fontWeight:700 }}>DELETE</button>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
+              <button onClick={()=>setActiveSessionId(null)}
+                style={{ display:"inline-flex", alignItems:"center", gap:5, background:"none", border:"none", padding:0, cursor:"pointer", fontFamily:"Georgia,serif", fontStyle:"italic", color:C.textMuted, fontSize:14 }}>
+                ← back
+              </button>
+              {timeStr && (
+                <span style={{ display:"inline-flex", alignItems:"center", gap:6, fontFamily:"Georgia,serif", fontWeight:600, fontSize:14, color:C.accentDeep, fontVariantNumeric:"tabular-nums" }}>
+                  <span style={{ width:6, height:6, borderRadius:"50%", background:C.accent, display:"inline-block" }}/>{timeStr}
+                </span>
+              )}
             </div>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:2 }}>
+              <div style={{ fontFamily:"Georgia,serif", fontSize:32, fontWeight:600, color:C.ink, letterSpacing:-0.6, lineHeight:1.05 }}>{w?w.label:"Workout"}</div>
+              <button onClick={()=>{ if(window.confirm("Delete this workout session? Its sets will be lost.")) deleteSession(today, sess.id); }}
+                style={{ background:"none", border:"none", color:C.mutedGray, fontSize:13, fontFamily:"Georgia,serif", fontStyle:"italic", cursor:"pointer", padding:0 }}>delete</button>
+            </div>
+            <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:13, color:C.mutedGray, marginBottom:6 }}>{doneCount} of {totalCount} done</div>
 
-            {TIMED_TYPES[sess.type] ? renderTimedSession(sess) : (
+            {TIMED_TYPES[sess.type] ? renderTimedSession(sess) : (() => {
+            const activeIdx = sess.exercises.findIndex(e => !e.done);
+            return (
             <>
-            {sess.exercises.map((ex, exIdx) => renderExerciseCard(ex, exIdx))}
+            {sess.exercises.map((ex, exIdx) => renderExerciseCard(ex, exIdx, exIdx === activeIdx))}
 
             {sess.exercises.length === 0 && (
               <div style={{ textAlign:"center", color:C.mutedGray, fontSize:13, fontWeight:500, padding:"24px 0 8px", lineHeight:1.5 }}>
@@ -2723,12 +2666,10 @@
               </div>
             )}
 
-            <div style={{ display:"flex", gap:8, margin:"16px 0 12px" }}>
-              <input type="text" value={newExerciseName} onChange={e=>setNewExerciseName(e.target.value)} placeholder="Add custom exercise…"
+            <div style={{ margin:"18px 0 12px" }}>
+              <input type="text" value={newExerciseName} onChange={e=>setNewExerciseName(e.target.value)} placeholder="+ add exercise"
                 onKeyDown={e=>{ if(e.key==="Enter") { addCustomExercise(sess.type, newExerciseName); setNewExerciseName(""); } }}
-                style={{ flex:1, background:C.fieldBg, border:"none", borderRadius:10, padding:"12px 14px", fontSize:13, color:C.text, fontFamily:"Inter,sans-serif", fontWeight:500 }} />
-              <button onClick={()=>{ addCustomExercise(sess.type, newExerciseName); setNewExerciseName(""); }}
-                style={{ background:C.accent, border:"none", borderRadius:10, color:"#fff", fontSize:12, fontWeight:700, padding:"0 18px", cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.4 }}>ADD</button>
+                style={{ width:"100%", background:"transparent", border:"none", padding:"4px 0", fontSize:15, color:C.textMuted, fontFamily:"Georgia,serif", fontStyle:"italic", outline:"none" }} />
             </div>
 
             {hiddenForType.length > 0 && (
@@ -2753,7 +2694,7 @@
               </div>
             </div>
             </>
-            )}
+            ); })()}
 
             <SavedToast show={saved} />
           </>
