@@ -1057,6 +1057,8 @@
       const [newExerciseName, setNewExerciseName] = useState("");
       const [editingExercise, setEditingExercise] = useState(null);
       const [controlsFor, setControlsFor] = useState(null); // exId whose controls (reorder/chart/remove) are revealed
+      const [drag, setDrag] = useState(null); // { fromIdx, curIdx, y } while dragging an exercise; null otherwise
+      const dragRef = useRef({ pressTimer:null, startY:0, offset:0, slots:[], tapOk:false, fromIdx:-1 });
       const [historyView, setHistoryView] = useState("workouts"); // workouts | daily
       const [expandedFeedId, setExpandedFeedId] = useState(null);
       const [calMonthOffset, setCalMonthOffset] = useState(0); // 0 = current month, -1 = last month, etc.
@@ -1571,6 +1573,21 @@
         });
       };
 
+      // Move an exercise from one index to another (for drag reorder).
+      const reorderExercise = (fromIdx, toIdx) => {
+        if (!activeSession) return;
+        const cur = activeSession;
+        if (fromIdx===toIdx || fromIdx<0 || toIdx<0 || fromIdx>=cur.exercises.length || toIdx>=cur.exercises.length) return;
+        const arr = [...cur.exercises];
+        const [m] = arr.splice(fromIdx, 1);
+        arr.splice(toIdx, 0, m);
+        const nextSessions = todaySessions.map(s => s.id===cur.id ? { ...s, exercises: arr } : s);
+        update({
+          exerciseOrder: { ...(data.exerciseOrder||{}), [cur.type]: arr.map(e => e.name) },
+          workoutSessions: { ...(data.workoutSessions||{}), [today]: nextSessions },
+        });
+      };
+
       // Helper for exercise-library mutations: rewrite the active session's exercises if it matches typeKey.
       const sessionsWithActivePatched = (typeKey, exFn) => {
         if (!activeSession || activeSession.type !== typeKey) return null;
@@ -1868,6 +1885,21 @@
           workouts: Object.values(data.workoutSessions||{}).reduce((a, arr) => a + (arr||[]).length, 0),
         };
       }, [data.logs, data.customHabits, data.workoutSessions]);
+
+
+      // Window listeners for exercise drag-reorder. The actual move/end logic is
+      // assigned into dragHandlersRef after the gate; this effect just binds while dragging.
+      const dragHandlersRef = useRef({ move:()=>{}, end:()=>{} });
+      useEffect(() => {
+        if (!drag) return;
+        const mv = e => dragHandlersRef.current.move(e);
+        const up = () => dragHandlersRef.current.end();
+        window.addEventListener("touchmove", mv, { passive:false });
+        window.addEventListener("touchend", up);
+        window.addEventListener("mousemove", mv);
+        window.addEventListener("mouseup", up);
+        return () => { window.removeEventListener("touchmove", mv); window.removeEventListener("touchend", up); window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); };
+      }, [drag]);
 
 
       // ─── Gates ──────────────────────────────────────────────────────────
@@ -2560,6 +2592,55 @@
 
       // (legacy inline preset chooser kept out of the new flow)
 
+      // ─── Long-press drag reorder for exercises ───────────────────────────
+      const dragBeginPress = (e, exIdx) => {
+        const pt = e.touches ? e.touches[0] : e;
+        const d = dragRef.current;
+        d.startY = pt.clientY; d.tapOk = true; d.fromIdx = exIdx;
+        clearTimeout(d.pressTimer);
+        d.pressTimer = setTimeout(() => {
+          d.tapOk = false;
+          // measure current card tops/heights
+          const nodes = Array.from(document.querySelectorAll("[data-exrow]"));
+          d.slots = nodes.map(n => ({ top: n.offsetTop, h: n.offsetHeight }));
+          const node = nodes[exIdx];
+          d.offset = node ? (d.startY - node.getBoundingClientRect().top) : 0;
+          try { navigator.vibrate && navigator.vibrate(18); } catch(_){}
+          setControlsFor(null);
+          setDrag({ fromIdx: exIdx, curIdx: exIdx, y: node ? node.offsetTop : 0 });
+        }, 380);
+      };
+      const dragMove = (e) => {
+        const d = dragRef.current;
+        const pt = e.touches ? e.touches[0] : e;
+        if (d.pressTimer && Math.abs(pt.clientY - d.startY) > 8) { clearTimeout(d.pressTimer); d.pressTimer=null; d.tapOk=false; }
+        setDrag(cur => {
+          if (!cur) return cur;
+          if (e.cancelable) e.preventDefault();
+          const listEl = document.querySelector("[data-exlist]");
+          const listTop = listEl ? listEl.getBoundingClientRect().top : 0;
+          const y = pt.clientY - listTop - d.offset;
+          const draggedH = d.slots[cur.fromIdx] ? d.slots[cur.fromIdx].h : 0;
+          const mid = y + draggedH/2;
+          let target = 0;
+          for (let k=0;k<d.slots.length;k++){ if (mid > d.slots[k].top + d.slots[k].h/2) target = k+1; }
+          target = Math.max(0, Math.min(d.slots.length-1, target > cur.fromIdx ? target-1 : target));
+          return { ...cur, y, curIdx: target };
+        });
+      };
+      const dragEnd = () => {
+        const d = dragRef.current;
+        if (d.pressTimer) { clearTimeout(d.pressTimer); d.pressTimer=null; }
+        setDrag(cur => {
+          if (cur) {
+            if (cur.fromIdx !== cur.curIdx) { reorderExercise(cur.fromIdx, cur.curIdx); try{navigator.vibrate&&navigator.vibrate([14,10,14]);}catch(_){} }
+          }
+          return null;
+        });
+      };
+      dragHandlersRef.current.move = dragMove;
+      dragHandlersRef.current.end = dragEnd;
+
       const ctrlBtn = (C) => ({ background:C.fieldBg, border:"none", borderRadius:8, padding:"6px 12px", fontSize:12, fontWeight:600, color:C.textMuted, cursor:"pointer", fontFamily:"Georgia,serif", fontStyle:"italic" });
 
       const renderExerciseCard = (ex, exIdx, isActive) => {
@@ -2570,13 +2651,30 @@
         const isRunningEx = ex.name.trim().toLowerCase() === "running";
         const workSets = ex.sets.filter(s => !(s.duration > 0));
 
+        // drag visuals
+        const isDragged = drag && drag.fromIdx === exIdx;
+        let shiftY = 0;
+        if (drag && !isDragged) {
+          const draggedH = dragRef.current.slots[drag.fromIdx] ? dragRef.current.slots[drag.fromIdx].h : 0;
+          if (drag.fromIdx < drag.curIdx && exIdx > drag.fromIdx && exIdx <= drag.curIdx) shiftY = -draggedH;
+          if (drag.fromIdx > drag.curIdx && exIdx >= drag.curIdx && exIdx < drag.fromIdx) shiftY = draggedH;
+        }
+
         return (
-          <div key={ex.id} style={{
+          <div key={ex.id} data-exrow style={{
             margin:"0 -16px", padding:"22px 24px",
-            background: isActive ? C.cardActive : "transparent",
+            background: isActive ? C.cardActive : (isDragged ? C.surface : "transparent"),
             borderBottom:`1px solid ${C.hair}`,
+            transform: isDragged ? `translateY(${drag.y - (dragRef.current.slots[exIdx]?dragRef.current.slots[exIdx].top:0)}px) scale(1.02)` : (shiftY ? `translateY(${shiftY}px)` : "none"),
+            transition: isDragged ? "none" : "transform 0.22s cubic-bezier(0.2,0,0,1)",
+            boxShadow: isDragged ? "0 18px 40px -12px rgba(20,40,20,0.35)" : "none",
+            borderRadius: isDragged ? 14 : 0,
+            position: isDragged ? "relative" : "static",
+            zIndex: isDragged ? 50 : "auto",
+            opacity: 1,
+            touchAction: drag ? "none" : "auto",
           }}>
-            {/* name — tap to reveal controls; tap again on name in controls mode to rename */}
+            {/* name — long-press to drag, tap to reveal controls */}
             <div style={{ marginBottom:16 }}>
               {isRenaming ? (
                 <input type="text" defaultValue={ex.name} autoFocus
@@ -2584,16 +2682,19 @@
                   onKeyDown={e=>{ if(e.key==="Enter") e.target.blur(); if(e.key==="Escape") setEditingExercise(null); }}
                   style={{ width:"100%", background:C.surface, border:`1px solid ${C.accentBright}`, borderRadius:8, padding:"7px 10px", fontSize:20, fontWeight:600, color:C.ink, fontFamily:"Georgia,serif" }} />
               ) : (
-                <div onClick={()=>setControlsFor(controlsOpen ? null : ex.id)}
-                  style={{ fontFamily:"Georgia,serif", fontSize:20, fontWeight:600, color:C.ink, cursor:"pointer", letterSpacing:-0.3 }}>{ex.name}</div>
+                <div
+                  onTouchStart={e=>dragBeginPress(e, exIdx)}
+                  onMouseDown={e=>dragBeginPress(e, exIdx)}
+                  onClick={()=>{ if(dragRef.current.tapOk && !drag) setControlsFor(controlsOpen ? null : ex.id); }}
+                  style={{ fontFamily:"Georgia,serif", fontSize:20, fontWeight:600, color:C.ink, cursor: isDragged?"grabbing":"pointer", letterSpacing:-0.3, touchAction:"none", userSelect:"none" }}>{ex.name}</div>
               )}
-              {/* revealed controls */}
+              {/* revealed controls (tap) */}
               {controlsOpen && !isRenaming && (
-                <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:10 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:14, marginTop:10 }}>
                   <button onClick={()=>{ setEditingExercise({ id: ex.id }); }} style={ctrlBtn(C)}>rename</button>
-                  <ReorderArrows onUp={()=>moveExercise(ex.id,-1)} onDown={()=>moveExercise(ex.id,1)} canUp={exIdx>0} canDown={exIdx<total-1} />
-                  <button onClick={()=>setChartExpandedFor(chartOpen ? null : ex.name)} style={{ ...ctrlBtn(C), background:chartOpen?C.accentBright:C.fieldBg, color:chartOpen?"#fff":C.accentDeep }}>progress</button>
+                  <button onClick={()=>setChartExpandedFor(chartOpen ? null : ex.name)} style={{ ...ctrlBtn(C), color:chartOpen?C.accentDeep:C.textMuted }}>progress</button>
                   <button onClick={()=>{ if (window.confirm(`Remove "${ex.name}" from this workout?`)) removeExerciseFromSession(ex.id); }} style={{ ...ctrlBtn(C), color:C.mutedGray }}>remove</button>
+                  <span style={{ marginLeft:"auto", fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:12, color:C.mutedGray }}>long-press to move</span>
                 </div>
               )}
             </div>
@@ -2658,7 +2759,9 @@
             const activeIdx = sess.exercises.findIndex(e => !e.done);
             return (
             <>
+            <div data-exlist style={{ position:"relative" }}>
             {sess.exercises.map((ex, exIdx) => renderExerciseCard(ex, exIdx, exIdx === activeIdx))}
+            </div>
 
             {sess.exercises.length === 0 && (
               <div style={{ textAlign:"center", color:C.mutedGray, fontSize:13, fontWeight:500, padding:"24px 0 8px", lineHeight:1.5 }}>
