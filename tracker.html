@@ -750,6 +750,118 @@
       );
     }
 
+    // Running session screen: a big ring + a tree that grows as you run.
+    // 30-min cycle (full bloom at 30 min). Grass+trunk sketch in the first ~5s,
+    // then branches/leaves/flowers/fruit evolve. Pause holds; Finish records via
+    // onFinish(seconds); "See your growth" replays the bloom (<=7s, proportional).
+    function RunningGrow({ label, emoji, onFinish, onCancel, C }) {
+      const HALF=1800;                 // 30 minutes, in seconds
+      const RING=892;                  // 2*pi*142
+      const FL=['#c4553f','#e0992f','#d96aa0','#c9b03a','#8f6ad9','#e07a9c'];
+      const LEAF='#6fae4f', LEAF2='#82bd5e', BARK='#7a6a55', GRASS='#5fa83f', RASP='#c4553f', BLUE='#5b6fa8';
+      const GROUND=210, CX=120;
+      const grassFlowers=[{x:46,c:FL[0]},{x:70,c:FL[2]},{x:150,c:FL[1]},{x:178,c:FL[3]},{x:100,c:FL[4]},{x:198,c:FL[5]}];
+
+      const [phase,setPhase]=useState('idle');   // idle|run|paused|done|replay
+      const [elapsed,setElapsed]=useState(0);
+      const elapsedRef=useRef(0), rafRef=useRef(null), lastRef=useRef(0), speedRef=useRef(1);
+      const finalRef=useRef(0), modeRef=useRef('run'), replayTargetRef=useRef(0);
+      const [, force]=useState(0);
+
+      const fmt=s=>{s=Math.floor(s);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),sec=s%60;return (h?h+':'+String(m).padStart(2,'0'):m)+':'+String(sec).padStart(2,'0');};
+      const seg=(g,a,b)=>Math.max(0,Math.min(1,(g-a)/(b-a)));
+      const easeOut=t=>1-Math.pow(1-t,2.2);
+
+      const flower=(cx,cy,r,color,a)=>{ const R=r*easeOut(a); let s='<g>';
+        for(let k=0;k<5;k++){ const ang=(k/5)*Math.PI*2-Math.PI/2; const px=cx+Math.cos(ang)*R*0.66, py=cy+Math.sin(ang)*R*0.66;
+          s+=`<ellipse cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" rx="${(R*0.42).toFixed(1)}" ry="${(R*0.56).toFixed(1)}" fill="${color}" opacity="0.92" transform="rotate(${(ang*180/Math.PI+90).toFixed(0)} ${px.toFixed(1)} ${py.toFixed(1)})"/>`; }
+        s+=`<circle cx="${cx}" cy="${cy}" r="${(R*0.32).toFixed(1)}" fill="#fff8e6"/><circle cx="${cx}" cy="${cy}" r="${(R*0.18).toFixed(1)}" fill="#d9a82f"/>`; return s+'</g>'; };
+      const raspberry=(cx,cy,r,color,a)=>{ const R=r*easeOut(a); let s='<g>';
+        [[0,-R*0.6],[-R*0.55,-R*0.1],[R*0.55,-R*0.1],[-R*0.3,R*0.5],[R*0.3,R*0.5],[0,R*0.05]].forEach(o=>{ s+=`<circle cx="${(cx+o[0]).toFixed(1)}" cy="${(cy+o[1]).toFixed(1)}" r="${(R*0.36).toFixed(1)}" fill="${color}"/>`; }); return s+'</g>'; };
+      const blueberry=(cx,cy,r,color,a)=>{ const R=r*easeOut(a);
+        return `<circle cx="${cx}" cy="${cy}" r="${R.toFixed(1)}" fill="${color}"/><path d="M${(cx-R*0.4).toFixed(1)} ${(cy-R*0.5).toFixed(1)} L${cx} ${(cy-R*0.2).toFixed(1)} L${(cx+R*0.4).toFixed(1)} ${(cy-R*0.5).toFixed(1)}" stroke="#2f4a6a" stroke-width="0.9" fill="none" stroke-linejoin="round"/>`; };
+
+      const buildTree=(t)=>{
+        const g=Math.min(1,t/HALF); let s='';
+        const grassA=Math.min(1,t/2.5);
+        if(grassA>0){ for(let i=0;i<8;i++){ const x=36+i*27, h=(11+7)*easeOut(grassA); s+=`<path d="M${x} ${GROUND} q -3 ${-h} -1 ${-h-3} M${x} ${GROUND} q 3 ${-h} 1 ${-h-3}" stroke="${GRASS}" stroke-width="2" fill="none" stroke-linecap="round"/>`; }
+          s+=`<line x1="18" y1="${GROUND}" x2="222" y2="${GROUND}" stroke="${GRASS}" stroke-width="2" stroke-linecap="round"/>`; }
+        const trunkA=Math.min(1,Math.max(0,(t-2.5)/2.5)); const trunkH=120*easeOut(trunkA); const topY=GROUND-trunkH;
+        if(trunkH>3){ const wB=7*trunkA+2, wT=3*trunkA+1.5;
+          s+=`<path d="M${CX-wB} ${GROUND} C ${CX-wB} ${GROUND-trunkH*0.5}, ${CX-wT} ${GROUND-trunkH*0.8}, ${CX-wT} ${topY} L ${CX+wT} ${topY} C ${CX+wT} ${GROUND-trunkH*0.8}, ${CX+wB} ${GROUND-trunkH*0.5}, ${CX+wB} ${GROUND} Z" fill="${BARK}"/>`;
+          if(trunkA>0.6){ const ra=(trunkA-0.6)/0.4; s+=`<path d="M${CX-wB} ${GROUND} q ${-8*ra} -1 ${-12*ra} 3" stroke="${BARK}" stroke-width="2.4" fill="none" stroke-linecap="round"/><path d="M${CX+wB} ${GROUND} q ${8*ra} -1 ${12*ra} 3" stroke="${BARK}" stroke-width="2.4" fill="none" stroke-linecap="round"/>`; } }
+        const openA=Math.min(1,Math.max(0,(t-3.5)/1.5));
+        if(openA>0){ s+=flower(grassFlowers[0].x,GROUND-6,8,grassFlowers[0].c,openA); s+=flower(grassFlowers[1].x,GROUND-5,8,grassFlowers[1].c,Math.min(1,Math.max(0,(t-4.2)/1.3))); }
+        if(trunkA<1) return s;
+        const brA=seg(g,0.05,0.22), by=topY+12, L=44*easeOut(brA);
+        if(brA>0){ s+=`<path d="M${CX} ${by} q ${-L*0.6} -8 ${-L} -24" stroke="${BARK}" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M${CX} ${by} q ${L*0.6} -8 ${L} -24" stroke="${BARK}" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M${CX} ${by+16} q ${-L*0.5} -2 ${-L*0.78} -14" stroke="${BARK}" stroke-width="2.2" fill="none" stroke-linecap="round"/><path d="M${CX} ${by+16} q ${L*0.5} -2 ${L*0.78} -14" stroke="${BARK}" stroke-width="2.2" fill="none" stroke-linecap="round"/>`; }
+        const cyTop=topY-22, canA=seg(g,0.18,0.55);
+        if(canA>0){ const lobes=[[CX,cyTop-16,28],[CX-32,cyTop+2,24],[CX+32,cyTop+2,24],[CX-15,cyTop-4,22],[CX+15,cyTop-4,22],[CX,cyTop+14,22],[CX-26,cyTop-12,18],[CX+26,cyTop-12,18]];
+          let fill=''; lobes.forEach(l=>fill+=`<circle cx="${l[0]}" cy="${l[1]}" r="${(l[2]*canA).toFixed(1)}" fill="#eaf3e4"/>`); s+=`<g>${fill}</g>`;
+          lobes.forEach((l,i)=>{ const a=seg(g,0.18+i*0.035,0.3+i*0.035); if(a>0) s+=`<circle cx="${l[0]}" cy="${l[1]}" r="${(l[2]*a).toFixed(1)}" fill="none" stroke="${i%2?LEAF2:LEAF}" stroke-width="2"/>`; }); }
+        for(let i=2;i<6;i++){ const a=seg(g,0.3+(i-2)*0.07,0.4+(i-2)*0.07); if(a>0) s+=flower(grassFlowers[i].x,GROUND-(4+(i%3)),8,grassFlowers[i].c,a); }
+        const canopyFl=[[CX-30,cyTop+8,FL[5]],[CX+30,cyTop+4,FL[2]],[CX,cyTop-14,FL[4]]];
+        canopyFl.forEach((p,i)=>{ const a=seg(g,0.5+i*0.05,0.6+i*0.05); if(a>0) s+=flower(p[0],p[1],6.5,p[2],a); });
+        const fruit=[[CX-26,cyTop-2,'r'],[CX+24,cyTop-8,'b'],[CX-8,cyTop+14,'b'],[CX+12,cyTop+10,'r'],[CX+2,cyTop-16,'r'],[CX-20,cyTop+4,'b']];
+        fruit.forEach((f,i)=>{ const a=seg(g,0.72+i*0.045,0.82+i*0.045); if(a>0){ s+= f[2]==='r'? raspberry(f[0],f[1],5.5,RASP,a) : blueberry(f[0],f[1],4.6,BLUE,a); } });
+        return s;
+      };
+
+      const tick=(now)=>{
+        const dt=(now-lastRef.current)/1000*speedRef.current; lastRef.current=now;
+        let e=elapsedRef.current+dt;
+        if(modeRef.current==='replay' && e>=replayTargetRef.current){ e=replayTargetRef.current; elapsedRef.current=e; setElapsed(e); force(x=>x+1); setPhase('done'); return; }
+        elapsedRef.current=e; setElapsed(e); force(x=>x+1);
+        rafRef.current=requestAnimationFrame(tick);
+      };
+      const begin=()=>{ modeRef.current='run'; setPhase('run'); elapsedRef.current=0; setElapsed(0); speedRef.current=1; lastRef.current=performance.now(); rafRef.current=requestAnimationFrame(tick); };
+      const pauseToggle=()=>{ if(phase==='run'){ cancelAnimationFrame(rafRef.current); setPhase('paused'); } else if(phase==='paused'){ lastRef.current=performance.now(); setPhase('run'); rafRef.current=requestAnimationFrame(tick); } };
+      const finish=()=>{ cancelAnimationFrame(rafRef.current); finalRef.current=Math.floor(elapsedRef.current); setPhase('done'); };
+      const replay=()=>{ modeRef.current='replay'; replayTargetRef.current=finalRef.current; const dur=Math.min(7,(finalRef.current/HALF)*7)||0.4; speedRef.current=finalRef.current/dur; elapsedRef.current=0; setElapsed(0); setPhase('replay'); lastRef.current=performance.now(); rafRef.current=requestAnimationFrame(tick); };
+      useEffect(()=>()=>cancelAnimationFrame(rafRef.current),[]);
+
+      const frac=Math.min(1,(elapsed%HALF)/HALF);
+      const treeHTML=buildTree(elapsed);
+      const isDone=phase==='done';
+
+      return (
+        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", paddingTop:6 }}>
+          <div style={{ position:"relative", width:300, height:300, margin:"6px 0" }}>
+            <svg width="300" height="300" viewBox="0 0 300 300" style={{ position:"absolute", inset:0, transform:"rotate(-90deg)" }}>
+              <circle cx="150" cy="150" r="142" fill="none" stroke={C.hair} strokeWidth="6"/>
+              <circle cx="150" cy="150" r="142" fill="none" stroke={C.accent} strokeWidth="6" strokeLinecap="round" strokeDasharray={RING} strokeDashoffset={RING*(1-frac)}/>
+            </svg>
+            <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
+              <svg width="240" height="240" viewBox="0 0 240 240" dangerouslySetInnerHTML={{__html:treeHTML}} />
+            </div>
+            {phase==='idle' && (
+              <button onClick={begin} style={{ position:"absolute", left:"50%", top:"50%", transform:"translate(-50%,-50%)", width:96, height:96, borderRadius:"50%", background:C.ink, color:"#fff", border:"none", fontFamily:"'Source Serif 4',Georgia,serif", fontSize:18, fontWeight:600, cursor:"pointer", boxShadow:"0 6px 20px -6px rgba(20,40,20,0.4)" }}>Start</button>
+            )}
+          </div>
+
+          {phase!=='idle' && (
+            <div style={{ fontFamily:"'Source Serif 4',Georgia,serif", fontSize:46, fontWeight:600, letterSpacing:-1, fontVariantNumeric:"tabular-nums", color:C.ink, margin:"12px 0 2px" }}>{fmt(elapsed)}</div>
+          )}
+          <div style={{ fontFamily:"'Source Serif 4',Georgia,serif", fontStyle:"italic", fontSize:13, color:C.mutedGray, minHeight:18 }}>
+            {phase==='idle'?'':phase==='run'?'growing as you run':phase==='paused'?'paused':phase==='replay'?'replaying your growth':`recorded · ${fmt(finalRef.current)}`}
+          </div>
+
+          {(phase==='run'||phase==='paused') && (
+            <div style={{ display:"flex", gap:10, width:"100%", marginTop:18 }}>
+              <button onClick={pauseToggle} style={{ flex:1, border:`1px solid ${C.border}`, background:"#fff", color:C.ink, borderRadius:15, padding:16, fontFamily:"'Source Serif 4',Georgia,serif", fontWeight:600, fontSize:16, cursor:"pointer" }}>{phase==='paused'?'Resume':'Pause'}</button>
+              <button onClick={finish} style={{ flex:1, border:"none", background:C.ink, color:"#fff", borderRadius:15, padding:16, fontFamily:"'Source Serif 4',Georgia,serif", fontWeight:600, fontSize:16, cursor:"pointer" }}>Finish</button>
+            </div>
+          )}
+          {isDone && (
+            <div style={{ width:"100%", marginTop:18, display:"flex", flexDirection:"column", gap:10 }}>
+              <button onClick={replay} style={{ width:"100%", border:`1px solid ${C.border}`, background:"#fff", color:C.ink, borderRadius:15, padding:15, fontFamily:"'Source Serif 4',Georgia,serif", fontWeight:600, fontSize:16, cursor:"pointer" }}>See your growth</button>
+              <button onClick={()=>onFinish(finalRef.current)} style={{ width:"100%", border:"none", background:C.accent, color:"#fff", borderRadius:15, padding:16, fontFamily:"'Source Serif 4',Georgia,serif", fontWeight:600, fontSize:16, cursor:"pointer" }}>Save run</button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
     // Workout picker list with "settle" press animation: the chosen row scales up
     // and goes green, the others part vertically and fade, and onPick fires at the
     // motion peak (~120ms) so the session screen overlaps the tail — no perceived wait.
@@ -2611,28 +2723,12 @@
         return (
           <>
             {mode === "stopwatch" ? (
-              isRunning ? (
-                <div style={{ background:C.pinkTint, borderRadius:16, padding:"28px 16px", textAlign:"center", marginBottom:14 }}>
-                  <div style={{ fontSize:54, fontWeight:800, color:C.pinkDeep, letterSpacing:-1.5, fontVariantNumeric:"tabular-nums", lineHeight:1 }}>{fmtStopwatch(runElapsed)}</div>
-                  <div style={{ fontSize:12, fontWeight:700, letterSpacing:1.5, textTransform:"uppercase", color:C.pink, marginTop:8 }}>{w?w.label:"Running"}</div>
-                  <div style={{ display:"flex", gap:8, marginTop:18, justifyContent:"center" }}>
-                    <button onClick={stopSessionRun} style={{ flex:1, maxWidth:180, padding:"14px", borderRadius:12, background:C.pink, border:"none", color:"#fff", fontSize:15, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.3 }}>Stop &amp; save</button>
-                    <button onClick={cancelRun} style={{ padding:"14px 18px", borderRadius:12, background:"#fff", border:`1px solid ${C.pink}`, color:C.pinkDeep, fontSize:15, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif" }}>Cancel</button>
-                  </div>
-                </div>
-              ) : (
-                <button onClick={startSessionRun} disabled={!!runStartAt} style={{
-                  display:"flex", alignItems:"center", justifyContent:"center", gap:10, width:"100%",
-                  padding:"18px", borderRadius:14, background: runStartAt ? C.fieldBg : C.pink, border:"none",
-                  color: runStartAt ? C.mutedGray : "#fff", fontSize:16, fontWeight:700, cursor: runStartAt?"not-allowed":"pointer", fontFamily:"Inter,sans-serif", letterSpacing:0.3, marginBottom:14,
-                }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                    <circle cx="12" cy="12" r="9" stroke={runStartAt?C.mutedGray:"#fff"} strokeWidth="2"/>
-                    <path d="M10 8.5l6 3.5-6 3.5z" fill={runStartAt?C.mutedGray:"#fff"}/>
-                  </svg>
-                  Start {w?w.label.toLowerCase():"running"}
-                </button>
-              )
+              <RunningGrow
+                label={w?w.label:"Running"}
+                emoji={w?w.emoji:"🏃"}
+                onFinish={(secs)=>{ if(secs>0) logSessionBout(secs); }}
+                C={C}
+              />
             ) : (
               <div style={{ background:C.pinkTint, borderRadius:16, padding:"18px 16px", marginBottom:14 }}>
                 <div style={{ fontSize:12, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:C.pink, marginBottom:10, textAlign:"center" }}>Log {w?w.label.toLowerCase():"session"} time</div>
