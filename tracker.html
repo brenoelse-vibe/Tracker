@@ -338,8 +338,12 @@
     };
 
     // ═══ PURE HELPERS ════════════════════════════════════════════════════════
+    const APP_TZ = "America/Toronto";
     const localDateKey = d => {
-      const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,"0"), day=String(d.getDate()).padStart(2,"0");
+      // Date key (YYYY-MM-DD) computed in the app timezone (Toronto), so "today"
+      // matches Toronto regardless of the device's own timezone.
+      const parts = new Intl.DateTimeFormat("en-CA", { timeZone: APP_TZ, year:"numeric", month:"2-digit", day:"2-digit" }).formatToParts(d);
+      const y = parts.find(p=>p.type==="year").value, m = parts.find(p=>p.type==="month").value, day = parts.find(p=>p.type==="day").value;
       return `${y}-${m}-${day}`;
     };
     const formatDate = (key, opts) => new Date(key+"T12:00:00").toLocaleDateString("en-US", opts);
@@ -1068,7 +1072,7 @@
       const [editingEmojiFor, setEditingEmojiFor] = useState(null);
       const [newExerciseName, setNewExerciseName] = useState("");
       const [editingExercise, setEditingExercise] = useState(null); // exId being renamed
-      const [wiggle, setWiggle] = useState(false);                  // iOS-style edit mode
+      const [wigIdx, setWigIdx] = useState(null);                   // exIdx currently wiggling (per-exercise), or null
       const [drag, setDrag] = useState(null);                       // {fromIdx,curIdx,y}
       const [pendingDelEx, setPendingDelEx] = useState(null);       // exId awaiting delete confirm
       const dragRef = useRef({ startY:0, offset:0, slots:[], fromIdx:-1 });
@@ -1903,6 +1907,9 @@
 
 
 
+      // Exit exercise wiggle/edit mode when navigating away (tab change or session change).
+      useEffect(() => { setWigIdx(null); setDrag(null); }, [activeTab, activeSessionId]);
+
       // Exercise drag-reorder window listeners (handlers assigned after gate).
       const dragHandlersRef = useRef({ move:()=>{}, end:()=>{} });
       useEffect(() => {
@@ -2624,8 +2631,12 @@
         const pt = e.touches ? e.touches[0] : e;
         const p = exPressRef.current; p.x=pt.clientX; p.y=pt.clientY;
         clearTimeout(p.timer);
-        if (wiggle) { beginExDrag(exIdx, pt.clientY); return; }   // already editing: grab immediately
-        p.timer = setTimeout(() => { setWiggle(true); try{navigator.vibrate&&navigator.vibrate(20);}catch(_){} beginExDrag(exIdx, pt.clientY); }, 480);
+        if (wigIdx!=null) {
+          if (wigIdx===exIdx) { beginExDrag(exIdx, pt.clientY); }   // this one is wiggling: grab to drag
+          else { setWigIdx(null); }                                 // tapping a different one exits wiggle
+          return;
+        }
+        p.timer = setTimeout(() => { setWigIdx(exIdx); try{navigator.vibrate&&navigator.vibrate(20);}catch(_){} beginExDrag(exIdx, pt.clientY); }, 450);
       };
       const exPressCancel = () => { clearTimeout(exPressRef.current.timer); };
       const exDragMove = (e) => {
@@ -2649,7 +2660,7 @@
       };
       const exDragEnd = () => {
         clearTimeout(exPressRef.current.timer);
-        setDrag(cur => { if (cur && cur.fromIdx!==cur.curIdx) { reorderExercise(cur.fromIdx, cur.curIdx); try{navigator.vibrate&&navigator.vibrate([14,10,14]);}catch(_){} } return null; });
+        setDrag(cur => { if (cur && cur.fromIdx!==cur.curIdx) { reorderExercise(cur.fromIdx, cur.curIdx); setWigIdx(cur.curIdx); try{navigator.vibrate&&navigator.vibrate([14,10,14]);}catch(_){} } return null; });
       };
       dragHandlersRef.current.move = exDragMove;
       dragHandlersRef.current.end = exDragEnd;
@@ -2658,6 +2669,7 @@
         const workSets = ex.sets.filter(s => !(s.duration > 0));
         const rowBg = "#fdfdfc";
         const isRenaming = editingExercise === ex.id;
+        const isWig = wigIdx === exIdx;
         const isDragged = drag && drag.fromIdx === exIdx;
         let shiftY = 0;
         if (drag && !isDragged) {
@@ -2677,15 +2689,12 @@
             transition: isDragged ? "none" : "transform 0.2s cubic-bezier(0.2,0,0,1)",
             boxShadow: isDragged ? "0 16px 38px -12px rgba(40,40,36,0.3)" : "none",
             borderRadius: isDragged ? 14 : 0,
-            zIndex: isDragged ? 30 : "auto",
-            animation: (wiggle && !isDragged) ? "exWiggle 0.28s ease-in-out infinite" : "none",
+            zIndex: isDragged ? 30 : (isWig ? 5 : "auto"),
+            animation: (isWig && !isDragged) ? "exWiggle 0.3s ease-in-out infinite" : "none",
             touchAction: drag ? "none" : "auto",
           }}>
-            {/* active cue: thin left mark (no color fill) */}
-            {isActive && !wiggle && <div style={{ position:"absolute", left:0, top:20, bottom:20, width:3, borderRadius:2, background:"#cfd9c2" }} />}
-
             {/* delete badge (wiggle mode), top-right */}
-            {wiggle && (
+            {isWig && (
               <div onClick={(e)=>{ e.stopPropagation(); setPendingDelEx(ex.id); }}
                 style={{ position:"absolute", right:10, top:10, width:26, height:26, borderRadius:"50%", background:"#c2503f", border:"2px solid #fff", display:"flex", alignItems:"center", justifyContent:"center", zIndex:31, cursor:"pointer", boxShadow:"0 2px 6px rgba(0,0,0,0.18)" }}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="#fff" strokeWidth="3" strokeLinecap="round"/></svg>
@@ -2693,7 +2702,7 @@
             )}
 
             {/* grip handle (wiggle mode) */}
-            {wiggle && (
+            {isWig && (
               <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8, color:"#bdb6a8" }}>
                 <span style={{ display:"grid", gridTemplateColumns:"repeat(2,3px)", gap:3 }}>
                   {[0,1,2,3,4,5].map(i=><i key={i} style={{ width:3, height:3, borderRadius:"50%", background:"#bdb6a8", display:"block" }}/>)}
@@ -2702,11 +2711,12 @@
               </div>
             )}
 
-            {/* header: name + graph icon. Long-press = wiggle/drag; double-tap = rename. */}
+            {/* header: sage dot (active) + name + graph icon. Long-press = wiggle/drag; double-tap = rename. */}
             <div
               onTouchStart={e=>exPressStart(e, exIdx)} onTouchEnd={exPressCancel}
               onMouseDown={e=>exPressStart(e, exIdx)} onMouseUp={exPressCancel}
-              style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4, cursor: wiggle?"grab":"default" }}>
+              style={{ display:"flex", alignItems:"center", gap:9, marginBottom:4, cursor: isWig?"grab":"default" }}>
+              {isActive && !isWig && <span style={{ width:8, height:8, borderRadius:"50%", background:"#85a95f", flexShrink:0 }} />}
               {isRenaming ? (
                 <input type="text" defaultValue={ex.name} autoFocus
                   onBlur={e=>{ const v=e.target.value.trim(); if(v) renameExercise(activeSession.type, ex.name, v); setEditingExercise(null); }}
@@ -2714,19 +2724,19 @@
                   style={{ flex:1, fontFamily:"Georgia,serif", fontSize:20, fontWeight:600, color:"#1c1a17", border:"none", borderBottom:"2px solid #85a95f", background:"transparent", outline:"none", padding:"2px 0", letterSpacing:-0.25 }} />
               ) : (
                 <div
-                  onClick={()=>{ if(wiggle||drag) return; const now=Date.now(); if(now-tapRef.current.last<300){ setEditingExercise(ex.id); } tapRef.current.last=now; }}
-                  style={{ flex:1, fontFamily:"Georgia,serif", fontSize:20, fontWeight: isActive?700:600, color:"#1c1a17", letterSpacing:-0.25, userSelect:"none" }}>{ex.name}</div>
+                  onClick={()=>{ if(isWig||drag) return; const now=Date.now(); if(now-tapRef.current.last<300){ setEditingExercise(ex.id); } tapRef.current.last=now; }}
+                  style={{ fontFamily:"Georgia,serif", fontSize:20, fontWeight:600, color:"#1c1a17", letterSpacing:-0.25, userSelect:"none" }}>{ex.name}</div>
               )}
-              {!wiggle && !isRenaming && (
+              {!isWig && !isRenaming && (
                 <button onClick={(e)=>{ e.stopPropagation(); setChartExpandedFor(chartExpandedFor===ex.name?null:ex.name); }}
-                  style={{ width:30, height:30, borderRadius:9, border:"none", background:"transparent", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", flexShrink:0 }}>
+                  style={{ width:30, height:30, borderRadius:9, border:"none", background:"transparent", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", flexShrink:0, marginLeft:"auto" }}>
                   <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M4 19V5M4 19h16M8 15l3.5-4 3 2.5L20 8" stroke={chartExpandedFor===ex.name?"#85a95f":"#9a948a"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 </button>
               )}
             </div>
 
             {/* body — pointer-disabled during wiggle so taps drive the drag */}
-            <div style={{ pointerEvents: wiggle ? "none" : "auto" }}>
+            <div style={{ pointerEvents: isWig ? "none" : "auto" }}>
               {workSets.length > 0 && (
                 <div style={{ display:"grid", gridTemplateColumns:"24px 1fr 1fr 34px", gap:14, padding:"8px 2px 2px 0", marginTop:6 }}>
                   <span/>{wrLabel("w")}{wrLabel("r")}<span/>
@@ -2735,8 +2745,12 @@
               {workSets.length > 0 && ex.sets.map((st, idx) => (
                 (st.duration > 0) ? null : <React.Fragment key={idx}>{renderSetRow(ex.id, st, idx, rowBg)}</React.Fragment>
               ))}
-              <button onClick={()=>addSet(ex.id)}
-                style={{ background:"none", border:"none", color:C.accentDeep, fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"Georgia,serif", fontStyle:"italic", padding:"14px 0 2px" }}>+ add set</button>
+
+              {/* "+ add set" + rest only on the active (current) exercise */}
+              {isActive && (
+                <button onClick={()=>addSet(ex.id)}
+                  style={{ background:"none", border:"none", color:C.accentDeep, fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"Georgia,serif", fontStyle:"italic", padding:"14px 0 2px" }}>+ add set</button>
+              )}
 
               {chartExpandedFor===ex.name && <ExerciseChart exName={ex.name} />}
 
@@ -2754,7 +2768,7 @@
       const renderWorkoutSession = () => {
         const sess = activeSession;
         const w = WORKOUT_TYPES.find(t => t.key===sess.type);
-        const timeStr = sess.startedAt ? new Date(sess.startedAt).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}) : null;
+        const timeStr = sess.startedAt ? new Date(sess.startedAt).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",timeZone:APP_TZ}) : null;
         const isTimed = !!TIMED_TYPES[sess.type];
         const doneCount = (sess.exercises||[]).filter(e => e.done).length;
         const totalCount = (sess.exercises||[]).length;
@@ -2785,7 +2799,7 @@
                   <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:13, color:C.mutedGray, marginBottom:6 }}>{doneCount} of {totalCount} done</div>
 
                   <div data-exlist style={{ position:"relative" }}
-                    onClick={(e)=>{ if(wiggle && !drag && e.target===e.currentTarget){ setWiggle(false); } }}>
+                    onClick={(e)=>{ if(wigIdx!=null && !drag && e.target===e.currentTarget){ setWigIdx(null); } }}>
                     {sess.exercises.map((ex, exIdx) => renderExerciseCard(ex, exIdx, exIdx === activeIdx))}
                   </div>
 
@@ -2795,9 +2809,9 @@
                     </div>
                   )}
 
-                  {wiggle ? (
+                  {wigIdx!=null ? (
                     <div style={{ marginTop:16 }}>
-                      <button onClick={()=>setWiggle(false)}
+                      <button onClick={()=>setWigIdx(null)}
                         style={{ width:"100%", background:"#85a95f", color:"#fff", border:"none", borderRadius:14, padding:14, fontFamily:"Georgia,serif", fontWeight:600, fontSize:15, cursor:"pointer" }}>Done</button>
                     </div>
                   ) : (
@@ -3179,7 +3193,7 @@
               const w = WORKOUT_TYPES.find(t => t.key===sess.type);
               const vol = sessionVolume(sess), sets = sessionSets(sess);
               const exDone = (sess.exercises||[]).filter(e=>(e.sets||[]).length>0||e.done).length;
-              const timeStr = sess.startedAt ? new Date(sess.startedAt).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}) : null;
+              const timeStr = sess.startedAt ? new Date(sess.startedAt).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",timeZone:APP_TZ}) : null;
               const isExp = expandedFeedId === sess.id;
               return (
                 <div key={sess.id}>
