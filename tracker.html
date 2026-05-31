@@ -868,63 +868,74 @@
     // the ring, number breathing) → scrub up/down (heavy) to set → tap to start the
     // clockwise countdown → scrub still adjusts mid-rest. Reset returns to set state.
     function RestTimer({ prefill, C }) {
-      const STEP=52, R=22, CIRC=2*Math.PI*22;
-      const [phase,setPhase]=useState('idle'); // idle|set|run|done
-      const durRef=useRef(prefill||120), remainRef=useRef(prefill||120), totalRef=useRef(prefill||120);
+      const STEP=52, R=27, CIRC=2*Math.PI*27;
+      const SAGE="#85a95f", OVER="#c2843f";
+      const [phase,setPhase]=useState('idle'); // idle|set|run  (overtime tracked by overRef)
+      const durRef=useRef(prefill||120), remainRef=useRef(prefill||120), totalRef=useRef(prefill||120), overRef=useRef(0);
       const rafRef=useRef(null), lastRef=useRef(0);
       const [,force]=useState(0); const bump=()=>force(x=>x+1);
       const fmt=s=>{s=Math.max(0,Math.round(s));return Math.floor(s/60)+":"+String(s%60).padStart(2,'0');};
       const vib=p=>{try{navigator.vibrate&&navigator.vibrate(p);}catch(e){}};
 
-      const tick=(now)=>{ const dt=(now-lastRef.current)/1000; lastRef.current=now; remainRef.current-=dt;
-        if(remainRef.current<=0){ remainRef.current=0; setPhase('done'); vib([30,50,30]); bump(); return; }
+      const tick=(now)=>{ const dt=(now-lastRef.current)/1000; lastRef.current=now;
+        if(overRef.current>0){ overRef.current+=dt; }
+        else { remainRef.current-=dt; if(remainRef.current<=0){ remainRef.current=0; overRef.current=0.01; vib([30,50,30]); } }
         bump(); rafRef.current=requestAnimationFrame(tick); };
       useEffect(()=>()=>cancelAnimationFrame(rafRef.current),[]);
 
-      const reveal=()=>{ setPhase('set'); durRef.current=prefill||120; vib(12); bump(); };
-      const startCountdown=()=>{ totalRef.current=remainRef.current=durRef.current; setPhase('run'); lastRef.current=performance.now(); vib(16); rafRef.current=requestAnimationFrame(tick); };
-      const reset=()=>{ cancelAnimationFrame(rafRef.current); remainRef.current=durRef.current; setPhase('set'); vib(12); bump(); };
-      const adjust=(sec)=>{ if(phase==='set'){ durRef.current=Math.max(15,durRef.current+sec); } else if(phase==='run'){ remainRef.current=Math.max(5,remainRef.current+sec); totalRef.current=Math.max(totalRef.current,remainRef.current); } else return; vib(sec>0?[22,14,22]:18); bump(); };
+      const reveal=()=>{ setPhase('set'); durRef.current=prefill||120; overRef.current=0; vib(12); bump(); };
+      const startCountdown=()=>{ totalRef.current=remainRef.current=durRef.current; overRef.current=0; setPhase('run'); lastRef.current=performance.now(); vib(16); rafRef.current=requestAnimationFrame(tick); };
+      const reset=()=>{ cancelAnimationFrame(rafRef.current); remainRef.current=durRef.current; overRef.current=0; setPhase('set'); vib(12); bump(); };
+      const dismiss=()=>{ cancelAnimationFrame(rafRef.current); overRef.current=0; setPhase('idle'); vib(12); bump(); };
+      const adjust=(sec)=>{ if(phase==='set'){ durRef.current=Math.max(15,durRef.current+sec); } else if(phase==='run'&&overRef.current===0){ remainRef.current=Math.max(5,remainRef.current+sec); totalRef.current=Math.max(totalRef.current,remainRef.current); } else return; vib(sec>0?[22,14,22]:18); bump(); };
 
       const dragRef=useRef({on:false,moved:false,y:0,acc:0});
-      const onDown=e=>{ if(phase==='idle'||phase==='done')return; const d=dragRef.current; d.on=true; d.moved=false; d.y=(e.touches?e.touches[0]:e).clientY; d.acc=0; };
+      const onDown=e=>{ if(phase==='idle')return; const d=dragRef.current; d.on=true; d.moved=false; d.y=(e.touches?e.touches[0]:e).clientY; d.acc=0; };
       const onMove=e=>{ const d=dragRef.current; if(!d.on)return; const y=(e.touches?e.touches[0]:e).clientY; const dy=d.y-y; if(Math.abs(dy)>6)d.moved=true; const st=Math.trunc((dy-d.acc)/STEP); if(st!==0){ adjust(st*15); d.acc+=st*STEP; } if(e.cancelable)e.preventDefault(); };
       const onUp=()=>{ const d=dragRef.current; if(!d.on)return; d.on=false; if(!d.moved && phase==='set') startCountdown(); };
 
       if(phase==='idle'){
         return (
-          <button onClick={reveal} style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:15, color:C.textMuted, background:"transparent", border:`1px solid ${C.border}`, borderRadius:14, padding:"11px 20px", cursor:"pointer", marginTop:4 }}>rest</button>
+          <button onClick={reveal} style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:15, color:C.textMuted, background:"transparent", border:`1px solid ${C.border}`, borderRadius:16, padding:"13px 24px", cursor:"pointer", marginTop:4 }}>rest</button>
         );
       }
-      const dur=durRef.current, remain=remainRef.current, total=totalRef.current;
       const settable=phase==='set';
-      const frac=phase==='run'? (total>0?remain/total:0) : 1;
-      const num = settable ? fmt(dur) : fmt(remain);
+      const over=overRef.current>0;
+      const frac=over?1:(phase==='run'? (totalRef.current>0?remainRef.current/totalRef.current:0) : 1);
+      const num = settable ? fmt(durRef.current) : (over ? "+"+fmt(overRef.current) : fmt(remainRef.current));
+      const ringColor = settable ? "#cbd8c0" : (over ? OVER : SAGE);
+      const numColor = over ? OVER : C.ink;
+      const sub = settable ? "set rest · tap to start" : (over ? "overtime" : "resting");
       return (
-        <div style={{ position:"relative", display:"flex", alignItems:"center", gap:30, marginTop:6, touchAction:"none" }}
-             onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}
-             onMouseDown={onDown} onMouseMove={e=>dragRef.current.on&&onMove(e)} onMouseUp={onUp}>
-          <div style={{ position:"relative", width:60, height:60, flexShrink:0 }}>
-            <svg width="60" height="60" viewBox="0 0 60 60" style={{ position:"absolute", inset:0, transform:"scale(-1,1)" }}>
-              <circle cx="30" cy="30" r={R} fill="none" stroke={C.hair} strokeWidth="4"/>
-              <circle cx="30" cy="30" r={R} fill="none" stroke={settable?"#cbd8c0":C.accent} strokeWidth="4" strokeLinecap="round"
-                strokeDasharray={CIRC} strokeDashoffset={CIRC*(1-frac)} transform="rotate(-90 30 30)"/>
-            </svg>
-            {settable && (
-              <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", opacity:0.5 }}>
-                <svg width="11" height="26" viewBox="0 0 11 26" fill="none"><path d="M5.5 2.5V23.5" stroke="#8a978d" strokeWidth="1.4" strokeLinecap="round"/><path d="M2 6L5.5 2.5L9 6" stroke="#8a978d" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/><path d="M2 20L5.5 23.5L9 20" stroke="#8a978d" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              </div>
-            )}
-          </div>
-          <div style={{ paddingRight:8 }}>
-            <div style={{ fontFamily:"Georgia,serif", fontSize:24, fontWeight:600, color: phase==='done'?C.accentDeep:C.ink, fontVariantNumeric:"tabular-nums", letterSpacing:-0.5, lineHeight:1, animation: settable?"restBreathe 2.4s ease-in-out infinite":"none" }}>{num}</div>
-            <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:12, color:C.mutedGray, marginTop:3 }}>
-              {settable?"set rest · tap to start":phase==='run'?"resting":"rest done"}
+        <div style={{ position:"relative", display:"flex", alignItems:"center", gap:22, marginTop:6 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:20, touchAction:"none", borderRadius:18, padding:"6px 8px 6px 4px" }}
+               onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}
+               onMouseDown={onDown} onMouseMove={e=>dragRef.current.on&&onMove(e)} onMouseUp={onUp}>
+            <div style={{ position:"relative", width:74, height:74, flexShrink:0 }}>
+              <svg width="74" height="74" viewBox="0 0 74 74" style={{ position:"absolute", inset:0, transform:"scale(-1,1)" }}>
+                <circle cx="37" cy="37" r={R} fill="none" stroke={C.hair} strokeWidth="4"/>
+                <circle cx="37" cy="37" r={R} fill="none" stroke={ringColor} strokeWidth="4" strokeLinecap="round"
+                  strokeDasharray={CIRC} strokeDashoffset={CIRC*(1-frac)} transform="rotate(-90 37 37)"/>
+              </svg>
+              {settable && (
+                <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", opacity:0.5 }}>
+                  <svg width="12" height="28" viewBox="0 0 12 28" fill="none"><path d="M6 3V25" stroke="#8a978d" strokeWidth="1.4" strokeLinecap="round"/><path d="M2 7L6 3L10 7" stroke="#8a978d" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/><path d="M2 21L6 25L10 21" stroke="#8a978d" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                </div>
+              )}
+            </div>
+            <div>
+              <div style={{ fontFamily:"Georgia,serif", fontSize:31, fontWeight:600, color: numColor, fontVariantNumeric:"tabular-nums", letterSpacing:-0.5, lineHeight:1, animation: settable?"restBreathe 2.4s ease-in-out infinite":"none" }}>{num}</div>
+              <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:12, color: over?OVER:C.mutedGray, marginTop:4 }}>{sub}</div>
             </div>
           </div>
-          <button onClick={(e)=>{ e.stopPropagation(); reset(); }} title="reset" style={{ marginLeft:"auto", width:32, height:32, borderRadius:9, border:`1px solid ${C.border}`, background:"transparent", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer" }}>
-            <svg width="15" height="15" viewBox="0 0 18 18" fill="none"><path d="M3.5 9a5.5 5.5 0 1 1 1.7 4" stroke={C.textMuted} strokeWidth="1.6" strokeLinecap="round"/><path d="M5 16.5L5.2 12L9.5 12.2" stroke={C.textMuted} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          </button>
+          <div style={{ display:"flex", gap:8, marginLeft:"auto" }}>
+            <button onClick={(e)=>{ e.stopPropagation(); dismiss(); }} title="done" style={{ width:34, height:34, borderRadius:10, border:`1px solid #cfd9c2`, background:"#f1f5ec", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer" }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7" stroke="#5c8a3f" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
+            <button onClick={(e)=>{ e.stopPropagation(); reset(); }} title="reset" style={{ width:34, height:34, borderRadius:10, border:`1px solid ${C.border}`, background:"transparent", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer" }}>
+              <svg width="15" height="15" viewBox="0 0 18 18" fill="none"><path d="M3.5 9a5.5 5.5 0 1 1 1.7 4" stroke={C.textMuted} strokeWidth="1.6" strokeLinecap="round"/><path d="M5 16.5L5.2 12L9.5 12.2" stroke={C.textMuted} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
+          </div>
         </div>
       );
     }
@@ -1056,6 +1067,13 @@
       const [newHabitEmoji, setNewHabitEmoji] = useState("");
       const [editingEmojiFor, setEditingEmojiFor] = useState(null);
       const [newExerciseName, setNewExerciseName] = useState("");
+      const [editingExercise, setEditingExercise] = useState(null); // exId being renamed
+      const [wiggle, setWiggle] = useState(false);                  // iOS-style edit mode
+      const [drag, setDrag] = useState(null);                       // {fromIdx,curIdx,y}
+      const [pendingDelEx, setPendingDelEx] = useState(null);       // exId awaiting delete confirm
+      const dragRef = useRef({ startY:0, offset:0, slots:[], fromIdx:-1 });
+      const exPressRef = useRef({ timer:null, x:0, y:0 });
+      const tapRef = useRef({ last:0 });
       const [historyView, setHistoryView] = useState("workouts"); // workouts | daily
       const [expandedFeedId, setExpandedFeedId] = useState(null);
       const [calMonthOffset, setCalMonthOffset] = useState(0); // 0 = current month, -1 = last month, etc.
@@ -1885,6 +1903,20 @@
 
 
 
+      // Exercise drag-reorder window listeners (handlers assigned after gate).
+      const dragHandlersRef = useRef({ move:()=>{}, end:()=>{} });
+      useEffect(() => {
+        if (!drag) return;
+        const mv = e => dragHandlersRef.current.move(e);
+        const up = () => dragHandlersRef.current.end();
+        window.addEventListener("touchmove", mv, { passive:false });
+        window.addEventListener("touchend", up);
+        window.addEventListener("mousemove", mv);
+        window.addEventListener("mouseup", up);
+        return () => { window.removeEventListener("touchmove", mv); window.removeEventListener("touchend", up); window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); };
+      }, [drag]);
+
+
       // ─── Gates ──────────────────────────────────────────────────────────
       if (authLoading) return (
         <div style={{ display:"flex", alignItems:"center", justifyContent:"center", minHeight:"100vh", flexDirection:"column", gap:16 }}>
@@ -2554,13 +2586,13 @@
             {num}
             {st.done ? (
               <>
-                <div style={{ fontFamily:"Georgia,serif", fontSize:19, fontWeight:600, textAlign:"center", color:"#848482", fontVariantNumeric:"tabular-nums" }}>{hasW?st.weight:<span style={{fontSize:13, fontStyle:"italic", color:"#a39c8d"}}>BW</span>}</div>
+                <div style={{ fontFamily:"Georgia,serif", fontSize:19, fontWeight:600, textAlign:"center", color:"#848482", fontVariantNumeric:"tabular-nums" }}>{hasW?st.weight:""}</div>
                 <div style={{ fontFamily:"Georgia,serif", fontSize:19, fontWeight:600, textAlign:"center", color:"#848482", fontVariantNumeric:"tabular-nums" }}>{hasR?st.reps:""}</div>
               </>
             ) : (
               <>
                 <div style={{ display:"flex", justifyContent:"center" }}>
-                  <input type="number" step="0.5" value={hasW?st.weight:""} placeholder="BW" className="set-field"
+                  <input type="number" step="0.5" value={hasW?st.weight:""} placeholder="" className="set-field"
                     onChange={e=>setSetValue(exId,idx,"weight",parseFloat(e.target.value)||0)}
                     style={{ width:"58%", minWidth:48, border:"none", borderBottom:"1.5px solid #e6e0d3", background:"transparent", textAlign:"center", fontFamily:"Georgia,serif", fontSize:21, fontWeight:600, color:"#1c1a17", padding:"6px 0", fontVariantNumeric:"tabular-nums", outline:"none", MozAppearance:"textfield" }} />
                 </div>
@@ -2577,23 +2609,142 @@
         return <SwipeRow key={idx} variant="flat" bg={rowBg} onDelete={()=>removeSet(exId,idx)}>{cell}</SwipeRow>;
       };
 
+      // ── wiggle / long-press drag for exercises ──
+      const beginExDrag = (exIdx, clientY) => {
+        const nodes = Array.from(document.querySelectorAll("[data-exrow]"));
+        dragRef.current.slots = nodes.map(n => ({ top:n.offsetTop, h:n.offsetHeight }));
+        const node = nodes[exIdx];
+        dragRef.current.offset = node ? (clientY - node.getBoundingClientRect().top) : 0;
+        dragRef.current.fromIdx = exIdx;
+        try{navigator.vibrate&&navigator.vibrate(14);}catch(_){}
+        setDrag({ fromIdx:exIdx, curIdx:exIdx, y: node? node.offsetTop : 0 });
+      };
+      const exPressStart = (e, exIdx) => {
+        if (editingExercise!=null) return;
+        const pt = e.touches ? e.touches[0] : e;
+        const p = exPressRef.current; p.x=pt.clientX; p.y=pt.clientY;
+        clearTimeout(p.timer);
+        if (wiggle) { beginExDrag(exIdx, pt.clientY); return; }   // already editing: grab immediately
+        p.timer = setTimeout(() => { setWiggle(true); try{navigator.vibrate&&navigator.vibrate(20);}catch(_){} beginExDrag(exIdx, pt.clientY); }, 480);
+      };
+      const exPressCancel = () => { clearTimeout(exPressRef.current.timer); };
+      const exDragMove = (e) => {
+        const p = exPressRef.current;
+        const pt = e.touches ? e.touches[0] : e;
+        if (p.timer && (Math.abs(pt.clientY-p.y)>8 || Math.abs(pt.clientX-p.x)>8)) { clearTimeout(p.timer); p.timer=null; }
+        setDrag(cur => {
+          if (!cur) return cur;
+          if (e.cancelable) e.preventDefault();
+          const listEl = document.querySelector("[data-exlist]");
+          const listTop = listEl ? listEl.getBoundingClientRect().top : 0;
+          const slots = dragRef.current.slots;
+          const y = pt.clientY - listTop - dragRef.current.offset;
+          const dh = slots[cur.fromIdx] ? slots[cur.fromIdx].h : 0;
+          const mid = y + dh/2;
+          let target = 0;
+          for (let k=0;k<slots.length;k++){ if (mid > slots[k].top + slots[k].h/2) target = k+1; }
+          target = Math.max(0, Math.min(slots.length-1, target>cur.fromIdx ? target-1 : target));
+          return { ...cur, y, curIdx:target };
+        });
+      };
+      const exDragEnd = () => {
+        clearTimeout(exPressRef.current.timer);
+        setDrag(cur => { if (cur && cur.fromIdx!==cur.curIdx) { reorderExercise(cur.fromIdx, cur.curIdx); try{navigator.vibrate&&navigator.vibrate([14,10,14]);}catch(_){} } return null; });
+      };
+      dragHandlersRef.current.move = exDragMove;
+      dragHandlersRef.current.end = exDragEnd;
+
       const renderExerciseCard = (ex, exIdx, isActive) => {
         const workSets = ex.sets.filter(s => !(s.duration > 0));
-        const rowBg = isActive ? "#fafaf3" : "#fdfdfc";
+        const rowBg = "#fdfdfc";
+        const isRenaming = editingExercise === ex.id;
+        const isDragged = drag && drag.fromIdx === exIdx;
+        let shiftY = 0;
+        if (drag && !isDragged) {
+          const dh = dragRef.current.slots[drag.fromIdx] ? dragRef.current.slots[drag.fromIdx].h : 0;
+          if (drag.fromIdx < drag.curIdx && exIdx > drag.fromIdx && exIdx <= drag.curIdx) shiftY = -dh;
+          if (drag.fromIdx > drag.curIdx && exIdx >= drag.curIdx && exIdx < drag.fromIdx) shiftY = dh;
+        }
+        const wrLabel = (t) => <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:12, color:"#b3aca0", textAlign:"center" }}>{t}</div>;
+
         return (
-          <div key={ex.id} style={{
+          <div key={ex.id} data-exrow style={{
+            position:"relative",
             margin:"0 -16px", padding:"18px 24px",
-            background: isActive ? "#fafaf3" : "transparent",
+            background:"#fdfdfc",
             borderTop: exIdx===0 ? "none" : "1px solid #eeeae3",
+            transform: isDragged ? `translateY(${drag.y - (dragRef.current.slots[exIdx]?dragRef.current.slots[exIdx].top:0)}px) scale(1.02)` : (shiftY ? `translateY(${shiftY}px)` : "none"),
+            transition: isDragged ? "none" : "transform 0.2s cubic-bezier(0.2,0,0,1)",
+            boxShadow: isDragged ? "0 16px 38px -12px rgba(40,40,36,0.3)" : "none",
+            borderRadius: isDragged ? 14 : 0,
+            zIndex: isDragged ? 30 : "auto",
+            animation: (wiggle && !isDragged) ? "exWiggle 0.28s ease-in-out infinite" : "none",
+            touchAction: drag ? "none" : "auto",
           }}>
-            <div style={{ fontFamily:"Georgia,serif", fontSize:20, fontWeight:600, color:"#1c1a17", letterSpacing:-0.25, marginBottom:12 }}>{ex.name}</div>
-            {workSets.length > 0 && ex.sets.map((st, idx) => (
-              (st.duration > 0) ? null : <React.Fragment key={idx}>{renderSetRow(ex.id, st, idx, rowBg)}</React.Fragment>
-            ))}
-            <button onClick={()=>addSet(ex.id)}
-              style={{ background:"none", border:"none", color:C.accentDeep, fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"Georgia,serif", fontStyle:"italic", padding:"14px 0 2px" }}>+ add set</button>
-            <div style={{ marginTop:8 }}>
-              <RestTimer prefill={(data.restTimer||DEFAULT_DATA.restTimer).defaultSec} C={C} />
+            {/* active cue: thin left mark (no color fill) */}
+            {isActive && !wiggle && <div style={{ position:"absolute", left:0, top:20, bottom:20, width:3, borderRadius:2, background:"#cfd9c2" }} />}
+
+            {/* delete badge (wiggle mode), top-right */}
+            {wiggle && (
+              <div onClick={(e)=>{ e.stopPropagation(); setPendingDelEx(ex.id); }}
+                style={{ position:"absolute", right:10, top:10, width:26, height:26, borderRadius:"50%", background:"#c2503f", border:"2px solid #fff", display:"flex", alignItems:"center", justifyContent:"center", zIndex:31, cursor:"pointer", boxShadow:"0 2px 6px rgba(0,0,0,0.18)" }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="#fff" strokeWidth="3" strokeLinecap="round"/></svg>
+              </div>
+            )}
+
+            {/* grip handle (wiggle mode) */}
+            {wiggle && (
+              <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8, color:"#bdb6a8" }}>
+                <span style={{ display:"grid", gridTemplateColumns:"repeat(2,3px)", gap:3 }}>
+                  {[0,1,2,3,4,5].map(i=><i key={i} style={{ width:3, height:3, borderRadius:"50%", background:"#bdb6a8", display:"block" }}/>)}
+                </span>
+                <span style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:12, color:"#bdb6a8" }}>hold &amp; drag to move</span>
+              </div>
+            )}
+
+            {/* header: name + graph icon. Long-press = wiggle/drag; double-tap = rename. */}
+            <div
+              onTouchStart={e=>exPressStart(e, exIdx)} onTouchEnd={exPressCancel}
+              onMouseDown={e=>exPressStart(e, exIdx)} onMouseUp={exPressCancel}
+              style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4, cursor: wiggle?"grab":"default" }}>
+              {isRenaming ? (
+                <input type="text" defaultValue={ex.name} autoFocus
+                  onBlur={e=>{ const v=e.target.value.trim(); if(v) renameExercise(activeSession.type, ex.name, v); setEditingExercise(null); }}
+                  onKeyDown={e=>{ if(e.key==="Enter") e.target.blur(); if(e.key==="Escape") setEditingExercise(null); }}
+                  style={{ flex:1, fontFamily:"Georgia,serif", fontSize:20, fontWeight:600, color:"#1c1a17", border:"none", borderBottom:"2px solid #85a95f", background:"transparent", outline:"none", padding:"2px 0", letterSpacing:-0.25 }} />
+              ) : (
+                <div
+                  onClick={()=>{ if(wiggle||drag) return; const now=Date.now(); if(now-tapRef.current.last<300){ setEditingExercise(ex.id); } tapRef.current.last=now; }}
+                  style={{ flex:1, fontFamily:"Georgia,serif", fontSize:20, fontWeight: isActive?700:600, color:"#1c1a17", letterSpacing:-0.25, userSelect:"none" }}>{ex.name}</div>
+              )}
+              {!wiggle && !isRenaming && (
+                <button onClick={(e)=>{ e.stopPropagation(); setChartExpandedFor(chartExpandedFor===ex.name?null:ex.name); }}
+                  style={{ width:30, height:30, borderRadius:9, border:"none", background:"transparent", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", flexShrink:0 }}>
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M4 19V5M4 19h16M8 15l3.5-4 3 2.5L20 8" stroke={chartExpandedFor===ex.name?"#85a95f":"#9a948a"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                </button>
+              )}
+            </div>
+
+            {/* body — pointer-disabled during wiggle so taps drive the drag */}
+            <div style={{ pointerEvents: wiggle ? "none" : "auto" }}>
+              {workSets.length > 0 && (
+                <div style={{ display:"grid", gridTemplateColumns:"24px 1fr 1fr 34px", gap:14, padding:"8px 2px 2px 0", marginTop:6 }}>
+                  <span/>{wrLabel("w")}{wrLabel("r")}<span/>
+                </div>
+              )}
+              {workSets.length > 0 && ex.sets.map((st, idx) => (
+                (st.duration > 0) ? null : <React.Fragment key={idx}>{renderSetRow(ex.id, st, idx, rowBg)}</React.Fragment>
+              ))}
+              <button onClick={()=>addSet(ex.id)}
+                style={{ background:"none", border:"none", color:C.accentDeep, fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"Georgia,serif", fontStyle:"italic", padding:"14px 0 2px" }}>+ add set</button>
+
+              {chartExpandedFor===ex.name && <ExerciseChart exName={ex.name} />}
+
+              {isActive && (
+                <div style={{ marginTop:8 }}>
+                  <RestTimer prefill={(data.restTimer||DEFAULT_DATA.restTimer).defaultSec} C={C} />
+                </div>
+              )}
             </div>
           </div>
         );
@@ -2633,7 +2784,10 @@
                 <>
                   <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:13, color:C.mutedGray, marginBottom:6 }}>{doneCount} of {totalCount} done</div>
 
-                  {sess.exercises.map((ex, exIdx) => renderExerciseCard(ex, exIdx, exIdx === activeIdx))}
+                  <div data-exlist style={{ position:"relative" }}
+                    onClick={(e)=>{ if(wiggle && !drag && e.target===e.currentTarget){ setWiggle(false); } }}>
+                    {sess.exercises.map((ex, exIdx) => renderExerciseCard(ex, exIdx, exIdx === activeIdx))}
+                  </div>
 
                   {sess.exercises.length === 0 && (
                     <div style={{ textAlign:"center", color:C.mutedGray, fontSize:13, padding:"24px 0 8px", lineHeight:1.5, fontFamily:"Georgia,serif", fontStyle:"italic" }}>
@@ -2641,7 +2795,14 @@
                     </div>
                   )}
 
-                  <div style={{ padding:"16px 0 4px", borderTop:`1px solid #eeeae3`, marginTop: sess.exercises.length?0:0 }}>
+                  {wiggle ? (
+                    <div style={{ marginTop:16 }}>
+                      <button onClick={()=>setWiggle(false)}
+                        style={{ width:"100%", background:"#85a95f", color:"#fff", border:"none", borderRadius:14, padding:14, fontFamily:"Georgia,serif", fontWeight:600, fontSize:15, cursor:"pointer" }}>Done</button>
+                    </div>
+                  ) : (
+                  <>
+                  <div style={{ padding:"16px 0 4px", borderTop:`1px solid #eeeae3` }}>
                     <input type="text" value={newExerciseName} onChange={e=>setNewExerciseName(e.target.value)} placeholder="+ add exercise"
                       onKeyDown={e=>{ if(e.key==="Enter" && newExerciseName.trim()) { addCustomExercise(sess.type, newExerciseName); setNewExerciseName(""); } }}
                       style={{ width:"100%", background:"transparent", border:"none", padding:"4px 0", fontSize:15, color:C.textMuted, fontFamily:"Georgia,serif", fontStyle:"italic", outline:"none" }} />
@@ -2655,7 +2816,26 @@
                         style={{ background:"transparent", border:"none", fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:12, color:"#bdb6a8", cursor:"pointer" }}>discard workout</button>
                     </div>
                   </div>
+                  </>
+                  )}
                 </>
+              );
+            })()}
+
+            {pendingDelEx!=null && (() => {
+              const exObj = sess.exercises.find(e => e.id===pendingDelEx);
+              return (
+                <div onClick={(e)=>{ if(e.target===e.currentTarget) setPendingDelEx(null); }}
+                  style={{ position:"fixed", inset:0, background:"rgba(28,26,23,0.28)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:100 }}>
+                  <div style={{ background:"#fdfdfc", width:"100%", maxWidth:430, borderRadius:"20px 20px 0 0", padding:"22px 22px calc(22px + env(safe-area-inset-bottom))", boxShadow:"0 -10px 40px -12px rgba(40,40,36,0.3)" }}>
+                    <div style={{ fontFamily:"Georgia,serif", fontSize:18, fontWeight:600, color:"#1c1a17", marginBottom:4 }}>Delete {exObj?exObj.name:"exercise"}?</div>
+                    <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:13, color:"#8a8578", marginBottom:18 }}>This removes it from the workout.</div>
+                    <button onClick={()=>{ removeExerciseFromSession(pendingDelEx); setPendingDelEx(null); }}
+                      style={{ width:"100%", background:"#c2503f", color:"#fff", border:"none", borderRadius:13, padding:15, fontFamily:"Georgia,serif", fontWeight:600, fontSize:16, cursor:"pointer" }}>Delete</button>
+                    <button onClick={()=>setPendingDelEx(null)}
+                      style={{ width:"100%", background:"transparent", color:"#8a8578", border:"none", padding:14, fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:14, cursor:"pointer", marginTop:4 }}>Cancel</button>
+                  </div>
+                </div>
               );
             })()}
 
