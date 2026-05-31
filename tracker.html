@@ -1034,6 +1034,22 @@
       return <div style={{ textAlign:"center", marginTop:16, color:C.greenText, fontSize:11, letterSpacing:2, fontWeight:700 }}>✓ SAVED</div>;
     }
 
+    // Running elapsed time since the session started — ticks every second.
+    function SessionElapsed({ startedAt, color }) {
+      const [, force] = useState(0);
+      useEffect(() => {
+        if (!startedAt) return;
+        const id = setInterval(() => force(x => x+1), 1000);
+        return () => clearInterval(id);
+      }, [startedAt]);
+      if (!startedAt) return null;
+      const secs = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+      const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60), s = secs%60;
+      const pad = n => String(n).padStart(2,"0");
+      const txt = h>0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+      return <span style={{ fontVariantNumeric:"tabular-nums" }}>{txt}</span>;
+    }
+
     function SectionDivider({ children }) {
       return <div style={{ paddingTop:20, marginTop:8 }}>{children}</div>;
     }
@@ -2802,9 +2818,13 @@
                 ← back
               </button>
               {timeStr && (
-                <span style={{ display:"inline-flex", alignItems:"center", gap:6, fontFamily:"Georgia,serif", fontWeight:600, fontSize:14, color:"#85a95f", fontVariantNumeric:"tabular-nums" }}>
-                  <span style={{ width:6, height:6, borderRadius:"50%", background:"#85a95f", display:"inline-block" }}/>{timeStr}
-                </span>
+                <div style={{ textAlign:"right", lineHeight:1.25 }}>
+                  <div style={{ display:"inline-flex", alignItems:"center", gap:6, fontFamily:"Georgia,serif", fontWeight:600, fontSize:18, color:"#85a95f", fontVariantNumeric:"tabular-nums" }}>
+                    <span style={{ width:6, height:6, borderRadius:"50%", background:"#85a95f", display:"inline-block" }}/>
+                    <SessionElapsed startedAt={sess.startedAt} />
+                  </div>
+                  <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:12, color:C.mutedGray, marginTop:1 }}>started {timeStr}</div>
+                </div>
               )}
             </div>
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom: isTimed?6:2 }}>
