@@ -24,6 +24,7 @@
       letter-spacing: -0.01em;
     }
     @keyframes chkPop { 0%{transform:scale(1)} 30%{transform:scale(1.18)} 60%{transform:scale(.94)} 100%{transform:scale(1)} }
+    @keyframes exWiggle { 0%{transform:rotate(-0.6deg)} 50%{transform:rotate(0.7deg)} 100%{transform:rotate(-0.6deg)} }
     @keyframes restBreathe { 0%,100%{opacity:1} 50%{opacity:0.66} }
     @keyframes chkRipple { 0%{opacity:.5;transform:scale(1)} 100%{opacity:0;transform:scale(2.1)} }
     @keyframes flashWash { 0%{background:rgba(82,176,51,0)} 20%{background:rgba(82,176,51,0.28)} 55%{background:rgba(82,176,51,0.28)} 100%{background:rgba(82,176,51,0)} }
@@ -1075,6 +1076,7 @@
       const [wigIdx, setWigIdx] = useState(null);                   // exIdx currently wiggling (per-exercise), or null
       const [drag, setDrag] = useState(null);                       // {fromIdx,curIdx,y}
       const [pendingDelEx, setPendingDelEx] = useState(null);       // exId awaiting delete confirm
+      const [currentExId, setCurrentExId] = useState(null);         // exId user is actively working in (overrides auto)
       const dragRef = useRef({ startY:0, offset:0, slots:[], fromIdx:-1 });
       const exPressRef = useRef({ timer:null, x:0, y:0 });
       const tapRef = useRef({ last:0 });
@@ -1908,7 +1910,20 @@
 
 
       // Exit exercise wiggle/edit mode when navigating away (tab change or session change).
-      useEffect(() => { setWigIdx(null); setDrag(null); }, [activeTab, activeSessionId]);
+      useEffect(() => { setWigIdx(null); setDrag(null); setCurrentExId(null); }, [activeTab, activeSessionId]);
+
+      // Exit wiggle/edit mode when tapping anywhere outside the pressed exercise tile.
+      // (Tapping its own sets/whitespace stays; the delete badge and Done handle themselves.)
+      useEffect(() => {
+        if (wigIdx==null) return;
+        const onDocDown = (e) => {
+          if (drag) return;
+          if (e.target.closest && (e.target.closest("[data-wig]") || e.target.closest("[data-wig-done]"))) return;
+          setWigIdx(null);
+        };
+        document.addEventListener("pointerdown", onDocDown, true);
+        return () => document.removeEventListener("pointerdown", onDocDown, true);
+      }, [wigIdx, drag]);
 
       // Exercise drag-reorder window listeners (handlers assigned after gate).
       const dragHandlersRef = useRef({ move:()=>{}, end:()=>{} });
@@ -2680,7 +2695,10 @@
         const wrLabel = (t) => <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:12, color:"#b3aca0", textAlign:"center" }}>{t}</div>;
 
         return (
-          <div key={ex.id} data-exrow style={{
+          <div key={ex.id} data-exrow {...(isWig?{"data-wig":"1"}:{})}
+            onFocusCapture={()=>{ if(wigIdx==null && !drag && currentExId!==ex.id) setCurrentExId(ex.id); }}
+            onClick={()=>{ if(wigIdx==null && !drag && currentExId!==ex.id) setCurrentExId(ex.id); }}
+            style={{
             position:"relative",
             margin:"0 -16px", padding:"18px 24px",
             background:"#fdfdfc",
@@ -2692,6 +2710,8 @@
             zIndex: isDragged ? 30 : (isWig ? 5 : "auto"),
             animation: (isWig && !isDragged) ? "exWiggle 0.3s ease-in-out infinite" : "none",
             touchAction: drag ? "none" : "auto",
+            WebkitUserSelect: isWig ? "none" : "auto", userSelect: isWig ? "none" : "auto",
+            WebkitTouchCallout: "none",
           }}>
             {/* delete badge (wiggle mode), top-right */}
             {isWig && (
@@ -2715,7 +2735,8 @@
             <div
               onTouchStart={e=>exPressStart(e, exIdx)} onTouchEnd={exPressCancel}
               onMouseDown={e=>exPressStart(e, exIdx)} onMouseUp={exPressCancel}
-              style={{ display:"flex", alignItems:"center", gap:9, marginBottom:4, cursor: isWig?"grab":"default" }}>
+              onContextMenu={e=>e.preventDefault()}
+              style={{ display:"flex", alignItems:"center", gap:9, marginBottom:4, cursor: isWig?"grab":"default", WebkitUserSelect:"none", userSelect:"none", WebkitTouchCallout:"none", touchAction:"manipulation" }}>
               {isActive && !isWig && <span style={{ width:8, height:8, borderRadius:"50%", background:"#85a95f", flexShrink:0 }} />}
               {isRenaming ? (
                 <input type="text" defaultValue={ex.name} autoFocus
@@ -2793,7 +2814,8 @@
             </div>
 
             {isTimed ? renderTimedSession(sess) : (() => {
-              const activeIdx = sess.exercises.findIndex(e => !e.done);
+              const manualIdx = currentExId ? sess.exercises.findIndex(e => e.id===currentExId) : -1;
+              const activeIdx = manualIdx >= 0 ? manualIdx : sess.exercises.findIndex(e => !e.done);
               return (
                 <>
                   <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:13, color:C.mutedGray, marginBottom:6 }}>{doneCount} of {totalCount} done</div>
@@ -2810,7 +2832,7 @@
                   )}
 
                   {wigIdx!=null ? (
-                    <div style={{ marginTop:16 }}>
+                    <div style={{ marginTop:16 }} data-wig-done="1">
                       <button onClick={()=>setWigIdx(null)}
                         style={{ width:"100%", background:"#85a95f", color:"#fff", border:"none", borderRadius:14, padding:14, fontFamily:"Georgia,serif", fontWeight:600, fontSize:15, cursor:"pointer" }}>Done</button>
                     </div>
