@@ -2475,13 +2475,30 @@
         const allHist = getExerciseHistory(exName);
         const isBodyweight = allHist.length > 0 && allHist.every(h => (h.top || 0) === 0);
 
-        // metric definitions adapt to bodyweight
-        const unit = isBodyweight ? "reps" : "lb";
-        const pick = h => {
-          if (chartMetric === "volume") return isBodyweight ? h.sets.reduce((a,st)=>a+(st.reps||0),0) : h.volume;
-          return isBodyweight ? h.sets.reduce((a,st)=>Math.max(a,st.reps||0),0) : h.top;
+        // Representative set for a session = the highest-volume set (weight×reps).
+        // For bodyweight (no weight) it's the highest-rep set. This drives the plotted
+        // point and the rep annotation so a session is judged by its best working set.
+        const repSet = h => {
+          const sets = h.sets || [];
+          if (sets.length === 0) return { weight:0, reps:0 };
+          if (isBodyweight) return sets.reduce((a,st)=> (st.reps||0)>(a.reps||0)?st:a, sets[0]);
+          return sets.reduce((a,st)=> ((st.weight||0)*(st.reps||0))>((a.weight||0)*(a.reps||0))?st:a, sets[0]);
         };
-        const showVal = v => (chartMetric === "volume" && !isBodyweight) ? fmtK(v) : Math.round(v);
+
+        // metric value per session
+        const metricDefault = isBodyweight ? "reps" : "weight";
+        const metric = (chartMetric==="top" ? metricDefault : chartMetric); // migrate old "top"
+        const pick = h => {
+          const r = repSet(h);
+          if (metric === "volume") return isBodyweight ? (h.sets||[]).reduce((a,st)=>a+(st.reps||0),0) : h.volume;
+          if (metric === "e1rm")   return h.e1rm;
+          if (metric === "reps")   return r.reps||0;
+          return r.weight||0; // weight
+        };
+        const unit = metric==="reps" ? "reps" : metric==="volume" ? (isBodyweight?"reps":"lb") : metric==="e1rm" ? "lb" : "lb";
+        const showVal = v => (metric==="volume" && !isBodyweight) ? fmtK(v) : Math.round(v);
+        // weight can be a half-kg increment; show the decimal only when present
+        const showW = w => (Math.round(w*10)/10 % 1 === 0) ? String(Math.round(w)) : (Math.round(w*10)/10).toString();
 
         // range filter
         const now = new Date();
@@ -2492,14 +2509,19 @@
         const fromKey = localDateKey(from);
         const history = allHist.filter(h => h.date >= fromKey);
 
+        // metric toggle definitions
+        const METRICS = isBodyweight
+          ? [["reps","Reps"],["volume","Total reps"]]
+          : [["weight","Weight"],["reps","Reps"],["volume","Volume"],["e1rm","1RM"]];
+
         const Tabs = (
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
-            <div style={{ display:"flex", gap:18 }}>
-              {[["top", isBodyweight?"Reps":"Weight"], ["volume", isBodyweight?"Total reps":"Volume"]].map(([key,lab]) => {
-                const on = chartMetric === key;
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14, flexWrap:"wrap", gap:8 }}>
+            <div style={{ display:"flex", gap:16 }}>
+              {METRICS.map(([key,lab]) => {
+                const on = metric === key;
                 return (
                   <button key={key} onClick={()=>setChartMetric(key)} style={{
-                    background:"none", border:"none", padding:"4px 0", cursor:"pointer",
+                    background:"none", border:"none", padding:"3px 0", cursor:"pointer",
                     fontFamily:"Georgia,'Source Serif 4',serif", fontSize:15, fontWeight:700, letterSpacing:-0.2,
                     color: on?C.ink:C.mutedGray, borderBottom: on?`2px solid ${C.accent}`:"2px solid transparent",
                   }}>{lab}</button>
@@ -2511,7 +2533,7 @@
                 const on = chartRange === r;
                 return (
                   <button key={r} onClick={()=>setChartRange(r)} style={{
-                    background:on?C.surface:"none", border:"none", borderRadius:7, padding:"5px 11px",
+                    background:on?C.surface:"none", border:"none", borderRadius:7, padding:"5px 10px",
                     fontSize:10, fontWeight:700, color:on?C.ink:C.textMuted, cursor:"pointer", fontFamily:"Inter,sans-serif",
                   }}>{r}</button>
                 );
@@ -2520,9 +2542,50 @@
           </div>
         );
 
+        // ── Last / Best / PRs callouts (computed over the full filtered range) ──
+        const n = history.length;
+        const fmtAgo = key => {
+          const days = Math.round((Date.now() - new Date(key+"T12:00:00").getTime())/86400000);
+          if (days <= 0) return "today";
+          if (days === 1) return "yesterday";
+          if (days < 7) return `${days} days ago`;
+          return formatDate(key, { month:"short", day:"numeric" });
+        };
+        let callouts = null;
+        if (n >= 1) {
+          const latest = history[n-1], lr = repSet(latest);
+          const bestH = history.reduce((a,b)=> pick(b)>pick(a)?b:a, history[0]);
+          const br = repSet(bestH);
+          // PR value = best value of the currently-selected metric
+          const prVal = pick(bestH);
+          const prShow = (metric==="weight") ? showW(prVal) : showVal(prVal);
+          const prUnit = isBodyweight ? (metric==="volume"?"total reps":"reps")
+                       : (metric==="weight"?"lb":metric==="volume"?"lb total":metric==="e1rm"?"lb est.":"reps");
+          const lastTxt = isBodyweight ? <>{lr.reps}<small style={{fontSize:13,fontWeight:400,color:C.mutedGray,letterSpacing:0}}> reps</small></>
+                                       : <>{showW(lr.weight)}<small style={{fontSize:13,fontWeight:400,color:C.mutedGray,letterSpacing:0}}>×{lr.reps}</small></>;
+          const bestTxt = isBodyweight ? <>{br.reps}<small style={{fontSize:13,fontWeight:400,color:C.mutedGray,letterSpacing:0}}> reps</small></>
+                                       : <>{showW(br.weight)}<small style={{fontSize:13,fontWeight:400,color:C.mutedGray,letterSpacing:0}}>×{br.reps}</small></>;
+          const Stat = ({ k, v, u, hero, divider }) => (
+            <div style={{ flex:1, textAlign:"center", padding:"0 4px", position:"relative" }}>
+              {divider && <div style={{ position:"absolute", left:0, top:"14%", height:"72%", width:1, background:C.hair }} />}
+              <div style={{ fontFamily:"Inter,sans-serif", fontSize:9, fontWeight:700, letterSpacing:1.3, textTransform:"uppercase", color: hero?C.accentDeep:C.mutedGray, marginBottom:6 }}>{k}</div>
+              <div style={{ fontFamily:"Georgia,'Source Serif 4',serif", fontSize:26, fontWeight:600, color: hero?C.accentDeep:C.ink, letterSpacing:-0.6, lineHeight:1 }}>{v}</div>
+              <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:10.5, color:C.mutedGray, marginTop:4 }}>{u}</div>
+            </div>
+          );
+          callouts = (
+            <div style={{ display:"flex", margin:"2px 0 4px" }}>
+              <Stat k="Last" v={lastTxt} u={fmtAgo(latest.date)} />
+              <Stat k="Best" v={bestTxt} u={`${formatDate(bestH.date,{month:"short",day:"numeric"})} · PR`} hero divider />
+              <Stat k="PR" v={prShow} u={prUnit} divider />
+            </div>
+          );
+        }
+
         if (history.length < 2) {
           return (
-            <div style={{ marginTop:12, paddingTop:14, borderTop:`1px solid ${C.border}` }}>
+            <div>
+              {callouts}
               {Tabs}
               <div style={{ padding:"22px 12px", textAlign:"center", color:C.mutedGray, fontSize:13, fontWeight:600, fontFamily:"Georgia,serif", fontStyle:"italic" }}>
                 {history.length === 0 ? "No history in this range yet." : "Log one more session to see a trend."}
@@ -2533,70 +2596,164 @@
 
         // geometry — date-proportional x, nice y ticks
         const vals = history.map(pick);
-        let dmin = Math.min(...vals), dmax = Math.max(...vals);
+        const bestVal = Math.max(...vals);
+        let dmin = Math.min(...vals), dmax = bestVal;
         if (dmin === dmax) { const v=dmin; dmin = v - (v*0.08||3); dmax = v + (v*0.08||3); }
-        // nice ticks
-        const niceStep = (rng, want) => { const raw=rng/want, mag=Math.pow(10,Math.floor(Math.log10(raw))), n=raw/mag; return (n<1.5?1:n<3?2:n<7?5:10)*mag; };
+        const niceStep = (rng, want) => { const raw=rng/want, mag=Math.pow(10,Math.floor(Math.log10(raw))), nn=raw/mag; return (nn<1.5?1:nn<3?2:nn<7?5:10)*mag; };
         const step = niceStep(dmax-dmin, 3);
         const lo = Math.floor(dmin/step)*step, hi = Math.ceil(dmax/step)*step;
         const ticks = []; for(let v=lo; v<=hi+1e-6; v+=step) ticks.push(+v.toFixed(2));
 
-        const W=340, H=158, pad={l:32,r:14,t:18,b:24};
+        const W=346, H=182, pad={l:28,r:14,t:36,b:34};
         const tmin=new Date(history[0].date).getTime(), tmax=new Date(history[history.length-1].date).getTime(), tspan=(tmax-tmin)||1;
         const X = d => pad.l + (new Date(d).getTime()-tmin)/tspan*(W-pad.l-pad.r);
         const Y = v => pad.t + (1-(v-lo)/(hi-lo))*(H-pad.t-pad.b);
 
-        const n = history.length;
-        const linePts = history.map(h => `${X(h.date).toFixed(1)} ${Y(pick(h)).toFixed(1)}`);
-        const linePath = "M" + linePts.join(" L");
         const lastV = pick(history[n-1]);
-        const lx = X(history[n-1].date), ly = Y(lastV);
+        const lastRep = repSet(history[n-1]);
+        const bestY = Y(bestVal);
 
-        // x labels at month boundaries
-        const seen = new Set(); let xlabs = [];
-        history.forEach((h,i) => { const mo = new Date(h.date).getMonth(); if(i===0||i===n-1||!seen.has(mo)){ seen.add(mo); xlabs.push({x:X(h.date), label:MONTH_ABBR[mo]}); } });
+        // dot color deepens with progress (low→high within range)
+        const dotColor = v => {
+          const t = (hi===lo) ? 1 : (v-lo)/(hi-lo);
+          // interpolate pale sage -> deep sage
+          const lerp=(a,b)=>Math.round(a+(b-a)*t);
+          const c1=[159,199,127], c2=[60,122,38];
+          return `rgb(${lerp(c1[0],c2[0])},${lerp(c1[1],c2[1])},${lerp(c1[2],c2[2])})`;
+        };
 
-        // facts
-        const latest = history[n-1];
-        const heaviestH = history.reduce((a,b)=> pick(b)>pick(a)?b:a, history[0]);
-        const lastReps = (latest.sets||[]).map(st=>st.reps||0).join(",");
-        const first = pick(history[0]);
-        const gain = lastV - first;
-        const gainTxt = (gain>=0?"↑ ":"↓ ") + showVal(Math.abs(gain)) + " " + unit;
+        // evenly-spaced date ticks (4 across the true range)
+        const NT = Math.min(4, Math.max(2, n));
+        const dateTicks = [];
+        for (let i=0;i<NT;i++){ const t = tmin + (tspan)*(i/(NT-1)); dateTicks.push(new Date(t)); }
+        const fmtTick = d => `${MONTH_ABBR[d.getMonth()]} ${d.getDate()}`;
+
+        const legendLabel = metric==="weight" ? "weight (lb)" : metric==="reps" ? "top-set reps" : metric==="volume" ? (isBodyweight?"total reps":"volume (lb)") : "est. 1RM (lb)";
+        const repAt = h => repSet(h).reps || 0;
+        const AMBER = "#c79a2e";
+
+        // PR detection: a session that strictly beats every prior session (by current metric).
+        const prFlags = (() => { let run=-Infinity; return history.map(h => { const v=pick(h); const is=v>run; if(is)run=v; return is; }); })();
+        const prIdx = prFlags.map((f,i)=>f?i:-1).filter(i=>i>=0);
+        const maxIdx = vals.indexOf(bestVal);
+
+        // Decide display mode: if tagging every PR would crowd (avg gap between PR dots
+        // too small, or many PRs), switch to an amber-segmented line with a single tag
+        // on the absolute max. Otherwise tag each PR dot.
+        const prXs = prIdx.map(i=>X(history[i].date));
+        let minGap = Infinity;
+        for (let k=1;k<prXs.length;k++) minGap = Math.min(minGap, prXs[k]-prXs[k-1]);
+        const segmentedMode = prIdx.length >= 5 || (prIdx.length >= 3 && minGap < 44);
+
+        // Tag placements (used in tag mode) with collision handling vs each other + BEST label.
+        const prTags = (() => {
+          if (segmentedMode) return [];
+          const tags = prIdx.map(i => ({ i, x:X(history[i].date), y:Y(pick(history[i])) }));
+          const bestLabelRight = pad.l + 56;
+          tags.forEach(t => { t.place="above"; t.ty=t.y-13; if (t.ty < bestY+6 && t.x < bestLabelRight) { t.place="below"; t.ty=t.y+16; } });
+          for (let a=0;a<tags.length;a++) for (let b=a+1;b<tags.length;b++) {
+            if (Math.abs(tags[a].x-tags[b].x) < 24 && tags[a].place===tags[b].place) {
+              if (tags[a].place==="above") tags[b].ty = Math.min(tags[b].ty, tags[a].ty-13);
+              else tags[b].ty = Math.max(tags[b].ty, tags[a].ty+13);
+            }
+          }
+          return tags;
+        })();
+        // In segmented mode, a single tag on the absolute max.
+        const maxTag = segmentedMode ? (() => { const x=X(history[maxIdx].date), y=Y(bestVal); let place="above", ty=y-13; const bestLabelRight=pad.l+56; if (ty<bestY+6 && x<bestLabelRight){place="below";ty=y+16;} return {x,y,ty,place}; })() : null;
+        const latestIsPR = (!segmentedMode && prTags.some(t=>t.i===n-1 && t.place==="above")) || (segmentedMode && maxIdx===n-1 && maxTag.place==="above");
+
+        // Connector segments: amber where the segment ENDS on a PR session, else green-faint.
+        const segs = [];
+        for (let i=1;i<n;i++){ segs.push({ x1:X(history[i-1].date), y1:Y(pick(history[i-1])), x2:X(history[i].date), y2:Y(pick(history[i])), pr: prFlags[i] }); }
 
         return (
-          <div style={{ marginTop:12, paddingTop:14, borderTop:`1px solid ${C.border}` }}>
+          <div>
+            {callouts}
             {Tabs}
-            <div style={{ fontFamily:"Georgia,'Source Serif 4',serif", fontSize:14, fontWeight:600, color:C.ink, marginBottom:6, letterSpacing:-0.2 }}>
-              <span style={{ color: gain>=0?C.accentDeep:C.red, fontWeight:700 }}>{gainTxt}</span>
-              <span style={{ color:C.mutedGray, fontWeight:400, fontStyle:"italic" }}> · {n} sessions</span>
-            </div>
+            {metric==="e1rm" && (
+              <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:12, lineHeight:1.5, color:"#5e6e62", background:"#f1f6ef", borderRadius:10, padding:"10px 13px", marginBottom:12 }}>
+                Estimated one-rep max — the most you could lift once, calculated from your weight and reps. Rises only when you truly get stronger.
+              </div>
+            )}
             <div style={{ margin:"4px -2px 2px" }}>
-              <svg viewBox={`0 0 ${W} ${H}`} width="100%" preserveAspectRatio="xMidYMid meet" style={{ display:"block", width:"100%", height:"auto", maxHeight:170, overflow:"visible" }}>
+              <svg viewBox={`0 0 ${W} ${H}`} width="100%" preserveAspectRatio="xMidYMid meet" style={{ display:"block", width:"100%", height:"auto", maxHeight:188, overflow:"visible" }}>
+                {/* y gridlines + labels */}
                 {ticks.map((v,i)=>(
                   <g key={i}>
                     <line x1={pad.l} y1={Y(v).toFixed(1)} x2={W-pad.r} y2={Y(v).toFixed(1)} stroke={C.hair} strokeWidth="1"/>
                     <text x={pad.l-6} y={(Y(v)+3).toFixed(1)} fontSize="9" fontWeight="600" fill={C.mutedGray} textAnchor="end" fontFamily="Inter,sans-serif">{showVal(v)}</text>
                   </g>
                 ))}
-                <path d={linePath} fill="none" stroke={C.accent} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round"/>
-                <circle cx={lx.toFixed(1)} cy={ly.toFixed(1)} r="4" fill={C.accentDeep}/>
-                <text x={lx.toFixed(1)} y={(ly-10).toFixed(1)} fontSize="11" fontWeight="700" fill={C.ink} textAnchor="middle" fontFamily="Inter,sans-serif">{showVal(lastV)}</text>
-                {xlabs.map((l,i)=>(
-                  <text key={i} x={l.x.toFixed(1)} y={H-pad.b+16} fontSize="9" fill={C.mutedGray} textAnchor="middle" fontFamily="Inter,sans-serif">{l.label}</text>
+                {/* all-time-best reference line (within range) */}
+                <line x1={pad.l} y1={bestY.toFixed(1)} x2={W-pad.r} y2={bestY.toFixed(1)} stroke="#bcd7a8" strokeWidth="1.5" strokeDasharray="2 4"/>
+                <text x={pad.l+2} y={(bestY-5).toFixed(1)} textAnchor="start" fontSize="8.5" fontWeight="800" fill="#9bb98a" fontFamily="Inter,sans-serif" letterSpacing="0.5">BEST {metric==="weight"?showW(bestVal):showVal(bestVal)}</text>
+                {/* connector: amber segments where a PR was set, faint green otherwise */}
+                {segs.map((sg,i)=>(
+                  <line key={i} x1={sg.x1.toFixed(1)} y1={sg.y1.toFixed(1)} x2={sg.x2.toFixed(1)} y2={sg.y2.toFixed(1)}
+                    stroke={segmentedMode && sg.pr ? AMBER : "#e2ebda"} strokeWidth={segmentedMode && sg.pr ? 2.4 : 2} strokeLinecap="round"/>
                 ))}
+                {/* dots at true dates, colored by progress */}
+                {history.map((h,i)=>{
+                  const v = pick(h), isLast = i===n-1, isBest = v===bestVal;
+                  return (
+                    <g key={i}>
+                      {segmentedMode && prFlags[i] && !isLast && <circle cx={X(h.date).toFixed(1)} cy={Y(v).toFixed(1)} r="6.5" fill="none" stroke={AMBER} strokeWidth="1.4"/>}
+                      <circle cx={X(h.date).toFixed(1)} cy={Y(v).toFixed(1)} r={isLast?5:isBest?4.5:4} fill={isLast?C.accentDeep:dotColor(v)} />
+                    </g>
+                  );
+                })}
+                {/* PR tags: each PR (sparse mode) or single absolute-max tag (dense mode) */}
+                {!segmentedMode && prTags.map((t,idx)=>(
+                  <g key={idx}>
+                    <rect x={(t.x-11).toFixed(1)} y={(t.ty-10).toFixed(1)} width="22" height="13" rx="3.5" fill={AMBER}/>
+                    <text x={t.x.toFixed(1)} y={(t.ty).toFixed(1)} textAnchor="middle" fontSize="8" fontWeight="800" fill="#fff" fontFamily="Inter,sans-serif" letterSpacing="0.3">PR</text>
+                  </g>
+                ))}
+                {segmentedMode && maxTag && (
+                  <g>
+                    <rect x={(maxTag.x-11).toFixed(1)} y={(maxTag.ty-10).toFixed(1)} width="22" height="13" rx="3.5" fill={AMBER}/>
+                    <text x={maxTag.x.toFixed(1)} y={(maxTag.ty).toFixed(1)} textAnchor="middle" fontSize="8" fontWeight="800" fill="#fff" fontFamily="Inter,sans-serif" letterSpacing="0.3">PR</text>
+                  </g>
+                )}
+                {/* value label on the latest dot only (best is shown by the BEST line) */}
+                {(() => {
+                  const lx = X(history[n-1].date);
+                  const nearRight = lx > W - 46;
+                  const yOff = latestIsPR ? 24 : 11; // lift above the PR tag if present
+                  return (
+                    <text x={(nearRight?lx-7:lx).toFixed(1)} y={(Y(lastV)-yOff).toFixed(1)} textAnchor={nearRight?"end":"middle"} fontSize="10" fontWeight="800" fill={C.accentDeep} fontFamily="Inter,sans-serif">
+                      {metric==="weight" ? showW(lastV) : showVal(lastV)}
+                    </text>
+                  );
+                })()}
+                {/* reps under each dot */}
+                {history.map((h,i)=>(
+                  <text key={i} x={X(h.date).toFixed(1)} y={(H-pad.b+13).toFixed(1)} textAnchor="middle" fontSize="9" fontWeight="700" fill="#9aa89a" fontFamily="Inter,sans-serif">{repAt(h)}r</text>
+                ))}
+                {/* evenly-spaced date ticks */}
+                {dateTicks.map((d,i)=>{
+                  const x = X(localDateKey(d));
+                  const anchor = i===0?"start":i===NT-1?"end":"middle";
+                  return (
+                    <g key={i}>
+                      <line x1={x.toFixed(1)} y1={H-pad.b} x2={x.toFixed(1)} y2={H-pad.b+4} stroke="#e2e6dd" strokeWidth="1"/>
+                      <text x={x.toFixed(1)} y={H-6} textAnchor={anchor} fontSize="9.5" fontWeight="700" fill={C.mutedGray} fontFamily="Inter,sans-serif">{fmtTick(d)}</text>
+                    </g>
+                  );
+                })}
               </svg>
             </div>
-            <div style={{ marginTop:10 }}>
-              {[
-                { k:"last session", v: isBodyweight ? `${showVal(lastV)} reps` : `${Math.round(latest.top)} lb${lastReps?` · ${lastReps}`:""}` },
-                { k: isBodyweight?"best set":"heaviest", v: isBodyweight ? `${showVal(pick(heaviestH))} reps` : `${Math.round(heaviestH.top)} lb` },
-              ].map((f,i)=>(
-                <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", padding:"9px 0", borderBottom: i===0?`1px solid ${C.hair}`:"none" }}>
-                  <span style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:13.5, color:C.textMuted }}>{f.k}</span>
-                  <span style={{ fontFamily:"Georgia,serif", fontSize:15, fontWeight:700, color:C.ink, fontVariantNumeric:"tabular-nums" }}>{f.v}</span>
-                </div>
-              ))}
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:14, paddingTop:14, borderTop:`1px solid ${C.hair}` }}>
+              <span style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:12, color:C.textMuted, display:"inline-flex", alignItems:"center", gap:7 }}>
+                {segmentedMode
+                  ? <><i style={{ width:14, height:3, borderRadius:2, background:AMBER, display:"inline-block" }} />amber = new PR</>
+                  : <><i style={{ width:9, height:9, borderRadius:"50%", background:C.accentDeep, display:"inline-block" }} />{legendLabel} · reps below</>}
+              </span>
+              {(() => { const first=vals[0], gain=lastV-first; if(n<2) return null;
+                const txt=(gain>=0?"▲ +":"▼ ")+(metric==="weight"?showW(Math.abs(gain)):showVal(Math.abs(gain)));
+                return <span style={{ fontFamily:"Inter,sans-serif", fontSize:11, fontWeight:800, color: gain>=0?C.accentDeep:C.red }}>{txt} in range</span>;
+              })()}
             </div>
           </div>
         );
@@ -2789,8 +2946,6 @@
                   style={{ background:"none", border:"none", color:C.accentDeep, fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"Georgia,serif", fontStyle:"italic", padding:"14px 0 2px" }}>+ add set</button>
               )}
 
-              {chartExpandedFor===ex.name && <ExerciseChart exName={ex.name} />}
-
               {isActive && (
                 <div style={{ marginTop:8 }}>
                   <RestTimer prefill={(data.restTimer||DEFAULT_DATA.restTimer).defaultSec} C={C} />
@@ -2877,6 +3032,21 @@
                 </>
               );
             })()}
+
+            {chartExpandedFor && (
+              <div onClick={(e)=>{ if(e.target===e.currentTarget) setChartExpandedFor(null); }}
+                style={{ position:"fixed", inset:0, background:"rgba(28,26,23,0.32)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:100 }}>
+                <div style={{ background:C.surface, width:"100%", maxWidth:430, borderRadius:"22px 22px 0 0", padding:"8px 22px calc(24px + env(safe-area-inset-bottom))", boxShadow:"0 -14px 50px -16px rgba(40,40,36,0.4)", maxHeight:"86vh", overflowY:"auto" }}>
+                  <div style={{ width:42, height:5, borderRadius:3, background:C.border, margin:"8px auto 16px" }} />
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:18 }}>
+                    <div style={{ fontFamily:"Georgia,'Source Serif 4',serif", fontSize:25, fontWeight:600, color:C.ink, letterSpacing:-0.4, lineHeight:1.05 }}>{chartExpandedFor}</div>
+                    <button onClick={()=>setChartExpandedFor(null)}
+                      style={{ background:"none", border:"none", fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:14, color:C.mutedGray, cursor:"pointer", paddingTop:5 }}>close</button>
+                  </div>
+                  <ExerciseChart exName={chartExpandedFor} />
+                </div>
+              </div>
+            )}
 
             {pendingDelEx!=null && (() => {
               const exObj = sess.exercises.find(e => e.id===pendingDelEx);
