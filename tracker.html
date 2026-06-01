@@ -2693,29 +2693,24 @@
                   <line key={i} x1={sg.x1.toFixed(1)} y1={sg.y1.toFixed(1)} x2={sg.x2.toFixed(1)} y2={sg.y2.toFixed(1)}
                     stroke={segmentedMode && sg.pr ? AMBER : "#e2ebda"} strokeWidth={segmentedMode && sg.pr ? 2.4 : 2} strokeLinecap="round"/>
                 ))}
-                {/* dots at true dates, colored by progress */}
+                {/* dots at true dates. PR sessions render in amber (replacing the green dot); others colored by progress. */}
                 {history.map((h,i)=>{
-                  const v = pick(h), isLast = i===n-1, isBest = v===bestVal;
+                  const v = pick(h), isLast = i===n-1, isBest = v===bestVal, isPR = prFlags[i];
+                  const fill = isPR ? AMBER : (isLast ? C.accentDeep : dotColor(v));
+                  return <circle key={i} cx={X(h.date).toFixed(1)} cy={Y(v).toFixed(1)} r={isLast?5:isPR?5:isBest?4.5:4} fill={fill} />;
+                })}
+                {/* PR tags: each PR (sparse) or single max tag (dense). Clamped so the pill never
+                    crosses the left axis or overlaps the BEST label. */}
+                {(segmentedMode ? (maxTag?[maxTag]:[]) : prTags).map((t,idx)=>{
+                  const half = 11;
+                  const cx = Math.max(pad.l + half, Math.min(W - pad.r - half, t.x)); // keep pill inside plot
                   return (
-                    <g key={i}>
-                      {segmentedMode && prFlags[i] && !isLast && <circle cx={X(h.date).toFixed(1)} cy={Y(v).toFixed(1)} r="6.5" fill="none" stroke={AMBER} strokeWidth="1.4"/>}
-                      <circle cx={X(h.date).toFixed(1)} cy={Y(v).toFixed(1)} r={isLast?5:isBest?4.5:4} fill={isLast?C.accentDeep:dotColor(v)} />
+                    <g key={idx}>
+                      <rect x={(cx-half).toFixed(1)} y={(t.ty-10).toFixed(1)} width="22" height="13" rx="3.5" fill={AMBER}/>
+                      <text x={cx.toFixed(1)} y={(t.ty).toFixed(1)} textAnchor="middle" fontSize="8" fontWeight="800" fill="#fff" fontFamily="Inter,sans-serif" letterSpacing="0.3">PR</text>
                     </g>
                   );
                 })}
-                {/* PR tags: each PR (sparse mode) or single absolute-max tag (dense mode) */}
-                {!segmentedMode && prTags.map((t,idx)=>(
-                  <g key={idx}>
-                    <rect x={(t.x-11).toFixed(1)} y={(t.ty-10).toFixed(1)} width="22" height="13" rx="3.5" fill={AMBER}/>
-                    <text x={t.x.toFixed(1)} y={(t.ty).toFixed(1)} textAnchor="middle" fontSize="8" fontWeight="800" fill="#fff" fontFamily="Inter,sans-serif" letterSpacing="0.3">PR</text>
-                  </g>
-                ))}
-                {segmentedMode && maxTag && (
-                  <g>
-                    <rect x={(maxTag.x-11).toFixed(1)} y={(maxTag.ty-10).toFixed(1)} width="22" height="13" rx="3.5" fill={AMBER}/>
-                    <text x={maxTag.x.toFixed(1)} y={(maxTag.ty).toFixed(1)} textAnchor="middle" fontSize="8" fontWeight="800" fill="#fff" fontFamily="Inter,sans-serif" letterSpacing="0.3">PR</text>
-                  </g>
-                )}
                 {/* value label on the latest dot only (best is shown by the BEST line) */}
                 {(() => {
                   const lx = X(history[n-1].date);
@@ -3034,15 +3029,15 @@
             })()}
 
             {chartExpandedFor && (
-              <div onClick={(e)=>{ if(e.target===e.currentTarget) setChartExpandedFor(null); }}
-                style={{ position:"fixed", inset:0, background:"rgba(28,26,23,0.32)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:100 }}>
-                <div style={{ background:C.surface, width:"100%", maxWidth:430, borderRadius:"22px 22px 0 0", padding:"8px 22px calc(24px + env(safe-area-inset-bottom))", boxShadow:"0 -14px 50px -16px rgba(40,40,36,0.4)", maxHeight:"86vh", overflowY:"auto" }}>
-                  <div style={{ width:42, height:5, borderRadius:3, background:C.border, margin:"8px auto 16px" }} />
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:18 }}>
-                    <div style={{ fontFamily:"Georgia,'Source Serif 4',serif", fontSize:25, fontWeight:600, color:C.ink, letterSpacing:-0.4, lineHeight:1.05 }}>{chartExpandedFor}</div>
-                    <button onClick={()=>setChartExpandedFor(null)}
-                      style={{ background:"none", border:"none", fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:14, color:C.mutedGray, cursor:"pointer", paddingTop:5 }}>close</button>
-                  </div>
+              <div style={{ position:"fixed", inset:0, background:C.surface, zIndex:100, display:"flex", flexDirection:"column", maxWidth:430, margin:"0 auto", overflowY:"auto", WebkitOverflowScrolling:"touch" }}>
+                <div style={{ padding:"max(20px, env(safe-area-inset-top)) 22px 6px", borderBottom:`1px solid ${C.hair}`, position:"sticky", top:0, background:C.surface, zIndex:2 }}>
+                  <button onClick={()=>setChartExpandedFor(null)}
+                    style={{ display:"inline-flex", alignItems:"center", gap:6, background:"none", border:"none", padding:"4px 0 12px", cursor:"pointer", fontFamily:"Georgia,serif", fontStyle:"italic", color:C.textMuted, fontSize:14 }}>
+                    ← back
+                  </button>
+                  <div style={{ fontFamily:"Georgia,'Source Serif 4',serif", fontSize:30, fontWeight:600, color:C.ink, letterSpacing:-0.5, lineHeight:1.05, paddingBottom:14 }}>{chartExpandedFor}</div>
+                </div>
+                <div style={{ padding:"20px 22px calc(28px + env(safe-area-inset-bottom))" }}>
                   <ExerciseChart exName={chartExpandedFor} />
                 </div>
               </div>
