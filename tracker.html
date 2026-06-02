@@ -3290,13 +3290,9 @@
           <>
             <div style={{ minHeight:"52vh", display:"flex", flexDirection:"column", justifyContent:"flex-end" }}>
               <WorkoutSettleList types={WORKOUT_TYPES} onPick={openOrStartSession} C={C} />
-            </div>
-
-            {/* Bodyweight tracker — distinct tile, its own section */}
-            <div style={{ marginTop:6 }}>
-              <div style={{ fontFamily:"Inter,sans-serif", fontSize:10, fontWeight:800, letterSpacing:2, textTransform:"uppercase", color:C.mutedGray, margin:"14px 2px 2px" }}>Track</div>
+              {/* Bodyweight — just another row in the list */}
               <button onClick={()=>{ setBwOpen(true); setBwInput(latestBw?fmtWeight(kgToUnit(latestBw.kg,bwUnit)):""); setBwDate(null); }}
-                style={{ width:"100%", display:"grid", gridTemplateColumns:"30px 1fr auto", alignItems:"center", gap:16, padding:"16px 2px", background:"none", border:"none", borderTop:`1px solid ${C.hair}`, cursor:"pointer", textAlign:"left" }}>
+                style={{ width:"100%", display:"grid", gridTemplateColumns:"30px 1fr auto", alignItems:"center", gap:16, padding:"16px 2px", background:"none", border:"none", borderBottom:`1px solid ${C.hair}`, cursor:"pointer", textAlign:"left" }}>
                 <span style={{ display:"flex", alignItems:"center", justifyContent:"center", opacity:0.9 }}>
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M3 12h2M19 12h2M6 9v6M18 9v6M6 12h12M9 10.5v3M15 10.5v3" stroke={C.textMuted} strokeWidth="1.8" strokeLinecap="round"/></svg>
                 </span>
