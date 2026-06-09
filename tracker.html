@@ -344,7 +344,7 @@
     const KG_PER_LB = 0.45359237;
     const kgToUnit = (kg, unit) => unit==="lb" ? kg/KG_PER_LB : kg;
     const unitToKg = (v, unit) => unit==="lb" ? v*KG_PER_LB : v;
-    const fmtWeight = (v) => { const r = Math.round(v*10)/10; return (r % 1 === 0) ? String(Math.round(r)) : r.toFixed(1); };
+    const fmtWeight = (v) => { const r = Math.round(v*100)/100; return String(r); };
     const localDateKey = d => {
       // Date key (YYYY-MM-DD) computed in the app timezone (Toronto), so "today"
       // matches Toronto regardless of the device's own timezone.
@@ -998,7 +998,33 @@
 
     // Minimal habit row: emoji column, name/sub, optional stepper, square check.
     // Done state B: thick lime left edge + check halo. Bigger type.
-    function HabitCard({ active, emoji, label, sublabel, onToggle, stepper, children }) {
+    // Streak display (style D): last-7-day dot strip + flame & count.
+    // Solid amber when today is checked; greyed when not (covers both "alive but
+    // not checked today" and the 7-day grace window after a lapse). Hidden once a
+    // streak has been lapsed for more than 7 days, or if never started.
+    function HabitStreakD({ streak }) {
+      if (!streak || streak.daysSinceLast < 0 || streak.daysSinceLast > 6 || streak.count <= 0) return null;
+      const AMBER = "#c2843f", GREY = "#c9c2b4", DOT_ON = "#4a8f2f", DOT_OFF = "#e6e0d4", DOT_FUTURE = "#f0ece2";
+      const lit = streak.doneToday;
+      return (
+        <span style={{ display:"inline-flex", alignItems:"center", gap:8 }}>
+          <span style={{ display:"flex", gap:3 }}>
+            {streak.week.map((d,i)=>(
+              <span key={i} style={{
+                width:7, height:7, borderRadius:"50%",
+                background: d.done ? DOT_ON : d.isFuture ? DOT_FUTURE : DOT_OFF,
+                boxShadow: d.isToday ? `0 0 0 1.5px ${d.done?DOT_ON:"#cfc7b8"}` : "none",
+              }} />
+            ))}
+          </span>
+          <span style={{ display:"inline-flex", alignItems:"center", gap:3, fontFamily:"Inter,sans-serif", fontSize:13, fontWeight:800, color:lit?AMBER:GREY, filter:lit?"none":"grayscale(1)" }}>
+            🔥<span style={{ fontVariantNumeric:"tabular-nums" }}>{streak.count}</span>
+          </span>
+        </span>
+      );
+    }
+
+    function HabitCard({ active, emoji, label, sublabel, onToggle, stepper, streak, children }) {
       return (
         <div>
           <div style={{
@@ -1011,7 +1037,7 @@
               <div style={{ fontFamily:"'Source Serif 4', Georgia, serif", color: active?C.accentDeep:C.ink, fontSize:20, fontWeight: active?600:500, letterSpacing:-0.2 }}>{label}</div>
               {sublabel ? <div style={{ color:C.faint||"#b0aaa0", fontSize:12, marginTop:2, fontWeight:450 }}>{sublabel}</div> : null}
             </div>
-            <div style={{ display:"flex", alignItems:"center" }}>{stepper}</div>
+            <div style={{ display:"flex", alignItems:"center", gap:12 }}>{streak ? <HabitStreakD streak={streak} /> : null}{stepper}</div>
             <Toggle on={active} onClick={onToggle} />
           </div>
           {children}
@@ -1213,6 +1239,9 @@
       const [libraryNewByType, setLibraryNewByType] = useState({});
       const [chartExpandedFor, setChartExpandedFor] = useState(null); // exercise name
       const [bwOpen, setBwOpen] = useState(false);                    // bodyweight page open
+      const [lbOpen, setLbOpen] = useState(false);                    // leaderboard page open
+      const [lbBoard, setLbBoard] = useState("strength");             // strength | cardio
+      const [lbSort, setLbSort] = useState("consistency");            // consistency | strength | time
       const [bwInput, setBwInput] = useState("");                     // weigh-in input (in current unit)
       const [bwDate, setBwDate] = useState(null);                     // YYYY-MM-DD being logged (null = today)
       const [chartMetric, setChartMetric] = useState("top"); // top (weight) | volume
@@ -1487,6 +1516,36 @@
         const newLog = { ...todayLog, [key]: !todayLog[key] };
         setTodayLog(newLog);
         update({ logs: { ...data.logs, [viewDate]: newLog } });
+      };
+
+      // Per-habit streak. A day counts as "done" if logs[day][key] is truthy
+      // (for "workout", logs[day].workout). Returns:
+      //   count        – length of the current consecutive run ending today or yesterday
+      //   doneToday    – whether today is checked
+      //   daysSinceLast– days since the most recent completion (0 = today)
+      //   week         – 7 entries for THIS week Mon→Sun: { done, isToday, isFuture }
+      const habitDoneOn = (log, key) => key==="workout" ? !!(log && log.workout) : !!(log && log[key]);
+      const habitStreak = (key) => {
+        const dayKey = offset => { const d = new Date(); d.setDate(d.getDate() - offset); return localDateKey(d); };
+        const doneOffset = offset => habitDoneOn(data.logs[dayKey(offset)], key);
+        const doneToday = doneOffset(0);
+        // days since last completion (scan back up to ~400 days)
+        let daysSinceLast = -1;
+        for (let i = 0; i < 400; i++) { if (doneOffset(i)) { daysSinceLast = i; break; } }
+        // current run: count consecutive done-days ending at the most recent completion
+        let count = 0;
+        if (daysSinceLast >= 0) { let i = daysSinceLast; while (doneOffset(i)) { count++; i++; } }
+        // this calendar week, Monday→Sunday
+        const todayKey = localDateKey(new Date());
+        const now = new Date(); const dow = (now.getDay() + 6) % 7; // 0 = Monday … 6 = Sunday
+        const monday = new Date(now); monday.setDate(now.getDate() - dow);
+        const week = [];
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(monday); d.setDate(monday.getDate() + i);
+          const k = localDateKey(d);
+          week.push({ done: habitDoneOn(data.logs[k], key), isToday: k === todayKey, isFuture: k > todayKey });
+        }
+        return { count, doneToday, daysSinceLast, week };
       };
 
       const selectWorkout = type => {
@@ -2053,7 +2112,7 @@
 
 
       // Exit exercise wiggle/edit mode when navigating away (tab change or session change).
-      useEffect(() => { setWigIdx(null); setDrag(null); setCurrentExId(null); setBwOpen(false); }, [activeTab, activeSessionId]);
+      useEffect(() => { setWigIdx(null); setDrag(null); setCurrentExId(null); setBwOpen(false); setLbOpen(false); }, [activeTab, activeSessionId]);
       // Clear chart dot selection when the metric, range, or open exercise changes.
       useEffect(() => { setChartSel(null); }, [chartMetric, chartRange, chartExpandedFor]);
 
@@ -2347,9 +2406,12 @@
                 {selectedWorkout ? `${selectedWorkout.emoji} ${selectedWorkout.label}` : "Tap to log"}
               </div>
             </div>
-            <button onClick={()=>setShowWorkoutPicker(!showWorkoutPicker)} style={on ? S.pillBtnOn : S.pillBtn}>
-              {on ? "CHANGE" : "LOG"}
-            </button>
+            <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+              <HabitStreakD streak={habitStreak("workout")} />
+              <button onClick={()=>setShowWorkoutPicker(!showWorkoutPicker)} style={on ? S.pillBtnOn : S.pillBtn}>
+                {on ? "CHANGE" : "LOG"}
+              </button>
+            </div>
             <div style={{ width:0 }} />
           </div>
           {showWorkoutPicker && (
@@ -2550,6 +2612,7 @@
                   label={h.label}
                   sublabel={h.isBuiltin && h.sublabelFn ? h.sublabelFn(data) : ""}
                   onToggle={() => toggleHabit(h.key)}
+                  streak={habitStreak(h.key)}
                   stepper={null} />
               );
             })}
@@ -2593,6 +2656,77 @@
         });
         return out.sort((a, b) => a.date.localeCompare(b.date) || (a.startedAt - b.startedAt));
       };
+
+      // ─── LEADERBOARD ────────────────────────────────────────────────────
+      // Two boards: Strength (weighted lifts by e1RM, bodyweight lifts by best reps)
+      // and Cardio (running/swimming/cycling by total duration logged).
+      const buildLeaderboards = () => {
+        const todayK = localDateKey(new Date());
+        const todayMs = new Date(todayK+"T12:00:00").getTime();
+        const daysAgo = key => Math.max(0, Math.round((todayMs - new Date(key+"T12:00:00").getTime())/86400000));
+        // 90-day window for frequency; 8 weekly buckets for the rhythm strip
+        const cutoff90 = todayMs - 90*86400000;
+        const weekIndex = key => { const d = Math.floor((todayMs - new Date(key+"T12:00:00").getTime())/86400000); return Math.floor(d/7); }; // 0 = this week
+        const strengthMap = {};
+        const cardioMap = {};
+        const bumpFreq = (obj, date) => {
+          const ms = new Date(date+"T12:00:00").getTime();
+          if (ms >= cutoff90) obj.recent90 += 1;
+          const wi = weekIndex(date);
+          if (wi >= 0 && wi < 8) obj.weeks[wi] += 1;
+        };
+        Object.entries(data.workoutSessions || {}).forEach(([date, arr]) => {
+          (arr || []).forEach(sess => {
+            const isCardio = !!TIMED_TYPES[sess.type];
+            if (isCardio) {
+              const dur = (sess.exercises||[]).reduce((a,e)=>a+(e.sets||[]).reduce((s,st)=>s+(st.duration||0),0),0);
+              if (dur <= 0) return;
+              const c = cardioMap[sess.type] || (cardioMap[sess.type] = { type:sess.type, totalSec:0, longestSec:0, sessions:0, lastDate:date, recent90:0, weeks:[0,0,0,0,0,0,0,0] });
+              c.totalSec += dur; c.longestSec = Math.max(c.longestSec, dur); c.sessions += 1;
+              if (date > c.lastDate) c.lastDate = date;
+              bumpFreq(c, date);
+            } else {
+              (sess.exercises||[]).forEach(e => {
+                const sets = (e.sets||[]).filter(st => (st.weight||0)>0 || (st.reps||0)>0);
+                if (sets.length === 0) return;
+                const e1rm = Math.round(sets.reduce((a,st)=>Math.max(a,(st.weight||0)*(1+(st.reps||0)/30)),0));
+                const topW = sets.reduce((a,st)=>Math.max(a,st.weight||0),0);
+                const bestReps = sets.reduce((a,st)=>Math.max(a,st.reps||0),0);
+                const s = strengthMap[e.name] || (strengthMap[e.name] = { name:e.name, e1rm:0, topW:0, bestReps:0, isBW:true, sessionVals:[], prCount:0, lastDate:date, sessions:0, recent90:0, weeks:[0,0,0,0,0,0,0,0] });
+                s.e1rm = Math.max(s.e1rm, e1rm); s.topW = Math.max(s.topW, topW); s.bestReps = Math.max(s.bestReps, bestReps);
+                if (topW > 0) s.isBW = false;
+                if (date > s.lastDate) s.lastDate = date;
+                s.sessions += 1;
+                s.sessionVals.push({ date, startedAt: sess.startedAt||0, metric: topW>0 ? e1rm : bestReps });
+                bumpFreq(s, date);
+              });
+            }
+          });
+        });
+        const perMonth = recent90 => Math.round((recent90/3)*10)/10; // sessions per month over 3mo
+        const strength = Object.values(strengthMap).map(s => {
+          const vals = s.sessionVals.sort((a,b)=> a.date.localeCompare(b.date) || (a.startedAt-b.startedAt));
+          let run=-Infinity, pr=0; vals.forEach(v=>{ if(v.metric>run){pr++;run=v.metric;} });
+          let trend = "flat", delta = 0;
+          if (vals.length >= 2) {
+            const lastV = vals[vals.length-1].metric;
+            const priorMax = Math.max(...vals.slice(0, vals.length-1).map(v=>v.metric));
+            delta = lastV - priorMax;
+            if (delta > 0) trend = "up"; else if (vals[vals.length-1].metric < priorMax) trend = "down";
+          }
+          return { ...s, prCount:pr, rankVal:(s.isBW?s.bestReps:s.e1rm), trend, delta, daysSince:daysAgo(s.lastDate), perMonth:perMonth(s.recent90) };
+        });
+        const cardio = Object.values(cardioMap).map(c => ({ ...c, daysSince:daysAgo(c.lastDate), perMonth:perMonth(c.recent90) }));
+        return { strength, cardio };
+      };
+
+      const fmtDur = secs => {
+        const m = Math.round(secs/60);
+        if (m < 60) return { v:String(m), u:"min" };
+        const h = Math.floor(m/60), mm = m%60;
+        return { v:`${h}h ${String(mm).padStart(2,"0")}m`, u:"" };
+      };
+      const fmtDaysAgo = d => d===0 ? "today" : d===1 ? "yesterday" : d<7 ? `${d} days ago` : d<14 ? "1 wk ago" : `${Math.floor(d/7)} wks ago`;
 
       // Direction B: refined line chart. Weight (top set) by default; switches to
       // Reps automatically for bodyweight exercises (top weight always 0). Volume
@@ -3305,6 +3439,20 @@
                   <span style={{ color:"#cfc7b8", fontSize:19, fontFamily:"'Source Serif 4', Georgia, serif" }}>›</span>
                 </span>
               </button>
+              {/* Leaderboard — another row */}
+              <button onClick={()=>{ setLbBoard("strength"); setLbSort("consistency"); setLbOpen(true); }}
+                style={{ width:"100%", display:"grid", gridTemplateColumns:"30px 1fr auto", alignItems:"center", gap:16, padding:"16px 2px", background:"none", border:"none", borderBottom:`1px solid ${C.hair}`, cursor:"pointer", textAlign:"left" }}>
+                <span style={{ display:"flex", alignItems:"center", justifyContent:"center", opacity:0.9, fontSize:21 }}>🏆</span>
+                <span style={{ fontFamily:"'Source Serif 4', Georgia, serif", fontSize:20, fontWeight:500, letterSpacing:-0.2, color:C.ink }}>Leaderboard</span>
+                <span style={{ display:"flex", alignItems:"baseline", gap:8 }}>
+                  {(() => { const lb=buildLeaderboards(); const top=lb.strength[0]; return top ? (
+                    <span style={{ display:"flex", alignItems:"baseline", gap:3 }}>
+                      <span style={{ fontFamily:"'Source Serif 4', Georgia, serif", fontSize:15, fontWeight:600, color:C.textMuted, letterSpacing:-0.3 }}>{top.name.length>10?top.name.slice(0,10)+"…":top.name}</span>
+                    </span>
+                  ) : null; })()}
+                  <span style={{ color:"#cfc7b8", fontSize:19, fontFamily:"'Source Serif 4', Georgia, serif" }}>›</span>
+                </span>
+              </button>
             </div>
           </>
         );
@@ -3472,7 +3620,7 @@
                 <div style={{ fontFamily:"Inter,sans-serif", fontSize:10, fontWeight:800, letterSpacing:1.5, textTransform:"uppercase", color:C.mutedGray, marginBottom:14 }}>Log weight</div>
                 <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                   <div style={{ flex:1, display:"flex", alignItems:"baseline", gap:8, border:`1px solid ${C.border}`, borderRadius:14, padding:"14px 16px" }}>
-                    <input type="number" inputMode="decimal" step="0.1" value={bwInput} onChange={e=>setBwInput(e.target.value)} placeholder="0.0"
+                    <input type="number" inputMode="decimal" step="0.01" value={bwInput} onChange={e=>setBwInput(e.target.value)} placeholder="0.00"
                       style={{ border:"none", outline:"none", fontFamily:"Georgia,'Source Serif 4',serif", fontSize:30, fontWeight:600, color:C.ink, width:"100%", letterSpacing:-0.5, background:"transparent", MozAppearance:"textfield" }} />
                     <span style={{ fontFamily:"Georgia,serif", fontStyle:"italic", color:C.mutedGray, fontSize:15 }}>{bwUnit}</span>
                   </div>
@@ -3517,8 +3665,143 @@
         );
       };
 
+      const renderLeaderboardPage = () => {
+        const { strength, cardio } = buildLeaderboards();
+        const medalColor = i => i===0 ? "#c79a2e" : i===1 ? "#b0a98f" : i===2 ? "#bd9a6a" : C.mutedGray;
+        const trendEl = (t, delta, unit) => {
+          if (t==="up") return <span style={{ fontFamily:"Inter,sans-serif", fontSize:10, fontWeight:800, color:"#3c7a26" }}>▲ {delta>0?`+${fmtWeight(delta)}`:"gaining"}</span>;
+          if (t==="down") return <span style={{ fontFamily:"Inter,sans-serif", fontSize:10, fontWeight:800, color:"#c2843f" }}>▼ stalling</span>;
+          return <span style={{ fontFamily:"Inter,sans-serif", fontSize:10, fontWeight:800, color:C.mutedGray }}>— even</span>;
+        };
+        const Rank = ({ i }) => (
+          <span style={{ position:"relative", fontFamily:"'Source Serif 4', Georgia, serif", fontSize:19, fontWeight:700, color:medalColor(i), textAlign:"center" }}>
+            {i===0 && <span style={{ position:"absolute", top:-13, left:"50%", transform:"translateX(-50%)", fontSize:13 }}>👑</span>}
+            {i+1}
+          </span>
+        );
+        const cardioMeta = { running:{label:"Running",emoji:"🏃"}, swimming:{label:"Swimming",emoji:"🏊‍♂️"}, cycling:{label:"Cycling",emoji:"🚴"} };
+
+        // 8-week rhythm strip (week 7 = oldest … week 0 = this week, shown left→right oldest→now)
+        const RhythmStrip = ({ weeks }) => {
+          const max = Math.max(1, ...weeks);
+          return (
+            <span style={{ display:"flex", gap:2, marginTop:5, justifyContent:"flex-end" }}>
+              {[...weeks].reverse().map((c,j)=>{
+                const bg = c===0 ? "#e2ebda" : c >= max ? "#3c7a26" : "#86a96a";
+                return <span key={j} style={{ width:7, height:7, borderRadius:2, background:bg }} />;
+              })}
+            </span>
+          );
+        };
+
+        // active sort for the current board
+        const sortKey = lbSort==="consistency" ? "consistency" : (lbBoard==="strength" ? "strength" : "time");
+        const sortedStrength = [...strength].sort((a,b)=> {
+          if (sortKey==="consistency") return b.perMonth - a.perMonth || b.sessions - a.sessions;
+          if (a.isBW !== b.isBW) return a.isBW ? 1 : -1; // strength: weighted above bodyweight
+          return b.rankVal - a.rankVal;
+        });
+        const sortedCardio = [...cardio].sort((a,b)=> sortKey==="consistency" ? (b.perMonth - a.perMonth || b.sessions - a.sessions) : (b.totalSec - a.totalSec));
+
+        const SortRow = (
+          <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+            {(lbBoard==="strength" ? [["consistency","📅 Consistency"],["strength","💪 Strongest"]] : [["consistency","📅 Consistency"],["time","⏱️ Most time"]]).map(([k,l])=>{
+              const on = (lbSort==="consistency" && k==="consistency") || (lbSort!=="consistency" && k!=="consistency");
+              return <button key={k} onClick={()=>setLbSort(k==="consistency"?"consistency":"metric")} style={{ background:on?C.ink:C.fieldBg, border:"none", borderRadius:20, padding:"7px 13px", fontFamily:"Inter,sans-serif", fontSize:12, fontWeight:700, color:on?"#fff":C.textMuted, cursor:"pointer" }}>{l}</button>;
+            })}
+          </div>
+        );
+
+        return (
+          <div style={{ position:"fixed", inset:0, background:C.surface, zIndex:100, display:"flex", flexDirection:"column", maxWidth:430, margin:"0 auto", overflowY:"auto", WebkitOverflowScrolling:"touch" }}>
+            <div style={{ padding:"max(20px, env(safe-area-inset-top)) 22px 6px", borderBottom:`1px solid ${C.hair}`, position:"sticky", top:0, background:C.surface, zIndex:2 }}>
+              <button onClick={()=>setLbOpen(false)}
+                style={{ display:"inline-flex", alignItems:"center", gap:6, background:"none", border:"none", padding:"4px 0 12px", cursor:"pointer", fontFamily:"Georgia,serif", fontStyle:"italic", color:C.textMuted, fontSize:14 }}>← back</button>
+              <div style={{ fontFamily:"Georgia,'Source Serif 4',serif", fontSize:30, fontWeight:600, color:C.ink, letterSpacing:-0.5, lineHeight:1.05, paddingBottom:4 }}>Leaderboard</div>
+              <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:13, color:C.mutedGray, paddingBottom:14 }}>
+                {lbSort==="consistency" ? (lbBoard==="strength"?"most consistent lifts":"most consistent cardio") : (lbBoard==="strength"?"your lifts, ranked":"your cardio, ranked")}
+              </div>
+            </div>
+
+            <div style={{ padding:"16px 18px calc(28px + env(safe-area-inset-bottom))" }}>
+              {/* board toggle */}
+              <div style={{ display:"flex", background:C.fieldBg, borderRadius:13, padding:3, marginBottom:14 }}>
+                {[["strength","Strength"],["cardio","Cardio"]].map(([k,l])=>{
+                  const on = lbBoard===k;
+                  return <button key={k} onClick={()=>setLbBoard(k)} style={{ flex:1, background:on?C.surface:"none", border:"none", borderRadius:10, padding:"11px 0", fontFamily:"'Source Serif 4', Georgia, serif", fontSize:15, fontWeight:600, color:on?C.ink:C.mutedGray, cursor:"pointer", boxShadow:on?"0 1px 4px rgba(0,0,0,0.1)":"none" }}>{l}</button>;
+                })}
+              </div>
+              {SortRow}
+
+              {lbBoard==="strength" ? (
+                sortedStrength.length === 0 ? (
+                  <div style={{ padding:"40px 12px", textAlign:"center", color:C.mutedGray, fontSize:14, fontFamily:"Georgia,serif", fontStyle:"italic" }}>No strength sessions logged yet.</div>
+                ) : sortedStrength.map((s,i)=>(
+                  <div key={s.name} style={{ display:"grid", gridTemplateColumns:"30px 1fr auto", alignItems:"center", gap:13, padding:"15px 2px", borderBottom:`1px solid ${C.hairSoft||C.hair}` }}>
+                    <Rank i={i} />
+                    <span>
+                      <span style={{ display:"block", fontFamily:"'Source Serif 4', Georgia, serif", fontSize:18, fontWeight:600, letterSpacing:-0.2, color:C.ink }}>{s.name}</span>
+                      <span style={{ display:"block", fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:11.5, color:C.mutedGray, marginTop:2 }}>
+                        {lbSort==="consistency"
+                          ? `${s.sessions} session${s.sessions!==1?"s":""} · ${fmtDaysAgo(s.daysSince)}`
+                          : `${s.isBW ? "bodyweight · " : ""}${fmtDaysAgo(s.daysSince)}${s.prCount>0?` · ${s.prCount} PR${s.prCount>1?"s":""}`:""}`}
+                      </span>
+                      {lbSort==="consistency" && <RhythmStrip weeks={s.weeks} />}
+                    </span>
+                    <span style={{ textAlign:"right" }}>
+                      {lbSort==="consistency" ? (
+                        <span style={{ fontFamily:"'Source Serif 4', Georgia, serif", fontSize:20, fontWeight:600, color:C.ink, letterSpacing:-0.4, lineHeight:1 }}>{s.perMonth}<span style={{ fontSize:11, color:C.mutedGray, fontWeight:400 }}>/mo</span></span>
+                      ) : (
+                        <>
+                          <span style={{ display:"block", fontFamily:"'Source Serif 4', Georgia, serif", fontSize:20, fontWeight:600, color:C.ink, letterSpacing:-0.4, lineHeight:1 }}>
+                            {s.isBW ? s.bestReps : fmtWeight(s.e1rm)}<span style={{ fontSize:11, color:C.mutedGray, fontWeight:400 }}>{s.isBW?" reps":" lb"}</span>
+                          </span>
+                          <span style={{ display:"block", marginTop:3 }}>{trendEl(s.trend, s.delta)}</span>
+                        </>
+                      )}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                sortedCardio.length === 0 ? (
+                  <div style={{ padding:"40px 12px", textAlign:"center", color:C.mutedGray, fontSize:14, fontFamily:"Georgia,serif", fontStyle:"italic" }}>No cardio logged yet.</div>
+                ) : sortedCardio.map((c,i)=>{
+                  const cm = cardioMeta[c.type] || { label:c.type, emoji:"⏱️" };
+                  const longest = fmtDur(c.longestSec), total = fmtDur(c.totalSec);
+                  return (
+                    <div key={c.type} style={{ display:"grid", gridTemplateColumns:"30px 1fr auto", alignItems:"center", gap:13, padding:"14px 2px 13px", borderBottom:`1px solid ${C.hairSoft||C.hair}` }}>
+                      <Rank i={i} />
+                      <span style={{ minWidth:0 }}>
+                        <span style={{ display:"flex", alignItems:"baseline", gap:8 }}>
+                          <span style={{ fontFamily:"'Source Serif 4', Georgia, serif", fontSize:18, fontWeight:600, letterSpacing:-0.2, color:C.ink }}>{cm.emoji} {cm.label}</span>
+                          <span style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:11.5, color:C.mutedGray }}>{c.sessions} session{c.sessions!==1?"s":""}</span>
+                        </span>
+                        {lbSort==="consistency" ? (
+                          <RhythmStrip weeks={c.weeks} />
+                        ) : (
+                          <span style={{ display:"flex", marginTop:8 }}>
+                            {[[longest,"longest"],[total,"total time"],[{v:String(c.sessions),u:""},"sessions"]].map(([val,lab],j)=>(
+                              <span key={j} style={{ flex:1, textAlign:"center", borderRight: j<2?`1px solid ${C.hair}`:"none" }}>
+                                <span style={{ display:"block", fontFamily:"'Source Serif 4', Georgia, serif", fontSize:16, fontWeight:600, color:C.ink, letterSpacing:-0.3 }}>{val.v}<span style={{ fontSize:10, color:C.mutedGray }}>{val.u?` ${val.u}`:""}</span></span>
+                                <span style={{ display:"block", fontFamily:"Inter,sans-serif", fontSize:8.5, fontWeight:700, letterSpacing:0.8, textTransform:"uppercase", color:C.mutedGray, marginTop:3 }}>{lab}</span>
+                              </span>
+                            ))}
+                          </span>
+                        )}
+                      </span>
+                      {lbSort==="consistency" && <span style={{ textAlign:"right" }}><span style={{ fontFamily:"'Source Serif 4', Georgia, serif", fontSize:20, fontWeight:600, color:C.ink, letterSpacing:-0.4, lineHeight:1 }}>{c.perMonth}<span style={{ fontSize:11, color:C.mutedGray, fontWeight:400 }}>/mo</span></span></span>}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        );
+      };
+
       const renderWorkoutTab = () => {
         if (bwOpen) return renderBodyweightPage();
+        if (lbOpen) return renderLeaderboardPage();
         const body = (activeSession && !forcePicker) ? renderWorkoutSession() : renderWorkoutPicker();
         return <div style={S.bodyPad}>{body}</div>;
       };
@@ -4271,4 +4554,3 @@
   </script>
 </body>
 </html>
-
