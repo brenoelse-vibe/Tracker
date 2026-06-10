@@ -37,6 +37,15 @@
     input[type=number]::-webkit-inner-spin-button,
     input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     ::-webkit-scrollbar { display: none; }
+    /* gentle-mode hero animation: breathing circle + drifting motes */
+    @keyframes gentleBr { 0%{transform:scale(1)} 38%{transform:scale(1.16)} 100%{transform:scale(1)} }
+    @keyframes gentleRise {
+      0%{transform:translateY(0) translateX(0);opacity:0}
+      14%{opacity:.32}
+      78%{opacity:.2}
+      100%{transform:translateY(-210px) translateX(var(--dx,8px));opacity:0}
+    }
+    @media (prefers-reduced-motion: reduce){ .gentle-anim{ animation:none !important } }
   </style>
 </head>
 <body>
@@ -321,7 +330,7 @@
       restTimer: { promptOnCheck: true, defaultSec: 90, sound: true, vibrate: true, visual: true, custom: [] },
       bodyweight: { unit: "kg", log: {} }, // log: { "YYYY-MM-DD": kgValue }  (always stored in kg)
       weightUnit: "kg", // display label for exercise weights (no conversion — numbers are as entered)
-      gentle: { soft:false, pauseStreaks:false, moodDot:false }, // gentle mode: quiet look · streaks paused (hidden, never deleted) · daily mood dot
+      gentle: { soft:true, pauseStreaks:true, moodDot:true }, // gentle mode (ON by default): quiet look · streaks paused (hidden, never deleted) · daily mood dot
       userName: "",
     };
     const REST_PRESETS = [30, 90, 120, 180]; // 0:30 / 1:30 / 2:00 / 3:00
@@ -359,6 +368,15 @@
       "you're allowed to just be.",
     ];
     const gentleLineFor = dateKey => GENTLE_LINES[Math.floor(Date.parse(dateKey + "T12:00:00") / 86400000) % GENTLE_LINES.length];
+    const GENTLE_MOTES = [
+      { left:"14%", s:4, dur:16, del:0,    dx:"12px"  },
+      { left:"27%", s:3, dur:20, del:5,    dx:"-9px"  },
+      { left:"41%", s:5, dur:14, del:9,    dx:"7px"   },
+      { left:"55%", s:3, dur:18, del:2.5,  dx:"-12px" },
+      { left:"68%", s:4, dur:17, del:7,    dx:"10px"  },
+      { left:"80%", s:5, dur:15, del:11,   dx:"-7px"  },
+      { left:"90%", s:3, dur:21, del:4,    dx:"6px"   },
+    ];
 
     // ─── LEADERBOARD ────────────────────────────────────────────────────
     // Two boards: Strength (weighted lifts by e1RM, bodyweight lifts by best reps)
@@ -570,7 +588,10 @@
         restTimer: { ...DEFAULT_DATA.restTimer, ...asObject(raw.restTimer), custom: asArray(raw.restTimer && raw.restTimer.custom).filter(n => typeof n === "number") },
         bodyweight: { unit: (raw.bodyweight && raw.bodyweight.unit==="lb") ? "lb" : "kg", log: asObject(raw.bodyweight && raw.bodyweight.log) },
         weightUnit: raw.weightUnit === "lb" ? "lb" : "kg",
-        gentle: { soft: !!(raw.gentle && raw.gentle.soft), pauseStreaks: !!(raw.gentle && raw.gentle.pauseStreaks), moodDot: !!(raw.gentle && raw.gentle.moodDot) },
+        // gentle defaults ON: absent → on; an explicit "false" (user toggled off) is respected
+        gentle: raw.gentle
+          ? { soft: raw.gentle.soft !== false, pauseStreaks: raw.gentle.pauseStreaks !== false, moodDot: raw.gentle.moodDot !== false }
+          : { soft: true, pauseStreaks: true, moodDot: true },
       };
     };
 
@@ -2595,10 +2616,21 @@
         const sub = gentle.pauseStreaks
           ? (done > 0 ? "you showed up — that counts" : "whenever you're ready")
           : `${done} of ${total} today`;
+        const ring = (bg, delay, border) => (
+          <span className="gentle-anim" style={{ position:"absolute", inset:0, borderRadius:"50%", background:bg||"none", border:border||"none", animation:`gentleBr 11s ease-in-out infinite${delay?` ${delay}s`:""}` }} />
+        );
         return (
-          <div style={{ textAlign:"center", padding:"26px 24px 8px" }}>
-            <div style={{ fontFamily:"'Source Serif 4', Georgia, serif", fontStyle:"italic", fontSize:20, color: gentle.soft ? "#6f7a69" : C.accentDeep, letterSpacing:-0.2 }}>{gentleLineFor(viewDate)}</div>
-            <div style={{ fontFamily:"'Source Serif 4', Georgia, serif", fontStyle: gentle.pauseStreaks ? "italic" : "normal", fontSize: gentle.pauseStreaks ? 12.5 : 14, color: gentle.soft ? "#a8a698" : C.mutedGray, marginTop:8 }}>{sub}</div>
+          <div style={{ height:225, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", position:"relative", overflow:"hidden", textAlign:"center", padding:"0 24px" }}>
+            <span style={{ position:"absolute", top:"50%", left:"50%", width:172, height:172, borderRadius:"50%", transform:"translate(-50%,-50%)", pointerEvents:"none" }}>
+              {ring("radial-gradient(circle, rgba(152,171,144,0.26), rgba(152,171,144,0) 70%)", 0, null)}
+              {ring("radial-gradient(circle, rgba(152,171,144,0.18), rgba(152,171,144,0) 65%)", 0.8, null)}
+              {ring(null, 0, "1px solid rgba(152,171,144,0.32)")}
+            </span>
+            {GENTLE_MOTES.map((m,i)=>(
+              <span key={i} className="gentle-anim" style={{ position:"absolute", bottom:-8, left:m.left, width:m.s, height:m.s, borderRadius:"50%", background:"#a9bba1", opacity:0, animation:`gentleRise ${m.dur}s linear infinite ${m.del}s`, "--dx":m.dx, pointerEvents:"none" }} />
+            ))}
+            <div style={{ position:"relative", zIndex:2, fontFamily:"'Source Serif 4', Georgia, serif", fontStyle:"italic", fontSize:20, color: gentle.soft ? "#6f7a69" : C.accentDeep, letterSpacing:-0.2 }}>{gentleLineFor(viewDate)}</div>
+            <div style={{ position:"relative", zIndex:2, fontFamily:"'Source Serif 4', Georgia, serif", fontStyle: gentle.pauseStreaks ? "italic" : "normal", fontSize: gentle.pauseStreaks ? 12.5 : 14, color: gentle.soft ? "#a8a698" : C.mutedGray, marginTop:8 }}>{sub}</div>
           </div>
         );
       };
