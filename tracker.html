@@ -1175,7 +1175,7 @@
           <div style={{
             display:"grid", gridTemplateColumns:"28px 1fr auto auto", alignItems:"center", gap:15,
             padding:"17px 0",
-            borderBottom:`1px solid ${C.hair}`,
+            borderBottom:`1px solid ${soft ? "#dcd7cc" : C.hair}`,
           }}>
             <div onClick={onToggle} style={{ fontSize:20, textAlign:"center", cursor:"pointer", filter: soft?"grayscale(0.45) opacity(0.85)":"none" }}>{emoji}</div>
             <div onClick={onToggle} style={{ minWidth:0, cursor:"pointer", userSelect:"none" }}>
@@ -2570,7 +2570,7 @@
           <div style={{
             display:"grid", gridTemplateColumns:"28px 1fr auto auto", alignItems:"center", gap:15,
             padding:"17px 0",
-            borderBottom:`1px solid ${C.hair}`,
+            borderBottom:`1px solid ${gentle.soft ? "#dcd7cc" : C.hair}`,
           }}>
             <div style={{ fontSize:20, textAlign:"center" }}>🏋️</div>
             <div style={{ minWidth:0 }}>
@@ -2817,7 +2817,7 @@
             })}
 
             {gentle.moodDot && (
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:18, padding:"13px 16px", border:`1px solid ${C.hair}`, borderRadius:14 }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:18, padding:"13px 16px", border:`1px solid ${gentle.soft ? "#dcd7cc" : C.hair}`, borderRadius:14 }}>
                 <span style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:13, color:C.textMuted }}>today felt…</span>
                 <span style={{ display:"flex", gap:9 }}>
                   {[1,2,3,4,5].map(v => {
@@ -2836,7 +2836,7 @@
             <button onClick={()=>setActiveTab("settings")} style={{
               display:"flex", alignItems:"center", gap:10, width:"100%", marginTop:14,
               padding:"14px 16px", borderRadius:12, background:"none",
-              border:`1.5px dashed ${C.border}`, cursor:"pointer", fontFamily:"Inter,sans-serif",
+              border:`1.5px dashed ${gentle.soft ? "#cfcabf" : C.border}`, cursor:"pointer", fontFamily:"Inter,sans-serif",
               color:C.textMuted, fontSize:14, fontWeight:600,
             }}>
               <span style={{ fontSize:18, color:C.accent, fontWeight:700, lineHeight:1 }}>+</span>
@@ -4724,7 +4724,7 @@
 
       // ─── Root render ────────────────────────────────────────────────────
       return (
-        <div style={{ fontFamily:"Inter,sans-serif", minHeight:"100vh", color:C.text, maxWidth:430, margin:"0 auto", background:"#fdfdfc", paddingBottom:"calc(96px + env(safe-area-inset-bottom, 0px))" }}>
+        <div style={{ fontFamily:"Inter,sans-serif", minHeight:"100vh", color:C.text, maxWidth:430, margin:"0 auto", background: (gentle.soft && activeTab==="day") ? "#eae8e2" : "#fdfdfc", paddingBottom:"calc(96px + env(safe-area-inset-bottom, 0px))" }}>
           {renderHeader()}
           {activeTab === "day" && (gentleOn ? renderGentleHero() : renderDayHero())}
           {activeTab === "day"      && renderDayTab()}
