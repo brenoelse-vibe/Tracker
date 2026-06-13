@@ -37,15 +37,6 @@
     input[type=number]::-webkit-inner-spin-button,
     input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     ::-webkit-scrollbar { display: none; }
-    /* gentle-mode hero animation: breathing circle + drifting motes */
-    @keyframes gentleBr { 0%{transform:scale(1)} 38%{transform:scale(1.16)} 100%{transform:scale(1)} }
-    @keyframes gentleRise {
-      0%{transform:translateY(0) translateX(0);opacity:0}
-      14%{opacity:.32}
-      78%{opacity:.2}
-      100%{transform:translateY(-210px) translateX(var(--dx,8px));opacity:0}
-    }
-    @media (prefers-reduced-motion: reduce){ .gentle-anim{ animation:none !important } }
   </style>
 </head>
 <body>
@@ -330,7 +321,6 @@
       restTimer: { promptOnCheck: true, defaultSec: 90, sound: true, vibrate: true, visual: true, custom: [] },
       bodyweight: { unit: "kg", log: {} }, // log: { "YYYY-MM-DD": kgValue }  (always stored in kg)
       weightUnit: "kg", // display label for exercise weights (no conversion — numbers are as entered)
-      gentle: { soft:true, pauseStreaks:true, moodDot:true }, // gentle mode (ON by default): quiet look · streaks paused (hidden, never deleted) · daily mood dot
       userName: "",
     };
     const REST_PRESETS = [30, 90, 120, 180]; // 0:30 / 1:30 / 2:00 / 3:00
@@ -357,26 +347,6 @@
     const kgToUnit = (kg, unit) => unit==="lb" ? kg/KG_PER_LB : kg;
     const unitToKg = (v, unit) => unit==="lb" ? v*KG_PER_LB : v;
     const fmtWeight = (v) => { const r = Math.round(v*100)/100; return String(r); };
-
-    // Gentle mode: one quiet line per day, deterministic by date (same all day, new tomorrow).
-    const GENTLE_LINES = [
-      "existing is good.",
-      "being here counts.",
-      "today only needs to be today.",
-      "rest is also progress.",
-      "small is still forward.",
-      "you're allowed to just be.",
-    ];
-    const gentleLineFor = dateKey => GENTLE_LINES[Math.floor(Date.parse(dateKey + "T12:00:00") / 86400000) % GENTLE_LINES.length];
-    const GENTLE_MOTES = [
-      { left:"14%", s:4, dur:16, del:0,    dx:"12px"  },
-      { left:"27%", s:3, dur:20, del:5,    dx:"-9px"  },
-      { left:"41%", s:5, dur:14, del:9,    dx:"7px"   },
-      { left:"55%", s:3, dur:18, del:2.5,  dx:"-12px" },
-      { left:"68%", s:4, dur:17, del:7,    dx:"10px"  },
-      { left:"80%", s:5, dur:15, del:11,   dx:"-7px"  },
-      { left:"90%", s:3, dur:21, del:4,    dx:"6px"   },
-    ];
 
     // ─── LEADERBOARD ────────────────────────────────────────────────────
     // Two boards: Strength (weighted lifts by e1RM, bodyweight lifts by best reps)
@@ -513,6 +483,7 @@
     const asObject = v => (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
     const migrateData = raw => {
       if (!raw || typeof raw !== "object") return { ...DEFAULT_DATA };
+      delete raw.gentle; // gentle mode removed — drop any legacy stored key
 
       // workoutSessions → object of arrays of well-formed sessions
       const wsRaw = asObject(raw.workoutSessions);
@@ -588,10 +559,6 @@
         restTimer: { ...DEFAULT_DATA.restTimer, ...asObject(raw.restTimer), custom: asArray(raw.restTimer && raw.restTimer.custom).filter(n => typeof n === "number") },
         bodyweight: { unit: (raw.bodyweight && raw.bodyweight.unit==="lb") ? "lb" : "kg", log: asObject(raw.bodyweight && raw.bodyweight.log) },
         weightUnit: raw.weightUnit === "lb" ? "lb" : "kg",
-        // gentle defaults ON: absent → on; an explicit "false" (user toggled off) is respected
-        gentle: raw.gentle
-          ? { soft: raw.gentle.soft !== false, pauseStreaks: raw.gentle.pauseStreaks !== false, moodDot: raw.gentle.moodDot !== false }
-          : { soft: true, pauseStreaks: true, moodDot: true },
       };
     };
 
@@ -1147,9 +1114,9 @@
     // Solid amber when today is checked; greyed when not (covers both "alive but
     // not checked today" and the 7-day grace window after a lapse). Hidden once a
     // streak has been lapsed for more than 7 days, or if never started.
-    function HabitStreakD({ streak, soft }) {
+    function HabitStreakD({ streak }) {
       if (!streak || streak.daysSinceLast < 0 || streak.daysSinceLast > 6 || streak.count <= 0) return null;
-      const AMBER = soft ? "#c4ad8d" : "#c2843f", GREY = "#c9c2b4", DOT_ON = soft ? "#a9bba1" : "#4a8f2f", DOT_OFF = "#e6e0d4", DOT_FUTURE = "#f0ece2";
+      const AMBER = "#c2843f", GREY = "#c9c2b4", DOT_ON = "#4a8f2f", DOT_OFF = "#e6e0d4", DOT_FUTURE = "#f0ece2";
       const lit = streak.doneToday;
       return (
         <span style={{ display:"inline-flex", alignItems:"center", gap:8 }}>
@@ -1169,21 +1136,21 @@
       );
     }
 
-    function HabitCard({ active, emoji, label, sublabel, onToggle, stepper, streak, soft, children }) {
+    function HabitCard({ active, emoji, label, sublabel, onToggle, stepper, streak, children }) {
       return (
         <div>
           <div style={{
             display:"grid", gridTemplateColumns:"28px 1fr auto auto", alignItems:"center", gap:15,
             padding:"17px 0",
-            borderBottom:`1px solid ${soft ? "#dcd7cc" : C.hair}`,
+            borderBottom:`1px solid ${C.hair}`,
           }}>
-            <div onClick={onToggle} style={{ fontSize:20, textAlign:"center", cursor:"pointer", filter: soft?"grayscale(0.45) opacity(0.85)":"none" }}>{emoji}</div>
+            <div onClick={onToggle} style={{ fontSize:20, textAlign:"center", cursor:"pointer" }}>{emoji}</div>
             <div onClick={onToggle} style={{ minWidth:0, cursor:"pointer", userSelect:"none" }}>
-              <div style={{ fontFamily:"'Source Serif 4', Georgia, serif", color: active?(soft?"#7e8b78":C.accentDeep):(soft?"#4a4a45":C.ink), fontSize:20, fontWeight: active?600:500, letterSpacing:-0.2 }}>{label}</div>
+              <div style={{ fontFamily:"'Source Serif 4', Georgia, serif", color: active?C.accentDeep:C.ink, fontSize:20, fontWeight: active?600:500, letterSpacing:-0.2 }}>{label}</div>
               {sublabel ? <div style={{ color:C.faint||"#b0aaa0", fontSize:12, marginTop:2, fontWeight:450 }}>{sublabel}</div> : null}
             </div>
-            <div style={{ display:"flex", alignItems:"center", gap:12 }}>{streak ? <HabitStreakD streak={streak} soft={soft} /> : null}{stepper}</div>
-            <Toggle on={active} onClick={onToggle} color={soft?"#98ab90":undefined} />
+            <div style={{ display:"flex", alignItems:"center", gap:12 }}>{streak ? <HabitStreakD streak={streak} /> : null}{stepper}</div>
+            <Toggle on={active} onClick={onToggle} />
           </div>
           {children}
         </div>
@@ -1693,15 +1660,6 @@
       // ─── Action: habits ─────────────────────────────────────────────────
       const toggleHabit = key => {
         const newLog = { ...todayLog, [key]: !todayLog[key] };
-        setTodayLog(newLog);
-        update({ logs: { ...data.logs, [viewDate]: newLog } });
-      };
-
-      // ─── Gentle mode ─────────────────────────────────────────────────────
-      const gentle = data.gentle || DEFAULT_DATA.gentle;
-      const gentleOn = gentle.soft || gentle.pauseStreaks;
-      const setMood = v => {
-        const newLog = { ...todayLog, mood: todayLog.mood === v ? undefined : v };
         setTodayLog(newLog);
         update({ logs: { ...data.logs, [viewDate]: newLog } });
       };
@@ -2570,7 +2528,7 @@
           <div style={{
             display:"grid", gridTemplateColumns:"28px 1fr auto auto", alignItems:"center", gap:15,
             padding:"17px 0",
-            borderBottom:`1px solid ${gentle.soft ? "#dcd7cc" : C.hair}`,
+            borderBottom:`1px solid ${C.hair}`,
           }}>
             <div style={{ fontSize:20, textAlign:"center" }}>🏋️</div>
             <div style={{ minWidth:0 }}>
@@ -2580,7 +2538,7 @@
               </div>
             </div>
             <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-              <HabitStreakD streak={gentle.pauseStreaks ? null : habitStreak("workout")} soft={gentle.soft} />
+              <HabitStreakD streak={habitStreak("workout")} />
               <button onClick={()=>setShowWorkoutPicker(!showWorkoutPicker)} style={on ? S.pillBtnOn : S.pillBtn}>
                 {on ? "CHANGE" : "LOG"}
               </button>
@@ -2607,31 +2565,6 @@
             </div>
           )}
         </div>
-        );
-      };
-
-      const renderGentleHero = () => {
-        const done = allActiveHabits.filter(h => h.key==="workout" ? !!todayLog.workout : !!todayLog[h.key]).length;
-        const total = allActiveHabits.length;
-        const sub = gentle.pauseStreaks
-          ? (done > 0 ? "you showed up — that counts" : "whenever you're ready")
-          : `${done} of ${total} today`;
-        const ring = (bg, delay, border) => (
-          <span className="gentle-anim" style={{ position:"absolute", inset:0, borderRadius:"50%", background:bg||"none", border:border||"none", animation:`gentleBr 11s ease-in-out infinite${delay?` ${delay}s`:""}` }} />
-        );
-        return (
-          <div style={{ height:225, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", position:"relative", overflow:"hidden", textAlign:"center", padding:"0 24px" }}>
-            <span style={{ position:"absolute", top:"50%", left:"50%", width:172, height:172, borderRadius:"50%", transform:"translate(-50%,-50%)", pointerEvents:"none" }}>
-              {ring("radial-gradient(circle, rgba(152,171,144,0.26), rgba(152,171,144,0) 70%)", 0, null)}
-              {ring("radial-gradient(circle, rgba(152,171,144,0.18), rgba(152,171,144,0) 65%)", 0.8, null)}
-              {ring(null, 0, "1px solid rgba(152,171,144,0.32)")}
-            </span>
-            {GENTLE_MOTES.map((m,i)=>(
-              <span key={i} className="gentle-anim" style={{ position:"absolute", bottom:-8, left:m.left, width:m.s, height:m.s, borderRadius:"50%", background:"#a9bba1", opacity:0, animation:`gentleRise ${m.dur}s linear infinite ${m.del}s`, "--dx":m.dx, pointerEvents:"none" }} />
-            ))}
-            <div style={{ position:"relative", zIndex:2, fontFamily:"'Source Serif 4', Georgia, serif", fontStyle:"italic", fontSize:20, color: gentle.soft ? "#6f7a69" : C.accentDeep, letterSpacing:-0.2 }}>{gentleLineFor(viewDate)}</div>
-            <div style={{ position:"relative", zIndex:2, fontFamily:"'Source Serif 4', Georgia, serif", fontStyle: gentle.pauseStreaks ? "italic" : "normal", fontSize: gentle.pauseStreaks ? 12.5 : 14, color: gentle.soft ? "#a8a698" : C.mutedGray, marginTop:8 }}>{sub}</div>
-          </div>
         );
       };
 
@@ -2799,7 +2732,7 @@
       const renderDayTab = () => {
         return (
           <div style={{ padding:"0 24px 16px" }}>
-            {!gentleOn && renderGapDiagram()}
+            {renderGapDiagram()}
 
             {allActiveHabits.map(h => {
               if (h.key === "workout") return renderWorkoutHabitCard();
@@ -2810,33 +2743,15 @@
                   label={h.label}
                   sublabel={h.isBuiltin && h.sublabelFn ? h.sublabelFn(data) : ""}
                   onToggle={() => toggleHabit(h.key)}
-                  streak={gentle.pauseStreaks ? null : habitStreak(h.key)}
-                  soft={gentle.soft}
+                  streak={habitStreak(h.key)}
                   stepper={null} />
               );
             })}
 
-            {gentle.moodDot && (
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:18, padding:"13px 16px", border:`1px solid ${gentle.soft ? "#dcd7cc" : C.hair}`, borderRadius:14 }}>
-                <span style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:13, color:C.textMuted }}>today felt…</span>
-                <span style={{ display:"flex", gap:9 }}>
-                  {[1,2,3,4,5].map(v => {
-                    const sel = todayLog.mood === v;
-                    return <span key={v} onClick={()=>setMood(v)} style={{
-                      width:15, height:15, borderRadius:"50%", cursor:"pointer",
-                      background: sel ? "#9aac92" : "transparent",
-                      border: sel ? "1.5px solid #9aac92" : "1.5px solid #cfc9bd",
-                      boxShadow: sel ? "0 0 0 2px #fff, 0 0 0 3.5px #9aac92" : "none",
-                    }} />;
-                  })}
-                </span>
-              </div>
-            )}
-
             <button onClick={()=>setActiveTab("settings")} style={{
               display:"flex", alignItems:"center", gap:10, width:"100%", marginTop:14,
               padding:"14px 16px", borderRadius:12, background:"none",
-              border:`1.5px dashed ${gentle.soft ? "#cfcabf" : C.border}`, cursor:"pointer", fontFamily:"Inter,sans-serif",
+              border:`1.5px dashed ${C.border}`, cursor:"pointer", fontFamily:"Inter,sans-serif",
               color:C.textMuted, fontSize:14, fontWeight:600,
             }}>
               <span style={{ fontSize:18, color:C.accent, fontWeight:700, lineHeight:1 }}>+</span>
@@ -4657,25 +4572,6 @@
           })()}
 
           <SectionDivider>
-            <div style={S.sectionLabel}>Gentle mode</div>
-            <div style={S.card}>
-              {[
-                { k:"soft",         t:"Soften the look",        d:"quiet colors, no shouting numbers" },
-                { k:"pauseStreaks", t:"Pause streaks & flames",  d:"hidden, never deleted — resume anytime" },
-                { k:"moodDot",      t:"Daily mood dot",          d:"one tap on the Day tab, see the trend later" },
-              ].map((o,i)=>(
-                <div key={o.k} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 0", borderBottom: i<2?`1px solid ${C.hair}`:"none" }}>
-                  <div>
-                    <div style={{ fontFamily:"'Source Serif 4', Georgia, serif", fontSize:15, fontWeight:600, color:C.ink }}>{o.t}</div>
-                    <div style={{ fontSize:11, color:C.mutedGray, marginTop:2 }}>{o.d}</div>
-                  </div>
-                  <Toggle on={!!gentle[o.k]} onClick={()=>update({ gentle: { ...gentle, [o.k]: !gentle[o.k] } })} color={"#98ab90"} />
-                </div>
-              ))}
-            </div>
-          </SectionDivider>
-
-          <SectionDivider>
             <div style={S.sectionLabel}>Units</div>
             <div style={S.card}>
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
@@ -4724,9 +4620,9 @@
 
       // ─── Root render ────────────────────────────────────────────────────
       return (
-        <div style={{ fontFamily:"Inter,sans-serif", minHeight:"100vh", color:C.text, maxWidth:430, margin:"0 auto", background: (gentle.soft && activeTab==="day") ? "#eae8e2" : "#fdfdfc", paddingBottom:"calc(96px + env(safe-area-inset-bottom, 0px))" }}>
+        <div style={{ fontFamily:"Inter,sans-serif", minHeight:"100vh", color:C.text, maxWidth:430, margin:"0 auto", background:"#fdfdfc", paddingBottom:"calc(96px + env(safe-area-inset-bottom, 0px))" }}>
           {renderHeader()}
-          {activeTab === "day" && (gentleOn ? renderGentleHero() : renderDayHero())}
+          {activeTab === "day" && renderDayHero()}
           {activeTab === "day"      && renderDayTab()}
           {activeTab === "todo"     && renderTodoTab()}
           {activeTab === "workout"  && renderWorkoutTab()}
